@@ -1,0 +1,6 @@
+node_modules/
+.test-compiled/
+main.js
+*.map
+dist/
+.DS_Store

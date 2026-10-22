@@ -1,0 +1,18 @@
+{
+  "name": "obsidian-excerpts",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Folder-scoped excerpt collections for Obsidian",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs",
+    "build:offline": "node scripts/build-offline.cjs",
+    "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
+    "test": "node scripts/test.cjs",
+    "verify": "npm run test && npm run build"
+  },
+  "devDependencies": {
+    "obsidian": "latest",
+    "typescript": "^5.8.3",
+    "esbuild": "^0.25.5"
+  }
+}

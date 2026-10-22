@@ -1,0 +1,46 @@
+/* All rules are strictly scoped to the Excerpts renderer. */
+.excerpts-root { --ex-radius: 14px; font-family: var(--font-interface); color: var(--text-normal); max-width: 900px; margin: 0 auto; padding: 14px 6px 36px; }
+.excerpts-root * { box-sizing: border-box; }
+.excerpts-root .ex-header,.excerpts-root .ex-card-top,.excerpts-root .ex-compose-actions,.excerpts-root .ex-toolbar,.excerpts-root .ex-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.excerpts-root .ex-header { padding: 8px 4px 22px; }
+.excerpts-root .ex-eyebrow { color: var(--text-faint); letter-spacing: .16em; font-size: 10px; font-weight: 600; }
+.excerpts-root h2.ex-title { margin: 5px 0 0; font-size: clamp(24px,4vw,32px); line-height: 1.25; }
+.excerpts-root .ex-composer { background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--ex-radius); padding: 18px; margin-bottom: 22px; }
+.excerpts-root .ex-section-label { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+.excerpts-root .ex-textarea,.excerpts-root .ex-input { font: inherit; width: 100%; min-width: 0; color: var(--text-normal); border-radius: 8px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); padding: 10px 12px; box-shadow: none; }
+.excerpts-root .ex-compose-text { min-height: 94px; resize: vertical; font-size: 15px; line-height: 1.8; }
+.excerpts-root .ex-tags-input { max-width: 300px; }
+.excerpts-root .ex-compose-actions { margin-top: 10px; }
+.excerpts-root .ex-btn { cursor: pointer; flex-shrink: 0; border-radius: 8px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-normal); padding: 6px 10px; font-size: 12px; line-height: 1.5; box-shadow: none; }
+.excerpts-root .ex-btn:hover { background: var(--background-modifier-hover); }
+.excerpts-root .ex-btn-primary { color: var(--text-on-accent); background: var(--interactive-accent); border-color: transparent; }
+.excerpts-root .ex-btn-primary:hover { background: var(--interactive-accent-hover); }
+.excerpts-root .ex-btn-quiet,.excerpts-root .ex-add-extra { border-color: transparent; background: transparent; color: var(--text-muted); }
+.excerpts-root .ex-btn-danger { color: var(--text-error); }
+.excerpts-root .ex-toolbar { margin: 12px 3px; }
+.excerpts-root .ex-toolbar .ex-input { max-width: 440px; }
+.excerpts-root .ex-count { font-size: 12px; white-space: nowrap; color: var(--text-faint); }
+.excerpts-root .ex-filter-tags { display: flex; gap: 5px; overflow-x: auto; padding: 5px 0 14px; scrollbar-width: thin; }
+.excerpts-root .ex-filter-tags .ex-btn { border-radius: 99px; }
+.excerpts-root .ex-selected { color: var(--text-accent); border-color: var(--interactive-accent); background: var(--background-secondary); }
+.excerpts-root .ex-card-list { display: flex; flex-direction: column; gap: 15px; }
+.excerpts-root .ex-card { padding: 20px 22px 14px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--ex-radius); box-shadow: 0 2px 10px rgba(0,0,0,.025); }
+.excerpts-root .ex-card-top { color: var(--text-faint); font-size: 12px; }
+.excerpts-root .ex-card-actions { display:flex; gap: 4px; align-items: center; }
+.excerpts-root .ex-quote { white-space: pre-wrap; overflow-wrap: anywhere; padding: 18px 2px 15px; line-height: 1.85; font-size: clamp(16px,2vw,19px); letter-spacing: .02em; }
+.excerpts-root .ex-chips { display:flex; gap: 6px; flex-wrap:wrap; padding-bottom: 12px; }
+.excerpts-root .ex-tag { border: 0; background: var(--background-secondary); color: var(--text-accent); border-radius: 99px; padding: 3px 9px; }
+.excerpts-root .ex-extras { border-top: 1px solid var(--background-modifier-border); padding-top: 4px; }
+.excerpts-root .ex-extra-group + .ex-extra-group { border-top: 1px solid var(--background-modifier-border-hover); }
+.excerpts-root .ex-group-trigger { display: block; width: 100%; text-align: left; padding: 10px 2px; border: 0; color: var(--text-muted); background: transparent; font-weight: 500; font-size: 12px; cursor: pointer; }
+.excerpts-root .ex-group-body { padding: 0 0 12px 12px; }
+.excerpts-root .ex-extra-item { border-left: 2px solid var(--background-modifier-border); padding: 8px 12px; margin-bottom: 8px; }
+.excerpts-root .ex-extra-title { font-weight: 600; font-size: 13px; }
+.excerpts-root .ex-extra-content { color: var(--text-muted); font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; line-height: 1.65; }
+.excerpts-root .ex-add-extra { padding: 8px 4px; }
+.excerpts-root .ex-edit-panel { border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 12px; margin: 8px 0; background: var(--background-secondary); display: flex; flex-direction: column; gap: 9px; }
+.excerpts-root .ex-edit-panel .ex-actions { justify-content: flex-end; flex-wrap: wrap; }
+.excerpts-root .ex-empty { text-align: center; padding: 60px 15px; color: var(--text-muted); }
+.excerpts-root .ex-warning { color: var(--text-error); font-size: 12px; margin: 8px 0; }
+.excerpts-root .ex-loadmore { margin: 12px auto; }
+@media (max-width: 600px) { .excerpts-root { padding: 4px 0 30px; } .excerpts-root .ex-composer,.excerpts-root .ex-card { padding: 14px; } .excerpts-root .ex-compose-actions { align-items: stretch; flex-wrap:wrap; } .excerpts-root .ex-compose-actions > * { flex: 1; } .excerpts-root .ex-card-top { align-items: start; } .excerpts-root .ex-card-actions { flex-wrap:wrap; justify-content:flex-end; } .excerpts-root .ex-header { padding: 6px 2px 18px; } }
