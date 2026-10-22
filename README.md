@@ -45,3 +45,10 @@ A collection folder contains a generated `首页.md`, `Cards/` with a Markdown f
 3. v0.3: Import/export, performance index, gallery and excerpt relationships.
 
 License: MIT (see LICENSE).
+
+## Project documents
+
+- [Product specification](docs/PRODUCT.md)
+- [Architecture and invariants](docs/ARCHITECTURE.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Restricted-environment build and testing](docs/BUILD-AND-TEST.md)
