@@ -9,5 +9,7 @@ await esbuild.build({
   external: ["obsidian", "electron", "@codemirror/*", "@lezer/*"],
   sourcemap: false,
   minify: false,
-  logLevel: "info"
+  logLevel: "info",
+  // Obsidian expects the plugin class to be the direct CommonJS export.
+  footer: { js: "module.exports = module.exports.default;" }
 });
