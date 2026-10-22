@@ -22,7 +22,7 @@ Open **Settings → Community plugins → 摘录 Excerpts**, enter a collection 
 
 ## Build
 
-Official build (CI): `npm install && npm run verify`. `npm run build` uses esbuild and real Obsidian API typings.
+Official build (CI): `npm install && npm run verify`. CI also uploads a 7-day Linux Node 22 dependency snapshot for restricted offline debugging. `npm run build` uses esbuild and real Obsidian API typings.
 
 For restricted environments, a zero-dependency `npm run build:offline` uses an already-installed global TypeScript compiler to create `main.js`. `npm run typecheck:offline` typechecks against minimal compatibility shims; **CI typechecks against the real Obsidian API**. `npm test` tests the Markdown codec without Obsidian.
 

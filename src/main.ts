@@ -41,7 +41,7 @@ export default class ExcerptsPlugin extends Plugin {
   }
   private fileChanged(path: string): void {
     for (const child of this.rendered) {
-      const ws = (child as unknown as { workspace: Workspace }).workspace;
+      const ws = child.workspace;
       if (ws && belongsTo(path, workspacePaths(ws).cards)) child.requestRefresh();
     }
   }
@@ -79,8 +79,8 @@ export default class ExcerptsPlugin extends Plugin {
   private async handleRename(path: string, previous: string): Promise<void> {
     let dirty = false;
     for (const ws of this.settings.workspaces) {
-      if (previous === ws.rootFolder || path.startsWith(ws.rootFolder + "/") && previous === ws.rootFolder) {
-        ws.rootFolder = path; dirty = true; continue;
+      if (ws.rootFolder === previous || ws.rootFolder.startsWith(previous + "/")) {
+        ws.rootFolder = path + ws.rootFolder.slice(previous.length); dirty = true; continue;
       }
       if (previous === workspacePaths(ws).home) {
         // Only a basename in the same workspace is supported for homepage renames.

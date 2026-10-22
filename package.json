@@ -8,7 +8,8 @@
     "build:offline": "node scripts/build-offline.cjs",
     "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
     "test": "node scripts/test.cjs",
-    "verify": "npm run test && npm run build"
+    "smoke": "node scripts/smoke.cjs",
+    "verify": "npm run test && npm run build && npm run smoke"
   },
   "devDependencies": {
     "obsidian": "latest",

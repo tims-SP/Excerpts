@@ -37,7 +37,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private generation = 0;
   private disposed = false;
-  constructor(container: HTMLElement, private plugin: ExcerptsPlugin, private workspace: Workspace, private repo: EntryRepository) {
+  constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace, private repo: EntryRepository) {
     super(container);
   }
   onload(): void { this.build(); void this.reload(); }
@@ -134,7 +134,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     card.append(chips);
     if (entry.readOnly) card.append(node("div", "ex-warning", `文件结构存在问题，仅能阅读：${entry.problem || "未知错误"}`));
     const extras = node("div", "ex-extras");
-    const kinds = EXTRA_KINDS.filter(k => k !== "custom" || entry.extras.some(x => x.kind === "custom"));
+    const kinds = EXTRA_KINDS;
     for (const kind of kinds) this.renderExtraGroup(extras, entry, kind);
     card.append(extras);
     return card;
@@ -154,7 +154,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const group = node("section", "ex-extra-group");
     const key = `${entry.id}:${kind}`;
     const data = entry.extras.filter(x => x.kind === kind);
-    const isOpen = this.expanded.has(key) && !this.plugin.settings.collapseExtras ? true : this.expanded.has(key);
+    const isOpen = this.plugin.settings.collapseExtras ? this.expanded.has(key) : !this.expanded.has(key);
     const line = button(`${isOpen ? "▾" : "▸"}  ${EXTRA_LABELS[kind]}  ${data.length}`, () => {
       if (this.expanded.has(key)) this.expanded.delete(key); else this.expanded.add(key);
       this.drawCards();

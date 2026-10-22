@@ -77,7 +77,10 @@ function readExtras(block: string): Extra[] {
     const line = lines[i].trim();
     if (line.startsWith("<!-- excerpts:item:start") && !ITEM_START_RE.test(line)) throw new Error("附属条目头部格式错误");
     const match = line.match(ITEM_START_RE);
-    if (!match) { i++; continue; }
+    if (!match) {
+      if (line === ITEM_END) throw new Error("附属条目存在未匹配的结束标记");
+      i++; continue;
+    }
     const [, id, kind] = match;
     if (!EXTRA_KINDS.includes(kind as ExtraKind)) throw new Error(`未知附属类型：${kind}`);
     if (ids.has(id)) throw new Error(`附属条目 ID 重复：${id}`);
@@ -116,7 +119,12 @@ export function parseEntry(raw: string): Entry | null {
     favorite: readScalar(header, "excerpts_favorite") === "true", tags: readTags(header),
     text: decodeQuote(first < 0 ? content : content.slice(0, first)), extras: []
   };
-  if (first < 0 && last < 0) return entry;
+  if (first < 0 && last < 0) {
+    if (content.includes("<!-- excerpts:item:")) {
+      entry.readOnly = true; entry.problem = "附属条目存在，但其边界标记缺失";
+    }
+    return entry;
+  }
   if (first < 0 || last < first || content.indexOf(EXTRA_START, first + EXTRA_START.length) !== -1 || content.indexOf(EXTRA_END, last + EXTRA_END.length) !== -1) {
     entry.readOnly = true; entry.problem = "附属内容边界标记缺失或重复"; return entry;
   }

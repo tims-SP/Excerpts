@@ -34,3 +34,12 @@ test('paths are safe and relative',()=>{
   assert.throws(()=>validateRelativePath('.obsidian/plugins'));
   assert.equal(workspacePaths({id:'w',name:'A',rootFolder:'选集/小说',entryFile:'首页.md',cardsFolder:'Cards',attachmentsFolder:'Media'}).cards,'选集/小说/Cards');
 });
+
+test('missing outer delimiter with remaining item marker is read-only',()=>{
+  const damaged=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','').replace('<!-- excerpts:extras:end -->','');
+  assert.equal(parseEntry(damaged).readOnly,true);
+});
+test('invalid stray item end fails closed',()=>{
+  const broken=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','<!-- excerpts:extras:start -->\n<!-- excerpts:item:end -->');
+  assert.equal(parseEntry(broken).readOnly,true);
+});

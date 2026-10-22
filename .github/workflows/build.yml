@@ -21,6 +21,13 @@ jobs:
           mkdir -p dist/excerpts
           cp main.js manifest.json styles.css dist/excerpts/
           cd dist && zip -r excerpts-0.1.0.zip excerpts
+      - name: Package build dependencies
+        run: tar -czf dist/excerpts-deps-linux-node22.tar.gz node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excerpts-dev-deps
+          path: dist/excerpts-deps-linux-node22.tar.gz
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: excerpts-obsidian-plugin
