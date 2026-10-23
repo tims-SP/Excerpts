@@ -35,6 +35,15 @@ A workspace root is selected by the user. Relative default names `首页.md`, `C
 - Folder repoint is a logical data-source switch, **not a file move**.
 - Renaming a containing parent folder updates the configured root path.
 
+## Recoverable deletion (v0.2 development)
+
+- Deleting an entire Entry **renames** its existing Markdown file with `Vault.rename` into a collection-local `Excerpts-Recycle/` directory. The bytes, custom frontmatter and trailing notes remain unchanged. The folder is outside `Cards/`, so archived entries disappear from the active stream without being destroyed.
+- A native Obsidian confirmation modal is mandatory for the user-facing archive action. Never invoke `Vault.delete` for it.
+- In-session undo holds a temporary receipt containing original/archive paths, immutable entry IDs and original raw bytes. Undo refuses to overwrite an occupied source path or silently move an externally changed archive. If the session ends, the Markdown file remains in `Excerpts-Recycle/` for manual recovery.
+- Both archive and restore validate collection ownership and path scope. Archive refuses a stale entry snapshot or read-only damaged Markdown. They do not claim atomic cross-process protection against a concurrent external rename or write; these remain sync-race limitations to test in actual clients.
+- Removing an individual Extra now has a one-item in-session undo token. Undo uses `Vault.process` and the post-delete snapshot, so a newer edit cannot silently be overwritten. The token is not persistent; preserve permanent edit history through Git or file backups.
+- All collection content remains Markdown. No archived content or drafts are duplicated into plugin `data.json`.
+
 ## Implementation choices (v0.1)
 
 - TypeScript, native DOM, CSS vars, `registerMarkdownCodeBlockProcessor`, `MarkdownRenderChild`.
