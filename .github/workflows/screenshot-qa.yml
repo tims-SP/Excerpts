@@ -1,0 +1,38 @@
+name: Screenshot QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/view.ts'
+      - 'styles.css'
+      - 'scripts/visual-check.py'
+      - 'scripts/spacing-check.py'
+      - 'tests/fixtures/preview-template.html'
+      - '.github/workflows/screenshot-qa.yml'
+  workflow_dispatch:
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: npm install --no-audit --no-fund && npm run build
+      - run: python -m pip install playwright
+      - run: python -m playwright install --with-deps chromium
+      - run: python scripts/spacing-check.py
+      - run: python scripts/visual-check.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: excerpts-screenshot-qa
+          path: |
+            artifacts/*.png
+            preview-current.html
+          retention-days: 14
