@@ -71,12 +71,12 @@ function readTags(header: string): string[] {
     try { return JSON.parse(raw); } catch { return raw.replace(/^'|'$/g, ""); }
   }).filter(x => typeof x === "string" && x.length > 0);
 }
-/** Reject free-form content that cannot be round-tripped through the quote editor. */
+/** Only allow quote regions whose exact bytes survive decode/encode (after newline normalization). */
 function isCanonicalQuote(block: string): boolean {
-  const trimmed = block.replace(/^\n+|\n+$/g, "");
-  const lines = trimmed.split("\n");
-  return lines.some(line => line.startsWith("> ") && line.slice(2).trim().length > 0) &&
-    lines.every(line => line === ">" || line.startsWith("> "));
+  const decoded = decodeQuote(block);
+  if (!decoded) return false;
+  try { return block === `\n${encodeQuote(decoded)}\n\n`; }
+  catch { return false; }
 }
 function hasSafeManagedHeader(header: string): boolean {
   for (const key of ["excerpts_type", "excerpts_schema", "excerpts_id", "excerpts_collection",
