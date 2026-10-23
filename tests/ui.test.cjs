@@ -191,3 +191,61 @@ test('H2 groups retain independent occurrence state and default to collapsed',as
     assert.equal(root.querySelector('.ex-empty-card'),null);
   }finally{await t.close();}
 });
+
+test('list refresh keeps unsaved inline content, tag selection and text caret',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  try {
+    clickByLabel(root,'编辑摘录');await wait();
+    const editor=root.querySelector('.ex-entry-editor');
+    const textarea=editor.querySelector('.ex-editor-text');
+    textarea.value+='\n正在编辑';textarea.focus();textarea.setSelectionRange(4,8);
+    textarea.dispatchEvent(new window.Event('input',{bubbles:true}));
+    await t.pane.renderer.reload();await wait();
+    const restored=root.querySelector('.ex-editor-text');
+    assert.equal(restored.value.endsWith('正在编辑'),true);
+    assert.equal(document.activeElement,restored);
+    assert.equal(restored.selectionStart,4);
+    assert.equal(restored.selectionEnd,8);
+    assert.equal(t.files.get(t.md.path).data.includes('正在编辑'),false);
+  } finally {await t.close();}
+});
+
+test('switching between clean editors leaves only the second card editable',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  try {
+    const second=await t.plugin.repo.create(t.plugin.workspaceForHome(t.home),'另一个摘录',[]);
+    await t.pane.renderer.reload();await wait();
+    const cards=[...root.querySelectorAll('.ex-card')];
+    cards.find(c=>c.dataset.path===t.md.path).querySelector('button[aria-label="编辑摘录"]').click();
+    await wait();
+    assert.equal(root.querySelectorAll('.ex-entry-editor').length,1);
+    cards.find(c=>c.dataset.path===second.path).querySelector('button[aria-label="编辑摘录"]').click();
+    await wait();
+    assert.equal(root.querySelectorAll('.ex-entry-editor').length,1);
+    assert.equal(root.querySelector('.ex-card.ex-is-editing').dataset.path,second.path);
+  } finally {await t.close();}
+});
+
+test('editing only YAML tags preserves other frontmatter properties and body',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  try {
+    const original='---\nfavorite: true\n\ntags:\n  - "哲学"\nother: keep\n---\n\n原样正文\n\n## 来源\n\n《某书》';
+    t.files.get(t.md.path).data=original;t.plugin.repo.invalidate(t.md.path);
+    await t.pane.renderer.reload();await wait();
+    clickByLabel(root,'编辑摘录');await wait();
+    const edit=root.querySelector('.ex-entry-editor');
+    clickByLabel(edit,'移除标签：哲学');
+    [...edit.querySelectorAll('button')].find(b=>b.textContent.includes('添加标签')).click();
+    const input=edit.querySelector('.ex-tags-input');
+    input.value='散文';input.dispatchEvent(new window.Event('input',{bubbles:true}));
+    input.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    [...edit.querySelectorAll('button')].find(b=>b.textContent==='保存修改').click();
+    await wait();
+    const raw=t.files.get(t.md.path).data;
+    assert.match(raw,/favorite: true/);
+    assert.match(raw,/other: keep/);
+    assert.match(raw,/  - "散文"/);
+    assert.doesNotMatch(raw,/  - "哲学"/);
+    assert.match(raw,/原样正文\n\n## 来源\n\n《某书》/);
+  } finally {await t.close();}
+});
