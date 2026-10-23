@@ -34,9 +34,9 @@ async function fixture(){
   const dir=new TFolder('摘录'); files.set('摘录',{file:dir});
   const home=new TFile('摘录/首页.excerpts'); files.set(home.path,{file:home,data:''});
   const md=new TFile('摘录/测试.md'); files.set(md.path,{file:md,data:'# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记'});
-  const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
+  const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
     async cachedRead(file){return files.get(file.path).data;},
-    async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
+    async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
   const leaf={lastFile:null,async openFile(file){this.lastFile=file;},async setViewState(){}};
   plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}}
@@ -72,7 +72,7 @@ test('quick composer saves normal Markdown with native tags and restores continu
   root.querySelector('.ex-tags-input').value='哲学, 札记';
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
-  const entries=[...t.files].filter(([path])=>path.includes('摘录-')&&path.endsWith('.md'));
+  const entries=[...t.files].filter(([path])=>path==='摘录/直接写入普通 Markdown.md');
   assert.equal(entries.length,1);
   assert.match(entries[0][1].data,/直接写入普通 Markdown/);
   assert.match(entries[0][1].data,/  - "哲学"/);

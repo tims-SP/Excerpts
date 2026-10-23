@@ -1,9 +1,11 @@
 import { App, TFile, TFolder, getAllTags } from "obsidian";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath, validateRelativePath } from "./model";
 import { parseMarkdown } from "./codec";
+import { excerptFileStem, fitFileStem } from "./naming";
 
 export class EntryRepository {
   private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
+  private reservedPaths = new Set<string>();
   constructor(private readonly app: App) {}
   async ensureFolder(path: string): Promise<void> {
     let cursor = "";
@@ -95,13 +97,33 @@ export class EntryRepository {
   }
   async create(ws: Workspace, markdown = "", tags: string[] = []): Promise<TFile> {
     if (ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
-    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T","-");
-    for (let i = 0; i < 1000; i++) {
-      const path = (ws.rootFolder === "/" ? "" : ws.rootFolder + "/") + "摘录-" + stamp + (i ? "-" + i : "") + ".md";
-      if (!this.app.vault.getAbstractFileByPath(path)) {
-        const cleanTags = [...new Set(tags.map(t => t.replace(/^#/, "").trim()).filter(Boolean))];
-        const yaml = cleanTags.length ? "---\ntags:\n" + cleanTags.map(tag => "  - " + JSON.stringify(tag)).join("\n") + "\n---\n\n" : "";
-        return this.app.vault.create(path, yaml + markdown.trim() + "\n");
+    const base = excerptFileStem(markdown);
+    const prefix = ws.rootFolder === "/" ? "" : ws.rootFolder + "/";
+    const occupied = new Set(this.app.vault.getAllLoadedFiles().map(file => file.path.toLocaleLowerCase("en-US")));
+    const cleanTags = [...new Set(tags.map(t => t.replace(/^#/, "").trim()).filter(Boolean))];
+    const yaml = cleanTags.length ? "---\ntags:\n" + cleanTags.map(tag => "  - " + JSON.stringify(tag)).join("\n") + "\n---\n\n" : "";
+    const content = yaml + markdown.trim() + "\n";
+
+    // Reserve names while in flight so simultaneous saves never choose the same path.
+    // Only after 10,000 sequential collisions use a timestamp-based unique suffix.
+    for (let i = 1; i <= 10050; i++) {
+      const suffix = i <= 10000 ? (i === 1 ? "" : "-" + i) :
+        "-" + Date.now().toString(36) + "-" + (i - 10000);
+      const filename = fitFileStem(base, 30 - Array.from(suffix).length) + suffix + ".md";
+      const path = prefix + filename;
+      const key = path.toLocaleLowerCase("en-US");
+      if (occupied.has(key) || this.reservedPaths.has(key) || this.app.vault.getAbstractFileByPath(path)) continue;
+      this.reservedPaths.add(key);
+      try {
+        return await this.app.vault.create(path, content);
+      } catch (error) {
+        // Retry only when another writer really created the path, not on unrelated IO errors.
+        const conflict = this.app.vault.getAllLoadedFiles()
+          .some(file => file.path.toLocaleLowerCase("en-US") === key);
+        if (!conflict && !this.app.vault.getAbstractFileByPath(path)) throw error;
+        occupied.add(key);
+      } finally {
+        this.reservedPaths.delete(key);
       }
     }
     throw new Error("无法生成唯一文件名");
