@@ -17,7 +17,7 @@
 
 - Quick capture command from selection; clipboard support and explicit link/reference metadata.
 - Random review (implemented: filter-aware shuffle-to-top, theme-scoped highlight); saved filters, richer card typography and custom extra categories remain pending.
-- Undo operations and entry deletion with confirmation/Obsidian trash semantics.
+- Entry archiving with native confirmation and per-collection recoverable directory (implemented); single-item in-session Undo for Entry and Extra removal (implemented). Persistent undo/history remains pending.
 - Source provenance status: verified/unverified/personal rewrite; support multiple editions/translations.
 - List virtualization and persistent optional collection index (cache only, rebuildable).
 - Keyboard navigation, accessibility and multilingual UI.
@@ -57,3 +57,12 @@
 - **Responsive design:** CSS container queries handle narrow Obsidian side panes independently of viewport width; all selectors remain scoped.
 - **CI:** `npm run verify` runs 18 Markdown unit cases, official Obsidian API typecheck, esbuild, Vault smoke, and 4 jsdom DOM interaction cases. Mock UI checks do **not** claim actual desktop/mobile validation.
 - **Open P0:** manual/automated genuine-client acceptance; page-level keyboard navigation and focus recovery; confirmation/undo robustness; save failures and offline mobile keyboard scenarios.
+
+## 2026-10-23 — third v0.2 development iteration
+
+- **Recoverable Entry removal:** cards have a native `Modal` confirmation accessed from their existing action menu. The Vault file is moved byte-for-byte to `<collection-root>/Excerpts-Recycle/`, not permanently deleted. The most recent archive supports an in-session Undo; on conflict or path collision, the original and archive remain untouched for manual recovery.
+- **Recoverable Extra removal:** individual Extra deletions now offer a single-step in-session Undo, preserving the item and its previous position; a newer edit blocks stale restoration.
+- **Data-safety gates:** identity, active collection scope, read-only state, stale snapshots, archive path integrity, and occupied restore destinations are checked. `Vault.read` and `Vault.rename` are used for archive operations.
+- **Test additions:** mock-Vault archive/restore conflict scenarios and DOM tests for modal confirm/cancel, archive/Undo, occupied restore and Extra Undo. The official desktop and mobile clients are still **unverified**.
+- **Limits:** Undo tokens are session-local and are not persisted after restart. The archived Markdown remains available; external Sync/Git race conditions require additional client testing.
+- **Remaining priority:** mobile-friendly focus/keyboard behavior, recoverable unsaved edit drafts after app restart, real-client tests, and structured Source/Variant metadata.
