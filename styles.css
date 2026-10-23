@@ -209,9 +209,9 @@
 .excerpts-root .ex-tag-editor {
   display: flex; flex: 0 1 auto; flex-direction: column; align-items: stretch;
   gap: var(--ex-space-2); width: 100%; min-width: 0;
-  padding: var(--ex-space-3); margin-top: var(--ex-space-4);
-  background: var(--background-primary); border: 1px solid var(--ex-border);
-  border-radius: var(--radius-m, 8px);
+  padding: var(--ex-space-3) 0 0; margin-top: var(--ex-space-4);
+  background: transparent; border: 0; border-top: 1px solid var(--ex-border);
+  border-radius: 0;
 }
 .excerpts-root .ex-tag-custom { flex: 0 1 auto; width: 100%; height: 44px; min-height: 44px; align-self: stretch; }
 .excerpts-root button.ex-tag-option { min-height: 30px; padding: 5px 9px; border-radius: 999px; background: var(--background-secondary); font-size: 12px; }
