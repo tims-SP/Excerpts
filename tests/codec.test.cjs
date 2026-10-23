@@ -106,7 +106,7 @@ test('non-round-trippable quote whitespace is read-only',()=>{
   const original=serializeEntry(example());
   for (const raw of [
     original.replace('> 有些话','>  有些话'),
-    original.replace('> 有些话','> 有些话  '),
+    original.replace('> 只有沉默以后才听得见。','> 只有沉默以后才听得见。  '),
     original.replace('\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'),
       '\\n\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'))
   ]) {
