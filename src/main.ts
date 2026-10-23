@@ -99,9 +99,12 @@ export default class ExcerptsPlugin extends Plugin {
     // A new tab keeps the .excerpts homepage, its filters and scroll position intact.
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.openFile(file);
-    const view = leaf.view;
-    if (view instanceof MarkdownView) await view.setMode("source");
+    // Switch the leaf's view state rather than calling an unsupported MarkdownView setter.
+    if (leaf.view instanceof MarkdownView && leaf.view.getMode() !== "source") {
+      await leaf.setViewState({ type: "markdown", state: { file: path, mode: "source" } });
+    }
     await this.app.workspace.revealLeaf(leaf);
+    const view = leaf.view;
     if (view instanceof MarkdownView) {
       if (line !== undefined) {
         const cursor = { line, ch: 0 };

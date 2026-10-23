@@ -64,7 +64,7 @@ declare module "obsidian" {
   }
   export class MarkdownView extends FileView {
     editor: Editor;
-    setMode(mode: "source" | "preview"): Promise<void>;
+    getMode(): "source" | "preview";
   }
   export class MarkdownRenderer {
     static render(app: App, markdown: string, target: HTMLElement, sourcePath: string, child: Component): Promise<void>;

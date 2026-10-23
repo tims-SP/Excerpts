@@ -13,7 +13,7 @@ class TFile extends TAbstractFile {constructor(path){super(path);const leaf=path
 class TFolder extends TAbstractFile{}
 class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}load(){this.onload?.();}unload(){this.onunload?.();}}
 class FileView {constructor(){this.contentEl=document.createElement('div');this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
-class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}async setMode(mode){this.mode=mode;}}
+class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}getMode(){return this.mode;}}
 class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(){}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
 class PluginSettingTab {constructor(){}}
 class Setting {}
@@ -39,7 +39,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
     async cachedRead(file){return files.get(file.path).data;},
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
-  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();},async setViewState(){}};
+  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();},async setViewState(state){this.state=state;if(this.view)this.view.mode=state.state.mode;}};
   plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:noTags?[]:['哲学']}};},on(){return {};}}
     ,fileManager:{async processFrontMatter(f,fn){fn({tags:['哲学']});}},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
   await plugin.onload();
