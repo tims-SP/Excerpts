@@ -339,6 +339,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const token = ++this.renderToken;
     this.observer?.disconnect(); this.observer = null;
     this.queue = [];
+    const editingCard = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card.ex-is-editing"))
+      .find(card => card.dataset.path === this.editor?.path) ?? null;
     this.unmountMarkdown();
     this.listEl.replaceChildren();
     const visible = this.visibleItems();
@@ -367,8 +369,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }, { rootMargin: "350px 0px" });
     }
     for (const item of visible.slice(0, this.pageSize)) {
-      const card = this.createCard(item);
+      const existing = editingCard?.dataset.path === item.path ? editingCard : null;
+      const card = existing ?? this.createCard(item);
       this.listEl.append(card);
+      if (existing) continue;
       if (this.observer) this.observer.observe(card);
       else this.enqueue(() => this.hydrate(item, card, token));
     }
@@ -456,6 +460,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
   }
   private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
+    const retained = this.markdownChildren.get(item.path) ?? [];
+    for (const child of retained) if (mount.contains(child.containerEl)) this.removeChild(child);
+    this.markdownChildren.set(item.path, retained.filter(child => !mount.contains(child.containerEl)));
     mount.replaceChildren();
     if (!parsed.sections.length) return;
     const selected = this.sectionsShown.get(item.path) ?? new Set<string>();
@@ -465,7 +472,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const chip = button(section.name, () => {
         if (active) selected.delete(section.id); else selected.add(section.id);
         this.sectionsShown.set(item.path, selected);
-        this.redrawCard(item, mount.closest<HTMLElement>(".ex-card")!);
+        this.renderSections(mount, item, parsed);
       }, "ex-group-trigger" + (active ? " ex-selected" : ""));
       chip.setAttribute("aria-expanded", String(active));
       const chevron = node("span", "ex-chevron");
@@ -476,7 +483,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     mount.append(summary);
     for (const section of parsed.sections.filter(value => selected.has(value.id) && value.markdown)) {
       const region = node("section", "ex-group-body");
-      region.append(node("h4", "ex-group-title", section.name));
       this.renderMarkdown(region, section.markdown, item.path);
       mount.append(region);
     }
@@ -525,9 +531,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       focus: "body"
     };
     this.renderInlineEditor(card, item);
+    this.preserveEditDraft();
   }
   private finishEdit(item: CardIndex, card: HTMLElement): void {
     this.editor = null;
+    this.plugin.setDraft(this.editingDraftKey(), null);
     card.classList.remove("ex-is-editing");
     this.redrawCard(item, card);
   }
@@ -548,7 +556,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     textArea.rows = 4;
     const fit = () => {
       textArea.style.height = "auto";
-      textArea.style.height = Math.max(104, Math.min(520, textArea.scrollHeight || 104)) + "px";
+      textArea.style.height = Math.max(96, Math.min(268, textArea.scrollHeight || 96)) + "px";
     };
     const status = node("span", "ex-editor-status", "未修改");
     status.setAttribute("role", "status");
@@ -557,7 +565,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       session.body = textArea.value;
       session.focus = "body";
       session.caret = [textArea.selectionStart, textArea.selectionEnd];
-      fit(); updateStatus();
+      fit(); updateStatus(); this.preserveEditDraft();
     });
     textArea.addEventListener("keydown", event => {
       if (event.isComposing || event.keyCode === 229) return;
@@ -565,17 +573,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         event.preventDefault(); saveButton.click();
       }
     });
-    const caption = node("div", "ex-editor-label", "标签");
     let tagToggle: HTMLButtonElement;
     const picker: TagPicker = createTagPicker(session.tags, () => this.items.flatMap(x => x.tags),
-      () => { session.tags = picker.getTags(); updateStatus(); },
+      () => { session.tags = picker.getTags(); updateStatus(); this.preserveEditDraft(); },
       open => tagToggle?.setAttribute("aria-expanded", String(open)),
       () => tagToggle);
     tagToggle = button("＋ 添加标签", () => picker.setExpanded(!picker.isExpanded()), "ex-tag-add");
     tagToggle.setAttribute("aria-expanded", "false");
+    picker.triggerSlot.append(tagToggle);
     if (item.inlineTags.length) {
       const note = node("div", "ex-tag-hint", "正文中的行内标签请直接修改 Markdown 文本");
-      caption.append(note);
+      picker.element.append(note);
     }
     const actions = node("div", "ex-edit-actions");
     const cancel = button("取消", () => {
@@ -603,6 +611,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           session.tags, session.initialTags);
         if (this.editor === session) {
           this.editor = null;
+          this.plugin.setDraft(this.editingDraftKey(), null);
           item.propertyTags = [...session.tags];
           item.tags = [...new Set([...session.tags, ...item.inlineTags])];
           this.sectionsShown.delete(item.path);
@@ -621,8 +630,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     };
     actions.append(status, cancel, saveButton);
-    edit.append(node("div", "ex-editor-label", "Markdown 正文"), textArea,
-      caption, tagToggle, picker.element, actions);
+    edit.append(textArea, picker.element, actions);
     body.append(edit);
     updateStatus();
     fit();
