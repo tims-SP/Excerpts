@@ -36,15 +36,15 @@ with sync_playwright() as p:
             page.screenshot(path=str(root / "artifacts" / f"excerpts-v3-home-{mode}-{width}.png"), full_page=True)
             trigger = page.locator(".ex-card .ex-group-trigger").first
             trigger.click()
-            assert page.locator(".ex-card .ex-group-body").count() >= 1
+            page.locator(".ex-card .ex-group-body").first.wait_for(state="visible")
             page.screenshot(path=str(root / "artifacts" / f"excerpts-v3-h2-{mode}-{width}.png"), full_page=True)
             page.locator('.ex-card button[aria-label="编辑摘录"]').first.click()
             editor = page.locator(".ex-entry-editor").first
-            assert editor.count() == 1
+            editor.wait_for(state="visible")
             assert editor.locator(".ex-editor-text").count() == 1
             assert editor.locator(".ex-tag-picker").is_hidden()
             editor.get_by_text("＋ 添加标签").click()
-            assert not editor.locator(".ex-tag-picker").is_hidden()
+            editor.locator(".ex-tag-picker").wait_for(state="visible")
             page.screenshot(path=str(root / "artifacts" / f"excerpts-v3-editor-{mode}-{width}.png"), full_page=True)
             print("OK", mode, width, metrics)
             page.close()
