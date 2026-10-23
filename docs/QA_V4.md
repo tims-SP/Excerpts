@@ -31,3 +31,10 @@
 - The mock MarkdownRenderer demonstrates API calls and file-relative source paths but does **not certify real-world media and embed playback**; real Obsidian must check images, videos, footnotes, cross-section links and other plugins' embeds.
 - Automated screenshot assertions cover geometry and key component states. Human visual review was performed on generated mock screenshots; they are not pixel-diff golden images against an original client screenshot.
 - No changes were merged into main by this development PR.
+
+## beta.12 — Card action overlap regression
+
+- Editor actions must be normal-flow, not sticky, in narrow mobile clients. Save/Cancel appear after Markdown and tags and cannot cover either.
+- Each card uses a vertical layout: body, tags, H2 groups, then a wrapping footer. Card action icons stay in the footer and never intrude into Markdown reading width.
+- Chromium geometry assertions inspect actual DOM rectangles for the card, text, sections, footer, action buttons, and edit textarea; in addition to 320/390/768/1280px checks, exercise 240/280px with long CJK text, media placeholders, and a scrolled long Markdown editor.
+- Browser mocks cannot certify physical mobile keyboards, real embeds, and third-party CSS. Those remain real-client QA items.
