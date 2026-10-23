@@ -45,9 +45,12 @@ export function makeId(prefix: string): string {
 }
 /** Never accept paths outside the vault or within the application's private config. */
 export function validateRelativePath(input: string, allowSlash = false): string {
-  const path = input.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const path = input.trim().replace(/\\/g, "/");
+  if (path.startsWith("/")) throw new Error("必须使用 Vault 内的相对路径");
   if (!path && !allowSlash) throw new Error("路径不能为空");
-  if (path.includes("\0") || path.split("/").some(s => !s || s === "." || s === "..")) throw new Error("路径包含不允许的片段");
+  if (/[\x00-\x1f<>:"|?*]/.test(path) || path.split("/").some(s =>
+    !s || s === "." || s === ".." || /[. ]$/.test(s) || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(s)
+  )) throw new Error("路径包含不允许的片段");
   if (path === ".obsidian" || path.startsWith(".obsidian/")) throw new Error("不能写入 Obsidian 配置目录");
   return path;
 }
