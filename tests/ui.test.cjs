@@ -160,6 +160,8 @@ test('quote draft survives refresh but Cancel discards it without writing', asyn
     await f.renderer.reload();
     assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '尚未提交的草稿');
     click(f.container.querySelector('.ex-edit-panel'), '取消');
+    assert.equal(Modal.last.isOpen, true, 'Unsaved edits require explicit discard');
+    click(Modal.last.contentEl, '放弃更改');
     click(f.container, '编辑');
     assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '原始正文');
     assert.equal(f.files.get(entry.path).data, before);
@@ -335,6 +337,7 @@ test('archiving is blocked while an unsaved quote draft exists', async () => {
     assert.equal(f.renderer.lastTrash, null);
     assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '未保存的正文');
     click(f.container.querySelector('.ex-edit-panel'), '取消');
+    click(Modal.last.contentEl, '放弃更改');
     click(f.container, '更多');
     Menu.last.items.find(item => item.title === '移至回收站').action();
     assert.equal(Modal.last.isOpen, true);
@@ -371,7 +374,8 @@ test('capture draft survives renderer restart and resolves only after a successf
     await reopenRenderer(f);
     click(f.container, '恢复未保存输入');
     assert.equal(f.container.querySelector('.ex-compose-text').value, '重启后恢复的摘录');
-    assert.equal(f.container.querySelector('.ex-tags-input').value, '恢复, 草稿');
+    assert.equal(f.container.querySelector('.ex-tags-input').value, '');
+    assert.deepEqual([...f.container.querySelectorAll('.ex-composer .ex-tag-chip span:first-child')].map(x => x.textContent), ['#恢复', '#草稿']);
     click(f.container, '保存');
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.equal((await f.repo.list(f.workspace)).length, 1);
@@ -517,6 +521,7 @@ test('composer focus and Escape close optional inputs with accessible focus', as
     assert.equal(tagsToggle.getAttribute('aria-controls'), tags.id);
     tags.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(tags.hidden, true);
+    assert.equal(document.activeElement, tagsToggle, 'Escape restores focus to visible capture toggle');
     const searchToggle = click(f.container, '搜索');
     const input = f.container.querySelector('.ex-search-wrap input');
     assert.equal(searchToggle.getAttribute('aria-controls'), input.parentElement.id);
@@ -676,6 +681,7 @@ test('IME composition does not submit entry or extra editors', async () => {
     await new Promise(r => setImmediate(r));
     assert.equal((await f.repo.list(f.workspace))[0].text, '原文');
     click(f.container, '取消');
+    click(Modal.last.contentEl, '放弃更改');
     click(f.container, '添加内容');
     Menu.last.items.find(i => i.title === '变种').action();
     const extra = f.container.querySelector('.ex-extra-editor textarea');
@@ -700,5 +706,112 @@ test('editing field retains focus and caret through list refresh', async () => {
     assert.equal(document.activeElement, restored);
     assert.equal(restored.selectionStart, 3);
     assert.equal(restored.selectionEnd, 8);
+  } finally { await f.close(); }
+});
+
+test('tag picker stays collapsed until Add and supports repeated suggestions, custom chips and single-save', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.create(f.workspace, '标签样本', ['哲学', '文学']);
+    const target = await f.repo.create(f.workspace, '编辑目标', ['文学']);
+    await f.renderer.reload();
+    const card = [...f.container.querySelectorAll('.ex-card')].find(x => x.dataset.entryId === target.id);
+    click(card, '编辑');
+    const editor = [...f.container.querySelectorAll('.ex-card')].find(x => x.dataset.entryId === target.id).querySelector('.ex-entry-editor');
+    assert.equal(editor.querySelector('.ex-tag-entry').hidden, true, 'Suggestions stay closed by default');
+    assert.equal(editor.closest('.ex-card').querySelector('.ex-chips'), null, 'Reading-only duplicate tags must be hidden in editing');
+    click(editor, '添加标签');
+    assert.equal(editor.querySelector('.ex-tag-entry').hidden, false);
+    click(editor, '添加已有标签：哲学');
+    assert.equal(editor.querySelector('.ex-tag-entry').hidden, false, 'Allow sequential additions');
+    assert.deepEqual([...editor.querySelectorAll('.ex-tag-chip span:first-child')].map(x => x.textContent), ['#文学', '#哲学']);
+    type(editor.querySelector('.ex-tag-entry input'), '创作');
+    editor.querySelector('.ex-tag-entry input').dispatchEvent(new window.KeyboardEvent('keydown',
+      { key: 'Enter', bubbles: true, cancelable: true }));
+    assert.ok([...editor.querySelectorAll('.ex-tag-chip')].some(x => x.textContent.includes('#创作')));
+    click(editor, '移除标签：文学');
+    click(editor, '完成');
+    assert.equal(editor.querySelector('.ex-tag-entry').hidden, true);
+    assert.match(editor.querySelector('.ex-editor-status').textContent, /未保存/);
+    click(editor, '保存修改');
+    await new Promise(resolve => setImmediate(resolve));
+    const saved = (await f.repo.list(f.workspace)).find(x => x.id === target.id);
+    assert.deepEqual(saved.tags, ['哲学', '创作']);
+    assert.equal(saved.text, '编辑目标');
+    assert.equal(f.container.querySelector('.ex-entry-editor'), null);
+  } finally { await f.close(); }
+});
+
+test('capture tag chips are submitted only with the excerpt and recoverable after picker closes', async () => {
+  const f = await fixture();
+  try {
+    const form = f.container.querySelector('.ex-composer');
+    const input = form.querySelector('.ex-tags-input');
+    type(form.querySelector('.ex-compose-text'), '带标签的新摘录');
+    click(form, '添加标签');
+    type(input, '阅读');
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert.equal((await f.repo.list(f.workspace)).length, 0, 'Tag operations must not write an Entry');
+    click(form, '完成');
+    assert.equal(input.hidden, true);
+    assert.ok(form.querySelector('.ex-tag-chip').textContent.includes('#阅读'));
+    click(form, '保存');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual((await f.repo.list(f.workspace))[0].tags, ['阅读']);
+  } finally { await f.close(); }
+});
+
+test('IME selection cannot commit or save tags while composing', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.create(f.workspace, '正文');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    const editor = f.container.querySelector('.ex-entry-editor');
+    click(editor, '添加标签');
+    const input = editor.querySelector('.ex-tags-input');
+    type(input, '中文');
+    input.dispatchEvent(new window.CompositionEvent('compositionstart', { bubbles: true }));
+    input.dispatchEvent(new window.KeyboardEvent('keydown',
+      { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true, cancelable: true }));
+    assert.equal(editor.querySelectorAll('.ex-tag-chip').length, 0);
+    assert.equal((await f.repo.list(f.workspace))[0].tags.length, 0);
+    input.dispatchEvent(new window.CompositionEvent('compositionend', { bubbles: true }));
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert.equal(editor.querySelectorAll('.ex-tag-chip').length, 1);
+    assert.equal((await f.repo.list(f.workspace))[0].tags.length, 0);
+  } finally { await f.close(); }
+});
+
+test('opening another card does not silently discard a dirty editor', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.repo.create(f.workspace, '第一条');
+    const b = await f.repo.create(f.workspace, '第二条');
+    await f.renderer.reload();
+    const cards = [...f.container.querySelectorAll('.ex-card')];
+    const active = cards.find(x => x.dataset.entryId === b.id);
+    click(active, '编辑');
+    type(f.container.querySelector('.ex-entry-editor textarea'), '第二条未保存');
+    const other = [...f.container.querySelectorAll('.ex-card')].find(x => x.dataset.entryId === a.id);
+    click(other, '编辑');
+    assert.equal(f.container.querySelector('.ex-entry-editor textarea').value, '第二条未保存');
+    assert.match(Notice.last, /先保存或取消/);
+  } finally { await f.close(); }
+});
+
+test('search text alone never becomes a saved tag without explicit selection', async () => {
+  const f = await fixture();
+  try {
+    const target = await f.repo.create(f.workspace, '阅读');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    const editor = f.container.querySelector('.ex-entry-editor');
+    click(editor, '添加标签');
+    type(editor.querySelector('.ex-tags-input'), '只是搜索');
+    assert.equal(editor.querySelectorAll('.ex-tag-chip').length, 0);
+    click(editor, '保存修改');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual((await f.repo.list(f.workspace)).find(x => x.id === target.id).tags, []);
   } finally { await f.close(); }
 });
