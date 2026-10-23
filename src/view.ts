@@ -567,6 +567,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const editor = card?.querySelector<HTMLElement>(".ex-tag-editor");
     mount.classList.toggle("ex-tags-empty", !item.tags.length);
     mount.classList.toggle("ex-tags-editing", editorOpen);
+    mount.classList.toggle("ex-tags-expanded", !editorOpen && this.expandedTagRows.has(item.path));
     for (const tag of item.tags) {
       const pill = button("#" + tag + (editorOpen ? " ×" : ""), () => {
         if (editorOpen) void this.changeTag(item, tag, false).catch(notify);
@@ -591,6 +592,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.renderTags(mount, item, false);
       });
       mount.append(remaining);
+    }
+    if (!editorOpen && this.expandedTagRows.has(item.path)) {
+      const collapse = button("收起", () => {
+        this.expandedTagRows.delete(item.path);
+        this.renderTags(mount, item, false);
+      }, "ex-tag-collapse");
+      collapse.setAttribute("aria-label", "收起标签");
+      mount.append(collapse);
     }
     const toggle = button(item.tags.length ? "+" : "＋ 标签", () => {
       const opened = !this.openTagEditors.has(item.path);
