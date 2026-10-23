@@ -1,57 +1,56 @@
-const {test}=require('node:test');const assert=require('node:assert/strict');
-const {readFileSync}=require('node:fs');const css=readFileSync(require('node:path').join(__dirname,'../styles.css'),'utf8');
-test('beta.6 compact compose, timeline and native content',()=>{
-  for(const selector of ['.ex-composer','.ex-compose-actions','.ex-toolbar','.ex-toolbar-actions','.ex-card','.ex-quote','.ex-chips','.ex-extras','.ex-card-footer','.ex-search-wrap'])
-    assert.ok(css.includes('.excerpts-root '+selector),selector);
-  assert.match(css,/--background-secondary/);
-  assert.match(css,/\.excerpts-root \.ex-card :is\(img, video/);
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const {readFileSync}=require('node:fs');
+const css=readFileSync(require('node:path').join(__dirname,'../styles.css'),'utf8');
+
+test('editorial timeline uses a date rail and a responsive single-column fallback',()=>{
+  for(const cls of ['.ex-card-list','.ex-day-group','.ex-day-rail','.ex-day-title','.ex-day-cards','.ex-card','.ex-toolbar','.ex-composer'])
+    assert.ok(css.includes('.excerpts-root '+cls),cls);
+  assert.match(css,/grid-template-columns:\s*88px minmax\(0,\s*1fr\)/);
+  assert.match(css,/@container \(max-width: 700px\)/);
+  assert.match(css,/max-width:\s*720px/);
   assert.doesNotMatch(css,/(?:^|\n)\s*(?:body|html|\.workspace|\.markdown-preview-view)\s*\{/);
 });
-test('mobile touch, collapsed filters and card layout are scoped',()=>{
-  assert.match(css,/@container \(max-width: 480px\)/);
-  assert.match(css,/@media \(pointer: coarse\)/);
-  assert.match(css,/min-height: 44px/);
-  assert.match(css,/\.excerpts-root \.ex-search-wrap\[hidden\]/);
-});
 
-test('card options and tag components have scoped styles without an inline editor',()=>{
-  for(const name of ['.ex-card-options','.ex-tag-editor','.ex-tag-custom','.ex-tag-option','.ex-group-body','.ex-warning'])
-    assert.ok(css.includes('.excerpts-root '+name),'missing '+name);
-  for(const name of ['.ex-entry-editor','.ex-editor-text','.ex-edit-actions','.ex-card.ex-editing'])
-    assert.ok(!css.includes(name),'obsolete '+name);
-  assert.ok(css.includes('max-width: 720px'));
-});
-
-test('regression: expanded tag input never inherits vertical 100-percent flex basis',()=>{
-  assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+1\s+auto;/);
-  assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*height:\s*44px;/);
-  assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+0\s+100%/);
-  assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags > \.ex-chips\s*\{[^}]*display:\s*none/);
-  assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags \.ex-footer-tag\s*\{[^}]*display:\s*inline-flex/);
-
-});
-
-test('tag custom input cannot consume entire column height',()=>{
-  assert.match(css,/\.ex-tag-custom\s*\{[^}]*flex:\s*0 1 auto;/);
-  assert.doesNotMatch(css,/\.ex-tag-custom\s*\{\s*flex:\s*0 0 100%/);
-});
-
-test('tag editor input does not use 100 percent flex basis in column layout',()=>{
-  assert.match(css,/\.excerpts-root \.ex-tag-custom \{ flex: 0 1 auto; width: 100%;/);
-  assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom \{ flex: 0 0 100%; \}/);
-});
-
-test('single-surface textarea removes rounded inner frames and relies on CSS max-height',()=>{
+test('composer remains a single-surface textarea with theme-native focus and restrained dimensions',()=>{
   assert.match(css,/\.ex-composer textarea\.ex-compose-text/);
   assert.match(css,/border-radius:\s*0\s*!important/);
   assert.match(css,/background-image:\s*none\s*!important/);
   assert.match(css,/appearance:\s*none/);
   assert.match(css,/min-height:\s*3\.3em/);
   assert.match(css,/max-height:\s*min\(42vh,\s*340px\)/);
-  assert.doesNotMatch(css,/single-surface composer: suppress native textarea chrome across themes/);
+  assert.match(css,/--interactive-accent/);
 });
-test('tag chips and pickers have responsive gaps and no hidden selected row',()=>{
-  assert.match(css,/\.ex-capture-selected\[hidden\]/);
-  assert.match(css,/\.ex-capture-options\s*\{[^}]*flex-wrap:\s*wrap/);
-  assert.match(css,/\.ex-capture-tags\s*\{[^}]*flex-direction:\s*column/);
+
+test('card actions and micro-pill labels belong to a non-overlay footer',()=>{
+  for(const cls of ['.ex-card-footer','.ex-chips','.ex-tag','.ex-tag-label','.ex-tag-overflow','.ex-add-tag','.ex-card-options','.ex-tag-editor','.ex-tag-custom'])
+    assert.ok(css.includes('.excerpts-root '+cls),cls);
+  assert.match(css,/height:\s*22px/);
+  assert.match(css,/font-size:\s*11px/);
+  assert.match(css,/position:\s*static/);
+  assert.match(css,/\.ex-chips\.ex-tags-editing/);
+  assert.match(css,/\.ex-tag-custom\s*\{\s*flex:\s*0 1 auto;/);
+});
+
+test('H2 chapters are independent disclosure rows, not pill-shaped buttons',()=>{
+  for(const cls of ['.ex-extras','.ex-section','.ex-group-trigger','.ex-group-body','.ex-group-chevron','.ex-group-name'])
+    assert.ok(css.includes('.excerpts-root '+cls),cls);
+  assert.match(css,/\.ex-group-body\[hidden\]/);
+  assert.match(css,/border-left:\s*2px solid var\(--ex-border\)/);
+});
+
+test('rich Markdown is constrained without clipping the entire card',()=>{
+  assert.match(css,/\.ex-card img/);
+  assert.match(css,/\.ex-card video/);
+  assert.match(css,/\.ex-card :is\(pre,table\)/);
+  assert.match(css,/\.ex-content-clamped/);
+  assert.match(css,/\.ex-native-markdown/);
+  assert.doesNotMatch(css,/\.ex-card\s*\{[^}]*overflow:\s*hidden/);
+});
+
+test('mobile touch and reduced-motion checks are present',()=>{
+  assert.match(css,/@media \(pointer: coarse\)/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css,/min-height:\s*44px/);
+  assert.match(css,/\.ex-chips \.ex-btn\[hidden\]/);
 });
