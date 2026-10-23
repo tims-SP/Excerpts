@@ -562,6 +562,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     controls.append(cancel, save);
     editor.append(textarea, warning, controls);
     body.append(editor);
-    if (focus) textarea.focus();
+    if (focus) {
+      textarea.focus();
+      textarea.setSelectionRange(0, 0);
+      textarea.scrollTop = 0;
+    }
   }
 }
