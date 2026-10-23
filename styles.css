@@ -106,3 +106,18 @@
 @media (pointer: coarse) {
   .excerpts-root .ex-card .ex-footer-tag { min-width: 44px; min-height: 44px; }
 }
+
+/* Single-surface composer: suppress native textarea chrome across themes. */
+.excerpts-root .ex-composer .ex-compose-text,
+.excerpts-root .ex-composer .ex-compose-text:is(:hover,:focus,:focus-visible) {
+  display:block; box-sizing:border-box; width:100%; min-width:0;
+  margin:0; padding:0; border:0 !important; border-radius:0 !important;
+  outline:0 !important; box-shadow:none !important;
+  background:transparent !important; background-image:none !important;
+  appearance:none; -webkit-appearance:none;
+  color:var(--text-normal); -webkit-text-fill-color:var(--text-normal);
+  line-height:1.6; overflow-wrap:anywhere; resize:none;
+}
+.excerpts-root .ex-composer .ex-compose-text::placeholder { color:var(--text-muted); opacity:1; }
+.excerpts-root .ex-composer { overflow:visible; }
+.excerpts-root .ex-capture-tags .ex-tag-option.ex-selected { background:var(--background-modifier-hover); }
