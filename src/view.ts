@@ -51,7 +51,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private queue: Array<() => Promise<void>> = [];
   private reading = 0;
   private markdownChildren = new Map<string, MarkdownRenderChild[]>();
-  private sectionsShown = new Map<string, Set<string>>();
+  private sectionsShown = new Map<string, Set<number>>();
+  private editingDrafts = new Map<string, { original: string; value: string; saving: boolean }>();
+  private openTagEditors = new Set<string>();
+  private tagInputs = new Map<string, string>();
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
     private repo: EntryRepository) { super(container); }
@@ -146,7 +149,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.showSuggestions = () => {
       suggested.replaceChildren();
       const existing = new Set(tagsInput.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")));
-      const all = [...new Set(this.items.flatMap(item => item.tags))].sort((a, b) => a.localeCompare(b, "zh")).slice(0, 20);
+      const all = [...new Set(this.items.flatMap(item => item.tags))].sort((a, b) => a.localeCompare(b, "zh")).slice(0, 8);
       for (const tag of all) suggested.append(button((existing.has(tag) ? "✓ " : "＋ ") + "#" + tag, () => {
         if (existing.has(tag)) existing.delete(tag); else existing.add(tag);
         tagsInput.value = [...existing].filter(Boolean).join(", ");
@@ -277,6 +280,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.observer?.disconnect(); this.observer = null;
     this.queue = [];
     this.unmountMarkdown();
+    const activeTagInput = document.activeElement as HTMLElement | null;
+    const focusedTag = activeTagInput?.classList.contains("ex-tag-custom")
+      ? activeTagInput.closest<HTMLElement>(".ex-card")?.dataset.path : undefined;
     this.listEl.replaceChildren();
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
@@ -301,8 +307,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const item of visible.slice(0, this.pageSize)) {
       const card = this.createCard(item);
       this.listEl.append(card);
-      if (this.observer) this.observer.observe(card);
+      if (this.editingDrafts.has(item.path)) this.renderInlineEditor(card, item);
+      else if (this.observer) this.observer.observe(card);
       else this.enqueue(() => this.hydrate(item, card, token));
+    }
+    if (focusedTag) {
+      const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")].find(el => el.dataset.path === focusedTag);
+      card?.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
     }
     if (visible.length > this.pageSize) this.listEl.append(button(
       "继续显示（剩余 " + (visible.length - this.pageSize) + " 条）",
@@ -323,7 +334,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     card.dataset.path = item.path;
     card.append(node("div", "ex-quote ex-markdown", ""));
     const tags = node("div", "ex-chips");
-    this.renderTags(tags, item);
+    this.renderTags(tags, item, this.openTagEditors.has(item.path));
     card.append(tags);
     const groups = node("div", "ex-extras");
     card.append(groups);
@@ -334,15 +345,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     info.append(date);
     footer.append(info);
     const actions = node("div", "ex-card-actions");
-    actions.append(iconButton("pencil", "编辑 Markdown", () =>
-      void this.plugin.openMarkdown(item.path).catch(notify)));
+    actions.append(iconButton("pencil", "编辑摘录", () =>
+      void this.startInlineEdit(item, card).catch(notify)));
     footer.append(actions);
     card.append(footer);
     return card;
   }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
     const parsed = await this.repo.read(item.path);
-    if (this.disposed || token !== this.renderToken || !card.isConnected) return;
+    if (this.disposed || token !== this.renderToken || !card.isConnected || this.editingDrafts.has(item.path)) return;
     this.renderContent(card, item, parsed);
   }
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
@@ -351,7 +362,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // Keep the original H1 unobtrusive. The basename is never forced above the quote.
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
     if (parsed.body) this.renderMarkdown(body, parsed.body, item.path);
-    if (!parsed.body && !parsed.title) body.append(node("span", "ex-empty-card", "（空白摘录）"));
+    if (!parsed.body && !parsed.title && !parsed.sections.length) body.append(node("span", "ex-empty-card", "（空白摘录）"));
     this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
   }
   private renderMarkdown(container: HTMLElement, markdown: string, path: string): void {
@@ -368,25 +379,26 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     mount.replaceChildren();
     if (!parsed.sections.length) return;
-    const selected = this.sectionsShown.get(item.path) ?? new Set<string>();
+    const selected = this.sectionsShown.get(item.path) ?? new Set<number>();
     const summary = node("div", "ex-group-summary");
-    for (const section of parsed.sections) {
-      const active = selected.has(section.name);
+    parsed.sections.forEach((section, index) => {
+      const active = selected.has(index);
       const chip = button(section.name, () => {
-        if (active) selected.delete(section.name); else selected.add(section.name);
+        if (selected.has(index)) selected.delete(index); else selected.add(index);
         this.sectionsShown.set(item.path, selected);
         this.redrawCard(item, mount.closest<HTMLElement>(".ex-card")!);
       }, "ex-group-trigger" + (active ? " ex-selected" : ""));
       chip.setAttribute("aria-expanded", String(active));
       summary.append(chip);
-    }
+    });
     mount.append(summary);
-    for (const section of parsed.sections.filter(value => selected.has(value.name))) {
+    parsed.sections.forEach((section, index) => {
+      if (!selected.has(index)) return;
       const region = node("section", "ex-group-body");
       region.append(node("h4", "ex-group-title", section.name));
-      this.renderMarkdown(region, section.markdown, item.path);
+      if (section.markdown) this.renderMarkdown(region, section.markdown, item.path);
       mount.append(region);
-    }
+    });
   }
   private redrawCard(item: CardIndex, card: HTMLElement): void {
     this.unmountMarkdown(item.path);
