@@ -55,3 +55,11 @@ License: MIT (see LICENSE).
 - [Architecture and invariants](docs/ARCHITECTURE.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Restricted-environment build and testing](docs/BUILD-AND-TEST.md)
+
+### v0.2.0-beta.2 — Native collection pane
+
+- Opening the configured collection homepage now switches that leaf to an isolated Obsidian `ItemView` instead of rendering a full page underneath repeated Markdown/file titles.
+- The homepage Markdown file remains intact for fallback; old homepages do **not** need migration, and no entry data is changed.
+- The Settings option **打开首页时进入摘录视图** can disable automatic redirection to let you edit the homepage as plain Markdown. The **打开首页** button still opens the native collection pane.
+- Capture is compact; tags and search expand on demand. Recent entries and random review appear together.
+- The actual Obsidian status/nav/toolbars cannot be made to look exactly like ChatGPT's conceptual preview; this plugin inherits host chrome and the current Obsidian theme.

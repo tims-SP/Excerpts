@@ -113,3 +113,9 @@ v0.1.0 使用了部分 Obsidian 颜色变量，但标题、按钮和卡片层级
 - flomo 设计哲学: https://help.flomoapp.com/about-us/about-us/design-concept.html
 - Apple HIG design principles: https://developer.apple.com/design/human-interface-guidelines/design-principles/
 - Apple HIG layout: https://developer.apple.com/design/human-interface-guidelines/layout
+
+## Screenshot acceptance correction (v0.2.0-beta.2)
+
+User validation on Android revealed that our earlier visual screenshot was a concept rather than the actual Obsidian UI. In Reading mode, the host file title, the generated Markdown H1 and the rendered collection header produced three large headings. The old capture form, always-visible search field and empty tags consumed nearly the full first screen.
+
+Resolution: a configured home file may open a dedicated Obsidian ItemView in that leaf, bypassing the Markdown title layout. This behavior is scoped to the home paths for authorized collections and can be disabled in settings. Existing home files are not rewritten. The collection body uses a compact capture card, optional tag input, collapsible search and a minimal recent-items toolbar. Real Obsidian Android/iOS visual verification remains required; Chromium mocks are only confidence checks.

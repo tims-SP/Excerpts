@@ -6,11 +6,15 @@ class TAbstractFile { constructor(path) { this.path = path; } }
 class TFile extends TAbstractFile {}
 class TFolder extends TAbstractFile {}
 class MarkdownRenderChild { constructor(el) { this.containerEl = el; } onload() {} onunload() {} }
-class Plugin { async loadData() { return null; } async saveData(x) { this.saved=x; } addSettingTab(tab) { this.tab=tab; } registerEvent(e){} addCommand(c) { this.command=c; } registerMarkdownCodeBlockProcessor(k,fn){this.processor=fn;this.processorName=k;} }
+class ItemView {
+  constructor(leaf) { this.leaf=leaf; this.contentEl={empty(){},addClass(){},createEl(){},createDiv(){return {}}}; }
+  async setState(state) { this.state=state; }
+}
+class Plugin {registerView(type,factory){this.viewType=type;this.factory=factory;} async loadData() { return null; } async saveData(x) { this.saved=x; } addSettingTab(tab) { this.tab=tab; } registerEvent(e){} addCommand(c) { this.command=c; } registerMarkdownCodeBlockProcessor(k,fn){this.processor=fn;this.processorName=k;} }
 class PluginSettingTab { constructor(app,plugin){this.app=app;this.plugin=plugin;} }
 class Setting {}
 class Notice { constructor(message) { Notice.last=message; } }
-const replacement={TAbstractFile,TFile,TFolder,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice};
+const replacement={TAbstractFile,TFile,TFolder,ItemView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice};
 const oldLoad=Module._load;
 Module._load=function(req,parent,isMain){if(req==='obsidian')return replacement;return oldLoad.apply(this,arguments);};
 const entry=process.env.EXCERPTS_TEST_BUNDLE || path.resolve(__dirname,'../main.js');
@@ -34,10 +38,12 @@ async function test(){
     async process(f,callback){const holder=files.get(f.path);holder.data=callback(holder.data);return holder.data;},
     on(type,fn){events.set(type,fn);return {}},
   };
-  const app={vault,workspace:{getLeaf(){return {async openFile(file,opts){app.opened=file.path;app.mode=opts.state.mode;}}},revealLeaf(){}}};
+  const leaf={view:{getViewType:()=>"markdown"},async setViewState(state){this.state=state;}};
+  const app={vault,workspace:{activeLeaf:leaf,on(type,callback){events.set("ws:"+type,callback);return {};},onLayoutReady(callback){events.set("layout-ready",callback);},getActiveFile(){return null;},getLeaf(){return leaf;},revealLeaf(){}}};
   const plugin=new Excerpts();plugin.app=app;
   await plugin.onload();
   assert.equal(plugin.processorName,'excerpts');
+  assert.equal(plugin.viewType,'excerpts-collection');
   assert.equal(plugin.settings.workspaces.length,0);
   const ws=await plugin.createWorkspace('喜欢的句子','个人/收藏/句子');
   assert.equal(ws.rootFolder,'个人/收藏/句子');
@@ -47,6 +53,12 @@ async function test(){
   assert.ok(files.has('个人/收藏/句子/首页.md'));
   const home=files.get('个人/收藏/句子/首页.md').data;
   assert.ok(home.includes(`workspace: ${ws.id}`));
+  assert.ok(!home.startsWith('# '),'new home should not add a duplicate Markdown heading');
+  events.get('ws:file-open')(new TFile('普通笔记.md'));
+  assert.equal(leaf.state,undefined);
+  events.get('ws:file-open')(new TFile('个人/收藏/句子/首页.md'));
+  await new Promise(r=>setImmediate(r));
+  assert.equal(leaf.state.type,'excerpts-collection');
   await assert.rejects(()=>plugin.createWorkspace('冲突','个人/收藏/句子/内部'));
   // Custom codeblock is refused on every other file, including an identical block.
   let added=0, warning='';
