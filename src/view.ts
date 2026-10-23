@@ -34,6 +34,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private editing: string | null = null;
   private editingExtra: string | null = null;
   private lastTrash: TrashedEntry | null = null;
+  private lastExtraRemoval: { after: Entry; removed: Extra; index: number } | null = null;
+  private undoExtraButton: HTMLButtonElement | null = null;
   private undoButton: HTMLButtonElement | null = null;
   private deletionInFlight = false;
   private quoteDrafts = new Map<string, { text: string; tags: string }>();
@@ -73,6 +75,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     undoButton.hidden = true;
     this.undoButton = undoButton;
     actions.append(undoButton);
+    const undoExtraButton = button("撤销附属删除", () => void this.undoExtraRemoval(), "ex-btn-quiet");
+    undoExtraButton.hidden = true;
+    this.undoExtraButton = undoExtraButton;
+    actions.append(undoExtraButton);
     actions.append(button("随机回顾", () => this.recallRandom(), "ex-btn-quiet"));
     actions.append(button("刷新", () => void this.reload(), "ex-btn-quiet"));
     header.append(brand, actions); root.append(header);
@@ -269,12 +275,39 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       let confirm = false;
       const del = button("删除条目", () => {
         if (!confirm) { confirm = true; del.textContent = "确认删除"; return; }
-        void this.saveEdit(entry, previous => ({ ...previous, extras: previous.extras.filter(x => x.id !== original.id) }), () => { this.extraDrafts.delete(draftKey); this.editingExtra = null; });
+        void this.saveEdit(entry, previous => ({ ...previous, extras: previous.extras.filter(x => x.id !== original.id) }), saved => {
+          this.lastExtraRemoval = { after: saved, removed: original, index: entry.extras.findIndex(x => x.id === original.id) };
+          if (this.undoExtraButton) this.undoExtraButton.hidden = false;
+          this.extraDrafts.delete(draftKey);
+          this.editingExtra = null;
+        });
       }, "ex-btn-danger");
       actions.append(del);
     }
     pane.append(title, text, actions); target.append(pane);
   }
+  private async undoExtraRemoval(): Promise<void> {
+    const receipt = this.lastExtraRemoval;
+    const button = this.undoExtraButton;
+    if (!receipt || !button || button.disabled) return;
+    button.disabled = true;
+    try {
+      await this.repo.update(receipt.after, previous => {
+        if (previous.extras.some(x => x.id === receipt.removed.id)) {
+          throw new Error("附属条目已存在，拒绝重复恢复");
+        }
+        const extras = [...previous.extras];
+        extras.splice(receipt.index, 0, receipt.removed);
+        return { ...previous, extras };
+      });
+      this.lastExtraRemoval = null;
+      button.hidden = true;
+      await this.reload();
+      new Notice("附属内容已恢复");
+    } catch(e) { new Notice(`恢复失败：${errorMessage(e)}`); }
+    finally { button.disabled = false; }
+  }
+
   private confirmTrash(entry: Entry): void {
     if (entry.readOnly || this.deletionInFlight) return;
     const modal = new Modal(this.plugin.app);
@@ -294,6 +327,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       try {
         this.lastTrash = await this.repo.trash(this.workspace, entry);
         if (this.undoButton) this.undoButton.hidden = false;
+        if (this.lastExtraRemoval?.after.id === entry.id) {
+          this.lastExtraRemoval = null;
+          if (this.undoExtraButton) this.undoExtraButton.hidden = true;
+        }
         this.quoteDrafts.delete(entry.id);
         for (const key of this.extraDrafts.keys()) {
           if (key.startsWith(entry.id + ":")) this.extraDrafts.delete(key);
@@ -321,9 +358,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     finally { if (this.undoButton) this.undoButton.disabled = false; }
   }
 
-  private async saveEdit(entry: Entry, change: (previous: Entry) => Entry, onSuccess?: () => void): Promise<void> {
+  private async saveEdit(entry: Entry, change: (previous: Entry) => Entry, onSuccess?: (saved: Entry) => void): Promise<void> {
     if (entry.readOnly) { new Notice("文件结构有误，已禁止写入"); return; }
-    try { await this.repo.update(entry, change); onSuccess?.(); await this.reload(); }
+    try { const saved = await this.repo.update(entry, change); onSuccess?.(saved); await this.reload(); }
     catch(e) { new Notice(`修改失败：${errorMessage(e)}`); }
   }
 }
