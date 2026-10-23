@@ -1,4 +1,4 @@
-import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, setIcon } from "obsidian";
+import { MarkdownRenderChild, MarkdownRenderer, Menu, Modal, Notice, setIcon } from "obsidian";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
 import { CardIndex, ParsedMarkdown, Workspace } from "./model";
@@ -272,6 +272,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
   }
   private drawCards(): void {
+    if (this.editor) {
+      const active = document.activeElement as HTMLElement | null;
+      if (active?.classList.contains("ex-editor-text")) {
+        this.editor.focus = "body";
+        const textarea = active as HTMLTextAreaElement;
+        this.editor.caret = [textarea.selectionStart, textarea.selectionEnd];
+      } else if (active?.classList.contains("ex-tags-input") && active.closest(".ex-card")) {
+        this.editor.focus = "tags";
+      }
+    }
     const token = ++this.renderToken;
     this.observer?.disconnect(); this.observer = null;
     this.queue = [];
@@ -364,6 +374,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.renderContent(card, item, parsed);
   }
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
+    if (this.editor?.path === item.path) { this.renderInlineEditor(card, item); return; }
+    card.classList.remove("ex-is-editing");
+    this.renderTags(card.querySelector<HTMLElement>(".ex-chips")!, item);
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
     body.replaceChildren();
     // Keep the original H1 unobtrusive. The basename is never forced above the quote.
@@ -419,6 +432,129 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.tagFilter = this.tagFilter === tag ? "" : tag;
       this.renderTagsFilter(); this.drawCards();
     }, "ex-tag"));
+  }
+  private editorDirty(): boolean {
+    const session = this.editor;
+    return !!session && (session.body !== this.repo.editorBody(session.raw) ||
+      JSON.stringify(session.tags) !== JSON.stringify(session.initialTags));
+  }
+  private async startEdit(item: CardIndex, card: HTMLElement): Promise<void> {
+    if (this.editor?.path === item.path) {
+      card.querySelector<HTMLTextAreaElement>(".ex-editor-text")?.focus();
+      return;
+    }
+    if (this.editor && this.editorDirty()) {
+      new Notice("请先保存或取消当前摘录的修改");
+      return;
+    }
+    const raw = await this.repo.readSource(item.path);
+    if (this.disposed || !card.isConnected) return;
+    this.editor = {
+      path: item.path, raw, body: this.repo.editorBody(raw),
+      tags: [...item.propertyTags], initialTags: [...item.propertyTags], saving: false,
+      focus: "body"
+    };
+    this.renderInlineEditor(card, item);
+  }
+  private finishEdit(item: CardIndex, card: HTMLElement): void {
+    this.editor = null;
+    card.classList.remove("ex-is-editing");
+    this.redrawCard(item, card);
+  }
+  private renderInlineEditor(card: HTMLElement, item: CardIndex): void {
+    const session = this.editor;
+    if (!session || session.path !== item.path) return;
+    this.unmountMarkdown(item.path);
+    card.classList.add("ex-is-editing");
+    const body = card.querySelector<HTMLElement>(".ex-quote")!;
+    body.replaceChildren();
+    const edit = node("div", "ex-entry-editor");
+    edit.setAttribute("role", "group");
+    edit.setAttribute("aria-label", "卡片内编辑摘录");
+    const textArea = node("textarea", "ex-editor-text");
+    textArea.value = session.body;
+    textArea.setAttribute("aria-label", "Markdown 正文");
+    textArea.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+    textArea.rows = 4;
+    const fit = () => {
+      textArea.style.height = "auto";
+      textArea.style.height = Math.max(104, Math.min(520, textArea.scrollHeight || 104)) + "px";
+    };
+    const status = node("span", "ex-editor-status", "未修改");
+    status.setAttribute("role", "status");
+    const updateStatus = () => { status.textContent = this.editorDirty() ? "未保存" : "未修改"; };
+    textArea.addEventListener("input", () => {
+      session.body = textArea.value;
+      session.focus = "body";
+      session.caret = [textArea.selectionStart, textArea.selectionEnd];
+      fit(); updateStatus();
+    });
+    textArea.addEventListener("keydown", event => {
+      if (event.isComposing || event.keyCode === 229) return;
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault(); saveButton.click();
+      }
+    });
+    const caption = node("div", "ex-editor-label", "标签");
+    let tagToggle: HTMLButtonElement;
+    const picker: TagPicker = createTagPicker(session.tags, () => this.items.flatMap(x => x.tags),
+      () => { session.tags = picker.getTags(); updateStatus(); },
+      open => tagToggle?.setAttribute("aria-expanded", String(open)),
+      () => tagToggle);
+    tagToggle = button("＋ 添加标签", () => picker.setExpanded(!picker.isExpanded()), "ex-tag-add");
+    tagToggle.setAttribute("aria-expanded", "false");
+    if (item.inlineTags.length) {
+      const note = node("div", "ex-tag-hint", "正文中的行内标签请直接修改 Markdown 文本");
+      caption.append(note);
+    }
+    const actions = node("div", "ex-edit-actions");
+    const cancel = button("取消", () => {
+      if (!this.editorDirty()) { this.finishEdit(item, card); return; }
+      const modal = new Modal(this.plugin.app);
+      modal.contentEl.empty();
+      modal.contentEl.append(node("h3", "", "放弃未保存的修改？"));
+      modal.contentEl.append(node("p", "", "正文和标签的更改将被丢弃。"));
+      const row = node("div", "ex-modal-actions");
+      row.append(button("继续编辑", () => modal.close(), "ex-btn-quiet"));
+      row.append(button("放弃更改", () => { modal.close(); this.finishEdit(item, card); }, "ex-btn-danger"));
+      modal.contentEl.append(row);
+      modal.open();
+    }, "ex-btn-quiet");
+    const saveButton = button("保存修改", () => void save(), "ex-btn-primary mod-cta");
+    const save = async () => {
+      if (session.saving || this.editor !== session) return;
+      if (!session.body.trim()) { new Notice("正文不能为空"); return; }
+      session.saving = true;
+      textArea.disabled = true; picker.setDisabled(true); tagToggle.disabled = true;
+      saveButton.disabled = true; cancel.disabled = true; saveButton.textContent = "保存中…";
+      status.textContent = "保存中";
+      try {
+        await this.repo.saveMarkdown(item.path, session.raw, session.body,
+          session.tags, session.initialTags);
+        if (this.editor === session) this.editor = null;
+        await this.reload();
+      } catch (error) {
+        status.textContent = "保存失败，修改仍在编辑器中";
+        notify(error);
+      } finally {
+        session.saving = false;
+        textArea.disabled = false; picker.setDisabled(false); tagToggle.disabled = false;
+        saveButton.disabled = false; cancel.disabled = false; saveButton.textContent = "保存修改";
+      }
+    };
+    actions.append(status, cancel, saveButton);
+    edit.append(node("div", "ex-editor-label", "Markdown 正文"), textArea,
+      caption, tagToggle, picker.element, actions);
+    body.append(edit);
+    updateStatus();
+    fit();
+    if (session.focus === "body") {
+      textArea.focus();
+      if (session.caret) textArea.setSelectionRange(session.caret[0], session.caret[1]);
+    } else if (session.focus === "tags") {
+      picker.setExpanded(true);
+      session.focus = undefined;
+    }
   }
   private async toggleFavorite(item: CardIndex): Promise<void> {
     await this.repo.setFavorite(item.path, !item.favorite);
