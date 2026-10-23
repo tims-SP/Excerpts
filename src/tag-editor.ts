@@ -98,19 +98,22 @@ export function createTagPicker(
     if (open) { render(); input.focus(); }
   };
   input.addEventListener("compositionstart", () => { composing = true; });
+  const commitDelimited = () => {
+    if (/[,，]/.test(input.value)) {
+      const parts = input.value.split(/[,，]/);
+      const remainder = parts.pop() ?? "";
+      for (const part of parts) add(part);
+      input.value = remainder;
+    }
+    render();
+  };
   input.addEventListener("compositionend", () => {
     composing = false;
-    if (/[,，]/.test(input.value)) add(input.value.split(/[,，]/)[0]);
-    else render();
+    commitDelimited();
   });
   input.addEventListener("input", () => {
     if (composing) return;
-    if (/[,，]/.test(input.value)) {
-      const parts = input.value.split(/[,，]/);
-      for (const part of parts.slice(0, -1)) add(part);
-      input.value = parts[parts.length - 1] ?? "";
-    }
-    render();
+    commitDelimited();
   });
   input.addEventListener("keydown", event => {
     if (composing || event.isComposing || event.keyCode === 229) return;
