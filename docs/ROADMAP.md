@@ -44,6 +44,16 @@
 - **P0 fixed:** repository update compares the originally loaded data snapshot with the current Vault.process content; silent overwrite of newer content is refused even without a frontmatter timestamp change.
 - **P0 fixed:** quote/extra edit drafts are retained in memory across card rerenders and explicitly discarded on Cancel or successful Save. Drafts are **not** crash-recovery persisted.
 - **v0.2 first feature:** random revisit respects current search/tag filters and surfaces the chosen card first. No Markdown write occurs during review.
-- **Tests:** Markdown data suite expanded from 7 to 15 tests, with mock-Vault smoke scenarios for stale writes, malformed records, path collisions and false homepage authorization.
-- **Still required:** authenticated end-to-end tests in actual Obsidian desktop/mobile, browser interactive regression tests checked into CI, 1k/10k performance fixtures, and reliable crash-recovery drafts.
+- **Tests:** Markdown data suite expanded from 7 to 18 tests, with mock-Vault smoke scenarios for stale writes, malformed records, path collisions and false homepage authorization. Four jsdom UI interaction tests run in CI.
+- **Still required:** end-to-end tests in actual Obsidian desktop/mobile, real-browser interaction and responsive-view verification (jsdom alone does not cover layout), 1k/10k performance fixtures, and reliable crash-recovery drafts.
 - **Release policy:** package/manifest remain at v0.1.0 while v0.2 features are developed. Do not advertise v0.2.0 as released until release acceptance gates are met.
+
+## 2026-10-23 — second v0.2 development iteration
+
+- **Extra UI:** hide empty groups, keep populated groups and active composers visible; use Obsidian's native `Menu` for the six Extra creation types. No schema migration.
+- **Quick capture:** block duplicate creation while a Vault write is pending, whether from rapid button taps or Ctrl/Cmd+Enter.
+- **Data integrity discovery:** editing a tagless Entry previously duplicated the top-level `tags:` YAML key. This could render a newly edited document read-only. The patcher now replaces the existing key and list items line-by-line; regressions cover new Extras, subsequent tag updates, and custom YAML.
+- **Read-only UI:** corrupted records no longer offer editing actions, while warning text remains visible.
+- **Responsive design:** CSS container queries handle narrow Obsidian side panes independently of viewport width; all selectors remain scoped.
+- **CI:** `npm run verify` runs 18 Markdown unit cases, official Obsidian API typecheck, esbuild, Vault smoke, and 4 jsdom DOM interaction cases. Mock UI checks do **not** claim actual desktop/mobile validation.
+- **Open P0:** manual/automated genuine-client acceptance; page-level keyboard navigation and focus recovery; confirmation/undo robustness; save failures and offline mobile keyboard scenarios.
