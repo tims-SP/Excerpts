@@ -1,4 +1,4 @@
-# Excerpts — product specification (beta.9)
+# Excerpts — product specification (beta.10)
 
 Excerpts is an Obsidian Markdown card stream for collecting and rereading passages, ideas, dialogue and quotations.
 
@@ -9,9 +9,9 @@ The user creates or opens a real `首页.excerpts` file in any desired Vault fol
 1. Minimal title “摘录”.
 2. Compact, focus-expandable quick capture field, optional tag pill suggestions and a Save button. Saving creates a plain `.md` in the homepage directory.
 3. “最近收藏” toolbar: count, collapsed search icon, random recall icon and `Menu` for tag filtering and refresh.
-4. Single-column content-first card feed. Ordinary Markdown is rendered using Obsidian's Markdown renderer; H1 is optional; arbitrary H2 sections appear as collapsed supplementary groups.
+4. Single-column content-first card feed. Ordinary Markdown is rendered using Obsidian's Markdown renderer; H1 is optional; each H2 occurrence (including duplicated names) appears as an independent lightweight collapsed group.
 5. Card tags remain independent from H2 sections. Capsule tags allow filtering; expanded editor offers suggestions and custom tags.
-6. Date and lightweight controls follow card content. Editing opens the actual source note in the native Markdown editor.
+6. Date and lightweight controls follow card content. The primary pencil opens an in-card Markdown editor with progressive capsule tag selection and one atomic save. The overflow menu can open the original note in Obsidian.
 
 ## Storage
 
@@ -20,3 +20,7 @@ Each `.md` is a card; frontmatter is optional, tags and favorite use standard Ob
 ## Development constraints
 
 This is a deliberately breaking development release. No migration or legacy compatibility. Full client QA on Windows/macOS and Android/iOS, large-vault pressure tests and complex Markdown embed/reference checks remain mandatory before stable release.
+
+## Interaction source of truth
+
+See [UI_CONTRACT_V3.md](UI_CONTRACT_V3.md). It supersedes legacy Entry/Extra and modal-editor interactions documented before Markdown-first beta.9.

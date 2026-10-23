@@ -10,7 +10,8 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
     if (end > 0) start = end + 1;
   }
   let title = "";
-  let sectionName = "";
+  let activeSection: MarkdownSection | null = null;
+  let sectionIndex = 0;
   let fenceChar = "";
   let fenceLength = 0;
   const bodyParts: string[] = [];
@@ -18,13 +19,8 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
   let current: string[] = [];
   const append = () => {
     const markdown = current.join("\n").trim();
-    if (!markdown) { current = []; return; }
-    if (!sectionName || sectionName === "正文") bodyParts.push(markdown);
-    else {
-      const existing = sections.find(section => section.name === sectionName);
-      if (existing) existing.markdown += "\n\n" + markdown;
-      else sections.push({ name: sectionName, markdown });
-    }
+    if (activeSection) activeSection.markdown = markdown;
+    else if (markdown) bodyParts.push(markdown);
     current = [];
   };
   for (let i = start; i < lines.length; i++) {
@@ -40,13 +36,14 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
     if (!fenceChar) {
       const heading = line.match(/^ {0,3}(#{1,2})[ \t]+(.+?)[ \t]*#*[ \t]*$/);
       if (heading) {
-        if (heading[1] === "#" && !title && !sectionName && !current.join("").trim()) {
+        if (heading[1] === "#" && !title && !activeSection && !current.join("").trim()) {
           title = heading[2].trim();
           continue;
         }
         if (heading[1] === "##") {
           append();
-          sectionName = heading[2].trim();
+          activeSection = { id: "h2-" + ++sectionIndex, name: heading[2].trim(), markdown: "" };
+          sections.push(activeSection);
           continue;
         }
       }
@@ -54,11 +51,5 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
     current.push(line);
   }
   append();
-  const body = bodyParts.join("\n\n").trim();
-  // Section-only documents still produce a visible card.
-  if (!body && sections.length) {
-    const first = sections.shift()!;
-    return { title, body: first.markdown, sections };
-  }
-  return { title, body, sections };
+  return { title, body: bodyParts.join("\n\n").trim(), sections };
 }

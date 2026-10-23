@@ -5,7 +5,7 @@ const path = require("node:path");
 const cp = require("node:child_process");
 const ts = require(path.join(cp.execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "typescript"));
 const root = path.resolve(__dirname, "..");
-const paths = ["model", "codec", "repository", "settings", "view", "home-view", "main"];
+const paths = ["model", "codec", "repository", "settings", "tag-editor", "view", "home-view", "main"];
 const entries = paths.map(name => {
   const source = fs.readFileSync(path.join(root, "src", `${name}.ts`), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } });
