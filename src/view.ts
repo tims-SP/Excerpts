@@ -635,13 +635,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     else setTimeout(work, 0);
   }
   private reflowVisibleTags(): void {
-    for (const row of this.listEl.querySelectorAll<HTMLElement>(".ex-chips")) this.reflowTagRow(row);
+    for (const row of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-chips"))) this.reflowTagRow(row);
   }
   private reflowTagRow(mount: HTMLElement): void {
     if (mount.classList.contains("ex-tags-editing")) return;
     const card = mount.closest<HTMLElement>(".ex-card");
     if (!card || this.expandedTagRows.has(card.dataset.path ?? "")) return;
-    const pills = [...mount.querySelectorAll<HTMLButtonElement>(".ex-tag")];
+    const pills = Array.from(mount.querySelectorAll<HTMLButtonElement>(".ex-tag"));
     const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
     const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
     if (!overflow || !add || !mount.clientWidth) return;
