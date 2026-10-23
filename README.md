@@ -75,3 +75,7 @@ See [the 11-round design/implementation report](docs/VISUAL_REBUILD_11_ROUNDS.md
 ## Editor experience (beta.5)
 
 All inline editing fields auto-grow. Editing source/variant metadata now creates recoverable Markdown drafts; long text fields retain cursor position across card refreshes. The editor supports Cmd/Ctrl+Enter save without IME composition, consistent disabled saving state, and larger mobile tap targets. See [20-round change log](docs/EDITOR_REBUILD_20_ROUNDS.md).
+
+## Layout & surface refinement (beta.6)
+
+The mobile capture card and the excerpt card now share one 16px content alignment baseline. Capture uses an Obsidian primary surface with a subtle border, reading cards use the secondary surface, and editing actions no longer introduce another background-colored strip. Mobile tap targets and nested source-editor width have been repaired. See [the beta.6 layout audit and verification](docs/SPACING_SURFACE_REFINEMENT_BETA6.md).

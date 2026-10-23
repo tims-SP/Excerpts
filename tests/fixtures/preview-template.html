@@ -4,7 +4,7 @@
 
 /*__EXCERPTS_CSS__*/
 body { padding: 0; }
-</style></head><body><div id="mount"></div><script>
+</style></head><body><div id="mount" class="excerpts-native-host"><div id="renderMount"></div></div><script>
 const module={exports:{}};
 function require(id){if(id!=='obsidian')throw Error(id);return mock;}
 class TAbstractFile{constructor(path){this.path=path}}
@@ -29,7 +29,7 @@ const app={vault,workspace:{getLeaf(){return {view:{getViewType(){return "markdo
  ['不要急着给每一个问题寻找答案。有时候，认真生活本身就是一种回应。','生活,随想',[{kind:'note',title:'我的理解',content:'有些问题需要时间慢慢展开。'}]],
  ['让我们记住每一件真正值得珍藏的小事。','摘录',[]]];
  for(const [txt,tags,extra] of entries){const item=await plugin.repo.create(ws,txt,tags.split(','));if(extra.length)await plugin.repo.update(item,old=>({...old,extras:extra.map((x,i)=>({...x,id:'x_'+i}))}));}
- const mount=document.querySelector('#mount');
+ const mount=document.querySelector('#renderMount');
  plugin.processor('workspace: '+ws.id,mount,{sourcePath:'阅读/摘录/首页.md',addChild(child){child.onload();window.child=child}});
  window.__ready=true;
 })().catch(e=>{console.error(e);window.__error=e.message});

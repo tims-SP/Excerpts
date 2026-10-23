@@ -47,7 +47,7 @@
 .excerpts-root .ex-input, .excerpts-root .ex-textarea { width: 100%; min-width: 0; background: var(--background-primary); color: var(--text-normal); font-family: var(--font-interface); font-size: var(--font-ui-medium, 14px); border: 1px solid var(--ex-subtle-border); border-radius: var(--radius-m, 8px); padding: var(--ex-space-2) var(--ex-space-3); box-shadow: none; }
 .excerpts-root .ex-input:focus, .excerpts-root .ex-textarea:focus { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
 .excerpts-root .ex-input::placeholder, .excerpts-root .ex-textarea::placeholder { color: var(--text-faint); opacity: 1; }
-.excerpts-root .ex-composer { background: var(--ex-surface); padding: var(--ex-space-3) var(--ex-space-4); margin-bottom: var(--ex-space-6); border: 1px solid transparent; border-radius: var(--ex-radius); transition: border-color .15s ease; }
+.excerpts-root .ex-composer { background: var(--background-primary); padding: var(--ex-space-3) var(--ex-space-4); margin-bottom: var(--ex-space-5); border: 1px solid var(--ex-subtle-border); border-radius: var(--ex-radius); transition: border-color .15s ease; }
 .excerpts-root .ex-composer:focus-within { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
 .excerpts-root .ex-compose-text { display: block; background: transparent; border: 0; box-shadow: none; padding: 0; resize: none; overflow-y: auto; height: auto; min-height: 48px; max-height: min(42vh, 340px); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: var(--line-height-normal, 1.6); border-radius: 0; }
 .excerpts-root .ex-compose-text:focus { outline: 0; box-shadow: none; border-color: transparent; }
@@ -58,7 +58,7 @@
 .excerpts-root .ex-toolbar { min-height: 36px; margin: 0 0 var(--ex-space-3); }
 .excerpts-root .ex-toolbar-title { display: flex; gap: var(--ex-space-2); align-items: baseline; flex-wrap: wrap; min-width: 0; }
 .excerpts-root .ex-list-heading { margin: 0; font-size: var(--font-ui-medium, 14px); line-height: 1.4; font-weight: 600; }
-.excerpts-root .ex-count { color: var(--text-faint); font-size: var(--font-ui-smaller, 12px); font-variant-numeric: tabular-nums; }
+.excerpts-root .ex-count { color: var(--text-muted); font-size: var(--font-ui-smaller, 12px); font-variant-numeric: tabular-nums; }
 .excerpts-root .ex-toolbar-actions { display: flex; align-items: center; gap: 0; }
 .excerpts-root .ex-search-wrap { width: 100%; margin-bottom: var(--ex-space-3); }
 .excerpts-root .ex-filter-tags { display: flex; gap: var(--ex-space-1); align-items: center; overflow-x: auto; scrollbar-width: thin; margin: 0 0 var(--ex-space-3); padding: 0 0 2px; }
@@ -69,26 +69,26 @@
 .excerpts-root .ex-card { min-width: 0; border: 1px solid transparent; background: var(--ex-surface); border-radius: var(--ex-radius); padding: var(--ex-space-4); overflow-wrap: anywhere; }
 .excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
 .excerpts-root .ex-card-top { align-items: center; gap: var(--ex-space-2); }
-.excerpts-root .ex-date { color: var(--text-faint); font-size: var(--font-ui-smaller, 12px); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.excerpts-root .ex-date { color: var(--text-muted); font-size: var(--font-ui-smaller, 12px); line-height: 1.5; font-variant-numeric: tabular-nums; }
 .excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); }
 .excerpts-root .ex-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 0; margin-inline-start: auto; }
 .excerpts-root .ex-card-actions .ex-icon-button svg, .excerpts-root .ex-toolbar-actions .ex-icon-button svg { width: 18px; height: 18px; }
-.excerpts-root .ex-quote { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; color: var(--text-normal); white-space: pre-wrap; overflow-wrap: anywhere; letter-spacing: normal; padding: var(--ex-space-2) 0; }
+.excerpts-root .ex-quote { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; color: var(--text-normal); white-space: pre-wrap; overflow-wrap: anywhere; letter-spacing: normal; padding: 0; }
 .excerpts-root .ex-chips { display: flex; gap: var(--ex-space-1); flex-wrap: wrap; }
 .excerpts-root .ex-chips:empty { display: none; }
-.excerpts-root button.ex-tag { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); min-height: 27px; padding: 2px var(--ex-space-2); }
-.excerpts-root .ex-extras { display: flex; gap: var(--ex-space-1); flex-wrap: wrap; align-items: center; padding-top: var(--ex-space-2); }
+.excerpts-root button.ex-tag { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); min-height: 32px; padding: 4px var(--ex-space-2); border-radius: var(--radius-m, 8px); }
+.excerpts-root .ex-extras { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; padding-top: 0; }
 .excerpts-root .ex-extra-group { min-width: 0; }
 .excerpts-root .ex-extra-group:has(.ex-group-body) { flex-basis: 100%; }
 .excerpts-root button.ex-group-trigger { display: inline-flex; align-items: center; gap: var(--ex-space-1); white-space: nowrap; font-size: var(--font-ui-smaller, 12px); min-height: 32px; padding: var(--ex-space-1) var(--ex-space-2); border-radius: var(--radius-m, 8px); }
 .excerpts-root .ex-disclosure-icon, .excerpts-root .ex-disclosure-icon svg { width: 14px; height: 14px; }
 .excerpts-root .ex-group-body { padding: var(--ex-space-2) 0; }
-.excerpts-root .ex-extra-item { border-left: 2px solid var(--ex-subtle-border); padding: var(--ex-space-2) var(--ex-space-3); margin-bottom: var(--ex-space-2); }
+.excerpts-root .ex-extra-item { border-left: 1px solid var(--ex-subtle-border); padding: var(--ex-space-2) var(--ex-space-3); margin-bottom: var(--ex-space-2); }
 .excerpts-root .ex-extra-item:last-child { margin-bottom: 0; }
 .excerpts-root .ex-extra-title { font-size: var(--font-ui-small, 13px); font-weight: 600; }
 .excerpts-root .ex-extra-content { padding-top: var(--ex-space-1); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-ui-small, 13px); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
 .excerpts-root button.ex-add-extra { min-height: 32px; padding: var(--ex-space-1) var(--ex-space-2); font-size: var(--font-ui-smaller, 12px); }
-.excerpts-root .ex-edit-panel { display: flex; flex-direction: column; gap: var(--ex-space-2); background: var(--background-primary); border: 1px solid var(--ex-subtle-border); border-radius: var(--radius-m, 8px); padding: var(--ex-space-3); margin: var(--ex-space-2) 0; }
+.excerpts-root .ex-edit-panel { display: flex; flex-direction: column; gap: var(--ex-space-3); background: transparent; border: 0; border-radius: var(--radius-m, 8px); padding: 0; margin: var(--ex-space-2) 0; }
 .excerpts-root .ex-edit-panel .ex-actions { justify-content: flex-end; }
 .excerpts-root .ex-empty { padding: var(--ex-space-6) var(--ex-space-4); color: var(--text-muted); text-align: center; }
 .excerpts-root .ex-warning { padding: var(--ex-space-2) 0; font-size: var(--font-ui-small, 13px); color: var(--text-error); }
@@ -96,7 +96,6 @@
 .excerpts-root .ex-btn:disabled, .excerpts-root .ex-icon-button:disabled { opacity: .55; cursor: not-allowed; }
 @container (max-width: 480px) {
   .excerpts-root { padding: var(--ex-space-3) var(--ex-space-4) 48px; }
-  .excerpts-root .ex-composer { padding: var(--ex-space-3); }
   .excerpts-root .ex-card { padding: var(--ex-space-4); }
   .excerpts-root .ex-header { padding-bottom: var(--ex-space-3); }
   .excerpts-root .ex-card-actions .ex-quick-action { display: none; }
@@ -106,7 +105,8 @@
 @media (pointer: coarse) {
   .excerpts-root button.ex-icon-button { width: 44px; height: 44px; }
   .excerpts-root button.ex-group-trigger, .excerpts-root button.ex-add-extra,
-  .excerpts-root .ex-filter-tags button, .excerpts-root button.ex-btn-primary { min-height: 44px; }
+  .excerpts-root button.ex-tag, .excerpts-root .ex-filter-tags button,
+  .excerpts-root button.ex-btn-primary { min-height: 44px; }
   .excerpts-root .ex-edit-panel button { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -114,18 +114,15 @@
 }
 
 /* Reading-first footer: quote -> tags -> extras -> date/action, never a floating date above a large void. */
-.excerpts-root .ex-quote { padding: 0; }
 .excerpts-root .ex-chips { margin-top: var(--ex-space-2); }
 .excerpts-root .ex-extras { margin-top: var(--ex-space-2); }
 .excerpts-root .ex-card-footer { margin-top: var(--ex-space-3); min-height: 32px; }
-.excerpts-root .ex-card-footer .ex-icon-button { width: 32px; height: 32px; }
+.excerpts-root .ex-card-footer .ex-icon-button { width: 36px; height: 36px; }
 
 /* Extras are annotations, not a second toolbar. */
-.excerpts-root .ex-extras { gap: 2px; padding-top: 0; }
 .excerpts-root .ex-extra-group { border-radius: var(--radius-m, 8px); }
 .excerpts-root button.ex-group-trigger { padding-inline: var(--ex-space-2); }
 .excerpts-root .ex-group-body { margin-top: var(--ex-space-1); }
-.excerpts-root .ex-extra-item { border-left-width: 1px; }
 
 /* Empty space is intentional, but not a large dashed onboarding dashboard. */
 .excerpts-root .ex-empty { margin-top: var(--ex-space-4); padding: var(--ex-space-6) var(--ex-space-4); }
@@ -158,7 +155,6 @@
 /* Editor design: native input components, editorial layout and no nested dashboard cards. */
 .excerpts-root .ex-editor-heading { color: var(--text-muted); font-size: var(--font-ui-small, 13px); font-weight: 600; letter-spacing: 0; }
 .excerpts-root .ex-entry-editor { background: transparent; border: 0; border-radius: 0; margin: 0; padding: 0; }
-.excerpts-root .ex-extra-editor { background: var(--background-primary); border-color: var(--background-modifier-border); }
 .excerpts-root .ex-edit-panel .ex-actions { padding-top: var(--ex-space-2); }
 
 .excerpts-root .ex-entry-editor .ex-editor-text { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; border: 0; border-radius: 0; background: transparent; padding: var(--ex-space-2) 0; resize: none; }
@@ -172,13 +168,13 @@
   .excerpts-root .ex-edit-panel textarea,
   .excerpts-root .ex-tags-input { font-size: max(16px, var(--font-text-size, 16px)); }
   .excerpts-root .ex-edit-panel { scroll-margin-block-end: 140px; }
-  .excerpts-root .ex-edit-panel .ex-actions { position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 1; background: var(--background-primary); padding: var(--ex-space-2) 0; }
+  .excerpts-root .ex-edit-panel .ex-actions { position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 1; background: var(--ex-surface); padding: var(--ex-space-2) 0; }
 }
 /* Final editor visual rhythm: writing first, actions second. */
-.excerpts-root .ex-edit-panel { gap: var(--ex-space-3); }
-.excerpts-root .ex-entry-editor .ex-input { background: var(--background-secondary); border-color: transparent; }
+.excerpts-root .ex-entry-editor .ex-input { background: var(--background-primary); border-color: var(--ex-subtle-border); }
 .excerpts-root .ex-entry-editor .ex-input:focus { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
-.excerpts-root .ex-extra-item .ex-extra-editor { margin-top: var(--ex-space-3); border: 0; background: var(--background-secondary); }
+.excerpts-root .ex-extra-editor { background: transparent; border: 0; padding: 0; margin: var(--ex-space-2) 0; }
+.excerpts-root .ex-extra-item .ex-extra-editor { margin: var(--ex-space-2) calc(-1 * var(--ex-space-3)) 0; padding: 0; border: 0; background: transparent; }
 .excerpts-root .ex-edit-panel .ex-btn-primary { min-height: 38px; }
 .excerpts-root .ex-edit-panel .ex-actions { gap: var(--ex-space-2); flex-wrap: wrap; }
 .excerpts-root .ex-edit-panel .ex-editor-text { overflow-wrap: anywhere; max-width: 100%; }
@@ -186,4 +182,14 @@
   .excerpts-root .ex-edit-panel .ex-btn-primary,
   .excerpts-root .ex-edit-panel .ex-btn-quiet,
   .excerpts-root .ex-edit-panel .ex-btn-danger { min-height: 44px; }
+}
+
+/* Pointer and keyboard invariants are last to prevent smaller base controls overriding them. */
+@media (pointer: coarse) {
+  .excerpts-root .ex-card-footer button.ex-icon-button,
+  .excerpts-root button.ex-tag { min-width: 44px; min-height: 44px; }
+  .excerpts-root .ex-card-footer button.ex-icon-button { width: 44px; height: 44px; }
+  .excerpts-root .ex-input { min-height: 44px; }
+  .excerpts-root .ex-search-wrap .ex-input,
+  .excerpts-root .ex-tags-input { min-height: 44px; }
 }

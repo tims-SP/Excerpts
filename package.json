@@ -1,7 +1,7 @@
 {
   "name": "obsidian-excerpts",
   "private": true,
-  "version": "0.2.0-beta.5",
+  "version": "0.2.0-beta.6",
   "description": "Folder-scoped excerpt collections for Obsidian",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs",
@@ -10,7 +10,7 @@
     "test": "node scripts/test.cjs",
     "smoke": "node scripts/smoke.cjs",
     "verify": "npm run test && npm run build && npm run smoke && npm run ui && node scripts/check-release.cjs",
-    "ui": "node --test tests/ui.test.cjs"
+    "ui": "node --test tests/ui.test.cjs tests/styles.test.cjs"
   },
   "devDependencies": {
     "obsidian": "latest",
