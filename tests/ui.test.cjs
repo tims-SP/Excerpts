@@ -116,6 +116,7 @@ test('inline Markdown and YAML tags save together without a second editor pane',
     assert.equal(editor.querySelector('.ex-tag-picker').hidden,true);
     [...editor.querySelectorAll('button')].find(b=>b.textContent.includes('添加标签')).click();
     assert.equal(editor.querySelector('.ex-tag-picker').hidden,false);
+    clickByLabel(editor,'移除标签：哲学');
     clickByLabel(editor,'添加已有标签：哲学');
     const input=editor.querySelector('.ex-tags-input');
     input.value='随想';input.dispatchEvent(new window.Event('input',{bubbles:true}));
