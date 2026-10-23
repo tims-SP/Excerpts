@@ -231,6 +231,7 @@
   background: var(--ex-chip-surface); z-index: 0;
 }
 .excerpts-root .ex-tag-label { position: relative; z-index: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.excerpts-root button.ex-tag:hover { background: transparent; }
 .excerpts-root button.ex-tag:hover::before { background: var(--background-modifier-hover); }
 .excerpts-root button.ex-tag.ex-selected { color: var(--text-accent); }
 .excerpts-root button.ex-tag.ex-selected::before { background: var(--background-modifier-hover); }
