@@ -12,13 +12,23 @@ global.HTMLElement = dom.window.HTMLElement;
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (name) { this.classList.add(name); };
 HTMLElement.prototype.setText = function (value) { this.textContent = value; };
+HTMLElement.prototype.createDiv = function (options) {
+  const el = document.createElement('div');
+  if (options?.cls) el.className = options.cls;
+  this.appendChild(el); return el;
+};
 HTMLElement.prototype.scrollIntoView = function () {};
 
 class TAbstractFile { constructor(path) { this.path = path; } }
 class TFile extends TAbstractFile {}
 class TFolder extends TAbstractFile {}
 class MarkdownRenderChild { constructor(el) { this.containerEl = el; } }
+class ItemView {
+  constructor(leaf) { this.leaf = leaf; this.contentEl = document.createElement('div'); }
+  async setState(state) { this.state = state; }
+}
 class Plugin {
+  registerView(kind, factory) { this.viewType = kind; this.viewFactory = factory; }
   async loadData() { return null; }
   async saveData(value) { this.saved = value; }
   addSettingTab() {}
@@ -46,7 +56,7 @@ class Modal {
   close() { this.isOpen = false; }
 }
 function setIcon(el, name) { el.setAttribute('data-icon', name); const svg=document.createElement('svg');svg.setAttribute('aria-hidden', 'true');el.append(svg); }
-const replacement = { TAbstractFile, TFile, TFolder, MarkdownRenderChild, Plugin, PluginSettingTab, Setting, Notice, Menu, Modal, setIcon };
+const replacement = { TAbstractFile, TFile, TFolder, ItemView, MarkdownRenderChild, Plugin, PluginSettingTab, Setting, Notice, Menu, Modal, setIcon };
 const oldLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'obsidian') return replacement;
@@ -75,7 +85,9 @@ async function fixture() {
     on() { return {}; }
   };
   const plugin = new Excerpts();
-  plugin.app = { vault, workspace: { getLeaf() { return {}; } } };
+  const workspaceEvents = new Map();
+  const activeLeaf = { view: { getViewType: () => 'markdown' }, async setViewState(state) { this.lastState = state; }, };
+  plugin.app = { vault, workspace: { activeLeaf, on(type, cb) { workspaceEvents.set(type, cb); return {}; }, onLayoutReady(cb) { this.layoutReady = cb; }, getActiveFile() { return null; }, getLeaf() { return activeLeaf; }, async revealLeaf() {} } };
   await plugin.onload();
   const workspace = await plugin.createWorkspace('测试收藏集', '隔离/摘录');
   const repo = plugin.repo;
@@ -89,13 +101,15 @@ async function fixture() {
   renderer.onload();
   await renderer.reload();
   return {
-    plugin, workspace, repo, renderer, container, files, vault,
+    plugin, workspace, repo, renderer, container, files, vault, workspaceEvents,
     get processes() { return processes; },
     async close() { renderer.onunload(); container.remove(); }
   };
 }
 function click(scope, label) {
-  const found = [...scope.querySelectorAll('button')].find(button =>
+  const candidates = [...scope.querySelectorAll('button')].filter(button => !button.hidden && !button.closest('[hidden]'));
+  const exact = candidates.find(button => button.textContent.trim() === label || button.getAttribute('aria-label') === label);
+  const found = exact || candidates.find(button =>
     button.textContent.replace(/\s+/g, ' ').includes(label.replace(/\s+/g, ' ')) || button.getAttribute('aria-label')?.includes(label));
   assert.ok(found, 'Missing button: ' + label);
   found.click(); return found;
@@ -163,7 +177,7 @@ test('quick capture prevents duplicate saves from clicks and shortcuts', async (
     };
     const editor = f.container.querySelector('.ex-compose-text');
     type(editor, '一次摘录');
-    const saveButton = click(f.container, '保存摘录');
+    const saveButton = click(f.container, '保存');
     assert.equal(saveButton.disabled, true);
     saveButton.click();
     editor.dispatchEvent(new window.KeyboardEvent('keydown', { ctrlKey: true, key: 'Enter', bubbles: true }));
@@ -188,7 +202,8 @@ test('damaged Markdown remains read-only; random revisit does not write', async 
     assert.equal([...card.querySelectorAll('button')].some(b => /编辑|珍藏|添加内容/.test(b.textContent)), false);
     await f.repo.create(f.workspace, '可回顾的独特词语');
     await f.renderer.reload();
-    type(f.container.querySelector('.ex-toolbar input'), '独特词语');
+    click(f.container, '搜索');
+    type(f.container.querySelector('.ex-search-wrap input'), '独特词语');
     click(f.container, '随机回顾');
     assert.match(f.container.querySelector('.ex-card.ex-recalled').textContent, /可回顾的独特词语/);
     assert.equal(f.processes, 0);
@@ -356,7 +371,7 @@ test('capture draft survives renderer restart and resolves only after a successf
     click(f.container, '恢复未保存输入');
     assert.equal(f.container.querySelector('.ex-compose-text').value, '重启后恢复的摘录');
     assert.equal(f.container.querySelector('.ex-tags-input').value, '恢复, 草稿');
-    click(f.container, '保存摘录');
+    click(f.container, '保存');
     await new Promise(resolve => setTimeout(resolve, 60));
     assert.equal((await f.repo.list(f.workspace)).length, 1);
     assert.deepEqual((await f.repo.list(f.workspace))[0].tags, ['恢复', '草稿']);
@@ -430,7 +445,7 @@ test('native theme UI exposes icon-only actions with accessible labels', async (
     const header = f.container.querySelector('.ex-header');
     assert.equal(header.querySelector('.ex-eyebrow'), null, 'old decorative English title must disappear');
     assert.equal(header.querySelector('.ex-title').textContent, '测试收藏集');
-    assert.ok(header.querySelector('button[aria-label="随机回顾"] [aria-hidden="true"]'));
+    assert.ok(f.container.querySelector('button[aria-label="随机回顾"] [aria-hidden="true"]'));
     const card = f.container.querySelector('.ex-card');
     assert.ok(card.querySelector('button[aria-label="编辑"] [aria-hidden="true"]'));
     assert.equal(card.querySelector('button[aria-label="珍藏"]').getAttribute('aria-pressed'), 'false');
@@ -440,5 +455,50 @@ test('native theme UI exposes icon-only actions with accessible labels', async (
     assert.equal(f.container.querySelector('button[aria-label="取消珍藏"]').getAttribute('aria-pressed'), 'true');
     assert.ok(f.container.querySelector('.ex-toolbar-title .ex-list-heading'));
     assert.equal(f.container.querySelectorAll('.ex-extra-group').length, 0);
+  } finally { await f.close(); }
+});
+
+test('dedicated view is registered and homepage opens it without changing ordinary files', async () => {
+  const f = await fixture();
+  try {
+    assert.equal(f.plugin.viewType, 'excerpts-collection');
+    const fileOpen = f.workspaceEvents.get('file-open');
+    assert.equal(typeof fileOpen, 'function');
+    const leaf = f.plugin.app.workspace.activeLeaf;
+    fileOpen(new TFile('普通笔记.md'));
+    assert.equal(leaf.lastState, undefined);
+    fileOpen(new TFile('隔离/摘录/首页.md'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(leaf.lastState.type, 'excerpts-collection');
+    assert.equal(leaf.lastState.state.workspaceId, f.workspace.id);
+    f.plugin.settings.autoOpenHome = false;
+    leaf.lastState = undefined;
+    fileOpen(new TFile('隔离/摘录/首页.md'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(leaf.lastState, undefined, 'opt-out must allow editing the original Markdown homepage');
+    const view = f.plugin.viewFactory(leaf);
+    assert.equal(view.getDisplayText(), '摘录');
+    await view.setState({ workspaceId: f.workspace.id }, {});
+    assert.ok(view.contentEl.querySelector('.excerpts-root'));
+    await view.onClose();
+  } finally { await f.close(); }
+});
+
+test('capture is compact, optional fields and search are hidden until requested', async () => {
+  const f = await fixture();
+  try {
+    const quote = f.container.querySelector('.ex-compose-text');
+    assert.equal(quote.placeholder, '记录你想留下的文字……');
+    assert.equal(quote.rows, 3);
+    const tags = f.container.querySelector('.ex-tags-input');
+    assert.equal(tags.hidden, true);
+    click(f.container, '添加标签');
+    assert.equal(tags.hidden, false);
+    const search = f.container.querySelector('.ex-search-wrap');
+    assert.equal(search.hidden, true);
+    click(f.container, '搜索');
+    assert.equal(search.hidden, false);
+    assert.equal(f.container.querySelector('.ex-filter-tags'), null, 'no redundant All tag on empty collection');
+    assert.ok(f.container.querySelector('.ex-compose-actions .ex-btn-primary'));
   } finally { await f.close(); }
 });

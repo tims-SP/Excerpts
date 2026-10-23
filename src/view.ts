@@ -113,13 +113,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     undoExtraButton.hidden = true;
     this.undoExtraButton = undoExtraButton;
     actions.append(undoExtraButton);
-    actions.append(iconButton("shuffle", "随机回顾", () => this.recallRandom()));
-    actions.append(iconButton("refresh-cw", "刷新", () => void this.reload()));
     header.append(brand, actions); root.append(header);
     const form = node("div", "ex-composer");
-    const composeLabel = node("div", "ex-section-label", "随手收藏");
-    form.append(composeLabel);
-    const quote = textarea("一句话、一段文字，或刚刚闪现的灵感……", "", "ex-compose-text");
+    const quote = textarea("记录你想留下的文字……", "", "ex-compose-text");
+    quote.rows = 3;
     this.captureInput = quote;
     const tags = inputBox("标签（用逗号分隔，可选）");
     tags.classList.add("ex-tags-input");
@@ -132,9 +129,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.addEventListener("input", queueCapture);
     tags.addEventListener("input", queueCapture);
     const composeActions = node("div", "ex-compose-actions");
-    const saveButton = button("保存摘录", () => void save(), "mod-cta ex-btn-primary");
-    composeActions.append(tags, saveButton);
-    form.append(quote, composeActions); root.append(form);
+    const captureOptions = node("div", "ex-capture-options");
+    const tagsToggle = iconButton("hash", "添加标签", () => {
+      const isVisible = !tags.hidden;
+      tags.hidden = isVisible;
+      tagsToggle.setAttribute("aria-expanded", String(!isVisible));
+      if (!isVisible) tags.focus();
+    });
+    tagsToggle.setAttribute("aria-expanded", "false");
+    tags.hidden = true;
+    captureOptions.append(tagsToggle, recovery);
+    const saveButton = button("保存", () => void save(), "mod-cta ex-btn-primary");
+    composeActions.append(captureOptions, saveButton);
+    form.append(quote, tags, composeActions); root.append(form);
     quote.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); void save(); } });
     let saving = false;
     const save = async () => {
@@ -146,13 +153,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       try {
         const parsedTags = tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean);
         await this.repo.create(this.workspace, text, [...new Set(parsedTags)]);
-        quote.value = ""; tags.value = "";
+        quote.value = ""; tags.value = ""; tags.hidden = true;
+        tagsToggle.setAttribute("aria-expanded", "false");
         void this.resolveDraft("capture");
         await this.reload();
       } catch(e) { new Notice(`保存失败：${errorMessage(e)}`); }
       finally {
         saving = false; saveButton.disabled = false; quote.disabled = false; tags.disabled = false;
-        saveButton.textContent = "保存摘录";
+        saveButton.textContent = "保存";
       }
     };
     const toolbar = node("div", "ex-toolbar");
@@ -160,14 +168,24 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toolbarTitle.append(node("h3", "ex-list-heading", "最近收藏"));
     this.countEl = node("span", "ex-count", "0 条收藏");
     toolbarTitle.append(this.countEl);
+    const toolbarActions = node("div", "ex-toolbar-actions");
     const searchWrap = node("div", "ex-search-wrap");
-    const searchIcon = node("span", "ex-search-icon");
-    setIcon(searchIcon, "search");
     const search = inputBox("搜索摘录、来源、变种或批注…");
     search.setAttribute("aria-label", "搜索摘录");
     search.addEventListener("input", () => { this.searchText = search.value.toLocaleLowerCase(); this.drawCards(); });
-    searchWrap.append(searchIcon, search);
-    toolbar.append(toolbarTitle, searchWrap); root.append(toolbar);
+    const searchToggle = iconButton("search", "搜索", () => {
+      const show = searchWrap.hidden;
+      searchWrap.hidden = !show;
+      searchToggle.setAttribute("aria-expanded", String(show));
+      if (show) search.focus();
+      else if (search.value) { search.value = ""; this.searchText = ""; this.drawCards(); }
+    });
+    searchToggle.setAttribute("aria-expanded", "false");
+    searchWrap.hidden = true;
+    toolbarActions.append(searchToggle, iconButton("shuffle", "随机回顾", () => this.recallRandom()), iconButton("refresh-cw", "刷新", () => void this.reload()));
+    searchWrap.append(search);
+    toolbar.append(toolbarTitle, toolbarActions);
+    root.append(toolbar, searchWrap);
     this.listEl = node("div", "ex-card-list"); root.append(this.listEl);
   }
   private queueDraft(key: string, value: { kind: "capture" | "quote"; entryId: string; base: string; text: string; tags: string }): void {
@@ -226,6 +244,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!draft || !quote || !tags) return;
     if (quote.value || tags.value) { new Notice("输入框已有内容，请先保存或清空再恢复草稿"); return; }
     quote.value = draft.text; tags.value = draft.tags;
+    if (draft.tags) tags.hidden = false;
     this.savedDrafts.set("capture", draft);
     this.captureRecoveryButton!.hidden = true;
     quote.focus();
@@ -282,14 +301,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!wrap) return;
     wrap.empty();
     const visible = this.visibleItems();
-    if (this.countEl) this.countEl.textContent = `${visible.length} / ${this.items.length} 条收藏`;
+    if (this.countEl) this.countEl.textContent = this.items.length ? `${visible.length} / ${this.items.length}` : "";
     const tagBar = node("div", "ex-filter-tags");
     tagBar.setAttribute("aria-label", "按标签筛选");
     const all = button("全部", () => { this.tagFilter = ""; this.drawCards(); }, !this.tagFilter ? "ex-selected" : "ex-btn-quiet");
     tagBar.append(all);
     const tags = [...new Set(this.items.flatMap(x => x.tags))].sort((a,b) => a.localeCompare(b, "zh"));
     for (const tag of tags.slice(0, 40)) tagBar.append(button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, this.tagFilter === tag ? "ex-selected" : "ex-btn-quiet"));
-    wrap.append(tagBar);
+    if (tags.length > 0) wrap.append(tagBar);
     if (!visible.length) { wrap.append(node("div", "ex-empty", this.items.length ? "没有找到匹配的摘录" : "还没有摘录，从上方添加第一条。")); return; }
     // Progressive page; avoids creating thousands of DOM cards on mobile.
     const shown = visible.slice(0, this.pageSize);

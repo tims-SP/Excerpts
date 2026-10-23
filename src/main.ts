@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS, PluginSettings, Workspace, belongsTo, joinPath, makeI
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
+import { ExcerptsCollectionView, EXCERPTS_COLLECTION_VIEW } from "./collection-view";
 
 export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS, workspaces: [] };
@@ -12,6 +13,7 @@ export default class ExcerptsPlugin extends Plugin {
     const raw = await this.loadData() as Partial<PluginSettings> | null;
     this.settings = { ...DEFAULT_SETTINGS, ...(raw || {}), workspaces: Array.isArray(raw?.workspaces) ? raw!.workspaces : [] };
     this.repo = new EntryRepository(this.app);
+    this.registerView(EXCERPTS_COLLECTION_VIEW, leaf => new ExcerptsCollectionView(leaf, this, this.repo));
     this.addSettingTab(new ExcerptsSettingTab(this.app, this));
     this.registerMarkdownCodeBlockProcessor("excerpts", (source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => {
       const match = source.match(/^workspace:\s*([a-zA-Z0-9_-]+)\s*$/m);
@@ -21,9 +23,9 @@ export default class ExcerptsPlugin extends Plugin {
         el.setText("Excerpts：此工作区入口未获授权，或首页路径发生变化"); return;
       }
       const child = new ExcerptsRenderChild(el, this, ws, this.repo);
-      this.rendered.add(child);
+      this.trackRenderer(child);
       const oldUnload = child.onunload.bind(child);
-      child.onunload = () => { oldUnload(); this.rendered.delete(child); };
+      child.onunload = () => { oldUnload(); this.untrackRenderer(child); };
       ctx.addChild(child);
     });
     this.addCommand({ id: "open-collection", name: "打开摘录收藏集", callback: () => {
@@ -31,6 +33,10 @@ export default class ExcerptsPlugin extends Plugin {
       if (first) void this.openWorkspace(first);
       else new Notice("请先在插件设置中创建收藏集");
     }});
+    // Intercept only configured collection home files, never ordinary Markdown.
+    this.registerEvent(this.app.workspace.on("file-open", file => this.redirectHome(file)));
+    // Reloading a plugin while its old markdown homepage is still open must also update the view.
+    this.app.workspace.onLayoutReady(() => this.redirectHome(this.app.workspace.getActiveFile()));
     this.registerEvent(this.app.vault.on("modify", file => this.fileChanged(file.path)));
     this.registerEvent(this.app.vault.on("create", file => this.fileChanged(file.path)));
     this.registerEvent(this.app.vault.on("delete", file => this.fileChanged(file.path)));
@@ -39,6 +45,17 @@ export default class ExcerptsPlugin extends Plugin {
       this.fileChanged(file.path); this.fileChanged(oldPath);
     }));
   }
+  private redirectHome(file: TFile | null): void {
+    if (!this.settings.autoOpenHome || !file) return;
+    const ws = this.settings.workspaces.find(x => workspacePaths(x).home === file.path);
+    if (!ws) return;
+    const leaf = this.app.workspace.activeLeaf ?? this.app.workspace.getLeaf(false);
+    if (!leaf || leaf.view.getViewType() === EXCERPTS_COLLECTION_VIEW) return;
+    void leaf.setViewState({ type: EXCERPTS_COLLECTION_VIEW, state: { workspaceId: ws.id }, active: true })
+      .catch(error => new Notice(`打开摘录视图失败：${error instanceof Error ? error.message : String(error)}`));
+  }
+  trackRenderer(child: ExcerptsRenderChild): void { this.rendered.add(child); }
+  untrackRenderer(child: ExcerptsRenderChild): void { this.rendered.delete(child); }
   private fileChanged(path: string): void {
     for (const child of this.rendered) {
       const ws = child.workspace;
@@ -59,7 +76,7 @@ export default class ExcerptsPlugin extends Plugin {
     await this.repo.ensureFolder(p.root);
     await this.repo.ensureFolder(p.cards);
     await this.repo.ensureFolder(p.attachments);
-    await this.app.vault.create(p.home, `# ${name}\n\n\`\`\`excerpts\nworkspace: ${ws.id}\n\`\`\`\n`);
+    await this.app.vault.create(p.home, `\`\`\`excerpts\nworkspace: ${ws.id}\n\`\`\`\n`);
     this.settings.workspaces.push(ws);
     await this.saveSettings();
     return ws;
@@ -102,7 +119,7 @@ export default class ExcerptsPlugin extends Plugin {
     const file = this.app.vault.getAbstractFileByPath(workspacePaths(ws).home);
     if (!(file instanceof TFile)) { new Notice("找不到工作区首页，请在设置中核对路径"); return; }
     const leaf = this.app.workspace.getLeaf(false);
-    await leaf.openFile(file, { state: { mode: "preview" } });
-    this.app.workspace.revealLeaf(leaf);
+    await leaf.setViewState({ type: EXCERPTS_COLLECTION_VIEW, state: { workspaceId: ws.id }, active: true });
+    await this.app.workspace.revealLeaf(leaf);
   }
 }
