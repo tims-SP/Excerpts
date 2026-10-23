@@ -1,22 +1,23 @@
-# Excerpts — product specification (beta.9)
+# Excerpts — Product specification (beta.10)
 
-Excerpts is an Obsidian Markdown card stream for collecting and rereading passages, ideas, dialogue and quotations.
+A local-first Obsidian timeline for **capturing, reading and finding** excerpts. One normal `.md` file is one card; `首页.excerpts` is a real FileView entrypoint for its parent folder.
 
-The user creates or opens a real `首页.excerpts` file in any desired Vault folder. That file is an entrypoint, not a document to be parsed as a card. Opening the file in Obsidian directly shows the original flomo-inspired capture-and-reading homepage, with no “My Excerpts” collection, separate listing page or mandatory metadata.
+## Homepage
 
-## Homepage experience
-
-1. Minimal title “摘录”.
-2. Compact, focus-expandable quick capture field, optional tag pill suggestions and a Save button. Saving creates a plain `.md` in the homepage directory.
-3. “最近收藏” toolbar: count, collapsed search icon, random recall icon and `Menu` for tag filtering and refresh.
-4. Single-column content-first card feed. Ordinary Markdown is rendered using Obsidian's Markdown renderer; H1 is optional; arbitrary H2 sections appear as collapsed supplementary groups.
-5. Card tags remain independent from H2 sections. Capsule tags allow filtering; expanded editor offers suggestions and custom tags.
-6. Date and lightweight controls follow card content. Editing opens the actual source note in the native Markdown editor.
+1. A small “摘录” title and compact, focus-expandable Markdown capture textarea. Optional tags are revealed only on request and have suggestions.
+2. Newest-first single-column cards. Search is collapsed until requested; tag filtering is a direct icon action.
+3. Content first. Render body and ordinary Markdown media embeds using Obsidian's MarkdownRenderer. H1 is optional; H2 headings remain expandable sections.
+4. Tags are independently editable as capsules. Each card has one edit action that opens its normal Markdown file.
+5. Date appears in the quiet footer. No per-card bookmark/favorite, shuffle recall, duplicate “add content” menu, or duplicate edit/copy/refresh menu.
 
 ## Storage
 
-Each `.md` is a card; frontmatter is optional, tags and favorite use standard Obsidian metadata. Images, video, audio and other attachments use Markdown embeds and normal vault resource paths. No custom collection metadata, private attachment store or schema markers.
+Markdown files and Vault attachments are the source of truth. Frontmatter is optional; tags are standard YAML. No collection IDs, private attachments, custom Entry/Extra schema or content migration.
 
-## Development constraints
+## Preferences and refresh
 
-This is a deliberately breaking development release. No migration or legacy compatibility. Full client QA on Windows/macOS and Android/iOS, large-vault pressure tests and complex Markdown embed/reference checks remain mandatory before stable release.
+Settings manage only the home entry and whether subfolders are included. Vault events trigger automatic refresh; a command is available for manual refresh. Newest-first sorting and batched search are internal defaults rather than user-facing tuning.
+
+## Acceptance
+
+Run unit, UI and build checks. Validate narrow-pane layout, large Vaults, embedded media, keyboard and touch states in real Obsidian on desktop and mobile before stable release.

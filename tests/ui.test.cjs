@@ -49,6 +49,7 @@ async function fixture(){
 test('opening a .excerpts file displays beta.6-style direct feed without a selector page',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
+  assert.deepEqual(Object.keys(t.plugin.settings).sort(),['defaultHome','recursive']);
   assert.equal(t.pane.getDisplayText(),'首页');
   assert.ok(root.querySelector('.ex-composer .ex-compose-text'));
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));

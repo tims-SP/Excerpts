@@ -1,13 +1,13 @@
 # Excerpts development roadmap
 
-## beta.9 — Direct .excerpts file homepage
+## beta.10 — Product simplification
 
-- Registered `.excerpts` as a native Obsidian FileView entrypoint.
-- The directory containing `首页.excerpts` is the only indexing scope.
-- Restored beta.6's inline composer, recent feed, collapsed search and tag filtering, random recall and content-first card layout.
-- Markdown file storage and native rendering retained; card sections come from arbitrary Markdown `##` headings.
-- No legacy collections, collection IDs, migration, mandatory frontmatter, private attachments or navigation homepage.
+- Preserve the `.excerpts` entrypoint, ordinary Markdown cards, quick capture, tag editing, H2 groups and native rendering.
+- Remove card favorites, random recall, redundant card menus and refresh/search/sort controls that are not needed by users.
+- Use automatic Vault file events, fixed search batching and newest-first order by default.
 
-## Acceptance remaining
+## Remaining acceptance
 
-Real Obsidian desktop / Android / iOS QA; 1k/10k note stress checks; complex cross-section Markdown references and embeds.
+- Real Obsidian desktop, Android and iOS usability checks, including narrow workspaces and touch targets.
+- Large Vault testing at 1k and 10k cards; complex cross-section Markdown references and media embeds.
+- Replace archival visual scripts written for retired Entry/Extra screens with a current FileView-based visual QA flow.
