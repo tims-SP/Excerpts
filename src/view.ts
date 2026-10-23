@@ -2,6 +2,7 @@ import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, setIcon } from "ob
 import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
 import { CardIndex, ParsedMarkdown, Workspace } from "./model";
+import { TagPicker, createTagPicker } from "./tag-editor";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
   const result = document.createElement(tag);
@@ -52,6 +53,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reading = 0;
   private markdownChildren = new Map<string, MarkdownRenderChild[]>();
   private sectionsShown = new Map<string, Set<string>>();
+  private editor: {path: string; raw: string; body: string; tags: string[]; initialTags: string[]; saving: boolean; focus?: "body" | "tags"; caret?: [number, number]} | null = null;
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
     private repo: EntryRepository) { super(container); }
@@ -95,66 +97,49 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     };
     quote.addEventListener("input", fit);
     quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
-    const tagsPane = node("div", "ex-capture-tags");
-    tagsPane.hidden = true;
-    const tagsInput = node("input", "ex-tags-input");
-    tagsInput.placeholder = "输入标签，用逗号分隔";
-    tagsInput.setAttribute("aria-label", "快速摘录标签");
-    const suggested = node("div", "ex-tag-suggestions");
-    const tagToggle = iconButton("hash", "添加标签", () => {
-      tagsPane.hidden = !tagsPane.hidden;
-      tagToggle.setAttribute("aria-expanded", String(!tagsPane.hidden));
-      if (!tagsPane.hidden) tagsInput.focus();
-    });
+    let tagToggle: HTMLButtonElement;
+    const picker = createTagPicker([], () => this.items.flatMap(item => item.tags), () => {},
+      expanded => tagToggle?.setAttribute("aria-expanded", String(expanded)),
+      () => tagToggle);
+    const tagArea = node("div", "ex-capture-tags");
+    tagArea.append(picker.element);
+    tagToggle = iconButton("hash", "添加标签", () => picker.setExpanded(!picker.isExpanded()));
     tagToggle.setAttribute("aria-expanded", "false");
     const composeActions = node("div", "ex-compose-actions");
     const options = node("div", "ex-capture-options");
     options.append(tagToggle);
     const saveButton = button("保存", () => void save(), "ex-btn-primary mod-cta");
     composeActions.append(options, saveButton);
-    tagsPane.append(suggested, tagsInput);
-    form.append(quote, tagsPane, composeActions);
+    form.append(quote, tagArea, composeActions);
     root.append(form);
     let saving = false;
     let resume = false;
     quote.addEventListener("keydown", event => {
-      if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      if (!event.isComposing && event.keyCode !== 229 && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault(); resume = true; void save();
       }
-    });
-    tagsInput.addEventListener("keydown", event => {
-      if (event.key === "Escape") { tagsPane.hidden = true; tagToggle.setAttribute("aria-expanded", "false"); tagToggle.focus(); }
     });
     const save = async () => {
       if (saving) return;
       const markdown = quote.value.trim();
       if (!markdown) { new Notice("请输入摘录内容"); return; }
-      saving = true; quote.disabled = true; tagsInput.disabled = true; saveButton.disabled = true;
+      saving = true; quote.disabled = true; picker.setDisabled(true); saveButton.disabled = true;
       saveButton.textContent = "保存中…";
       try {
-        const tags = tagsInput.value.split(/[,，]/).map(t => t.trim().replace(/^#/, "")).filter(Boolean);
-        await this.repo.create(this.workspace, markdown, tags);
-        quote.value = ""; tagsInput.value = ""; tagsPane.hidden = true; fit();
-        tagToggle.setAttribute("aria-expanded", "false");
+        await this.repo.create(this.workspace, markdown, picker.getTags());
+        quote.value = ""; picker.setTags([]); picker.setExpanded(false); fit();
         form.classList.remove("ex-is-composing");
         await this.reload();
         if (resume) quote.focus();
       } catch (error) { notify(error); }
-      finally { saving = false; resume = false; quote.disabled = false; tagsInput.disabled = false; saveButton.disabled = false; saveButton.textContent = "保存"; }
+      finally {
+        saving = false; resume = false; quote.disabled = false; picker.setDisabled(false);
+        saveButton.disabled = false; saveButton.textContent = "保存";
+      }
     };
-    quote.addEventListener("blur", () => { if (!quote.value && !tagsInput.value) form.classList.remove("ex-is-composing"); });
-    this.showSuggestions = () => {
-      suggested.replaceChildren();
-      const existing = new Set(tagsInput.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")));
-      const all = [...new Set(this.items.flatMap(item => item.tags))].sort((a, b) => a.localeCompare(b, "zh")).slice(0, 20);
-      for (const tag of all) suggested.append(button((existing.has(tag) ? "✓ " : "＋ ") + "#" + tag, () => {
-        if (existing.has(tag)) existing.delete(tag); else existing.add(tag);
-        tagsInput.value = [...existing].filter(Boolean).join(", ");
-        this.showSuggestions();
-      }, "ex-tag-option"));
-    };
-    tagsInput.addEventListener("input", this.showSuggestions);
-    this.showSuggestions();
+    quote.addEventListener("blur", () => {
+      if (!quote.value && !picker.getTags().length) form.classList.remove("ex-is-composing");
+    });
 
     const toolbar = node("div", "ex-toolbar");
     const title = node("div", "ex-toolbar-title");
@@ -206,7 +191,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.listEl = node("div", "ex-card-list");
     root.append(this.listEl);
   }
-  private showSuggestions: () => void = () => {};
   private async reload(): Promise<void> {
     const token = ++this.refreshToken;
     const cards = this.repo.list(this.workspace);
@@ -214,7 +198,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     cards.sort((a, b) => direction * (a.ctime - b.ctime));
     if (this.disposed || token !== this.refreshToken) return;
     this.items = cards;
-    this.showSuggestions();
     this.renderTagsFilter();
     if (this.searchText) this.scheduleSearch();
     else { this.matches = null; this.drawCards(); }
@@ -352,30 +335,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     info.append(date);
     footer.append(info);
     const actions = node("div", "ex-card-actions");
-    const add = iconButton("plus", "添加内容", () => {
-      const menu = new Menu();
-      const available = this.sectionsShown.get(item.path) ?? new Set<string>();
-      void this.repo.read(item.path).then(parsed => {
-        for (const section of parsed.sections) menu.addItem(entry => entry.setTitle(
-          (available.has(section.name) ? "隐藏" : "显示") + " · " + section.name).onClick(() => {
-            if (available.has(section.name)) available.delete(section.name); else available.add(section.name);
-            this.sectionsShown.set(item.path, available);
-            this.redrawCard(item, card);
-          }));
-        menu.addItem(entry => entry.setTitle("编辑 Markdown，添加新章节").onClick(() =>
-          void this.plugin.openMarkdown(item.path).catch(notify)));
-        const rect = add.getBoundingClientRect();
-        menu.showAtPosition({ x: rect.left, y: rect.bottom }, add.ownerDocument);
-      }).catch(notify);
-    });
-    actions.append(add);
     actions.append(iconButton(item.favorite ? "bookmark-check" : "bookmark",
       item.favorite ? "取消珍藏" : "珍藏", () => void this.toggleFavorite(item).catch(notify),
       item.favorite ? "ex-is-favorite" : ""));
-    actions.append(iconButton("pencil", "编辑 Markdown", () => void this.plugin.openMarkdown(item.path).catch(notify)));
+    actions.append(iconButton("pencil", "编辑摘录", () => void this.startEdit(item, card).catch(notify)));
     const more = iconButton("ellipsis", "更多摘录操作", () => {
       const menu = new Menu();
-      menu.addItem(entry => entry.setTitle("编辑原始 Markdown").onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
+      menu.addItem(entry => entry.setTitle("打开原始 Markdown").onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
+      menu.addItem(entry => entry.setTitle("编辑 Markdown 添加章节").onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
       menu.addItem(entry => entry.setTitle("复制正文").onClick(() => {
         void this.repo.read(item.path).then(parsed => {
           if (!navigator.clipboard?.writeText) throw new Error("当前环境不支持剪贴板");
@@ -402,7 +369,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // Keep the original H1 unobtrusive. The basename is never forced above the quote.
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
     if (parsed.body) this.renderMarkdown(body, parsed.body, item.path);
-    if (!parsed.body && !parsed.title) body.append(node("span", "ex-empty-card", "（空白摘录）"));
+    if (!parsed.body && !parsed.title && !parsed.sections.length) body.append(node("span", "ex-empty-card", "（空白摘录）"));
     this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
   }
   private renderMarkdown(container: HTMLElement, markdown: string, path: string): void {
@@ -422,9 +389,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const selected = this.sectionsShown.get(item.path) ?? new Set<string>();
     const summary = node("div", "ex-group-summary");
     for (const section of parsed.sections) {
-      const active = selected.has(section.name);
+      const active = selected.has(section.id);
       const chip = button(section.name, () => {
-        if (active) selected.delete(section.name); else selected.add(section.name);
+        if (active) selected.delete(section.id); else selected.add(section.id);
         this.sectionsShown.set(item.path, selected);
         this.redrawCard(item, mount.closest<HTMLElement>(".ex-card")!);
       }, "ex-group-trigger" + (active ? " ex-selected" : ""));
@@ -432,7 +399,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       summary.append(chip);
     }
     mount.append(summary);
-    for (const section of parsed.sections.filter(value => selected.has(value.name))) {
+    for (const section of parsed.sections.filter(value => selected.has(value.id) && value.markdown)) {
       const region = node("section", "ex-group-body");
       region.append(node("h4", "ex-group-title", section.name));
       this.renderMarkdown(region, section.markdown, item.path);
@@ -452,27 +419,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.tagFilter = this.tagFilter === tag ? "" : tag;
       this.renderTagsFilter(); this.drawCards();
     }, "ex-tag"));
-    const editor = node("div", "ex-tag-editor");
-    editor.hidden = true;
-    const options = [...new Set(this.items.flatMap(card => card.tags))].slice(0, 24);
-    for (const tag of options) editor.append(button((item.tags.includes(tag) ? "✓ " : "＋ ") + "#" + tag,
-      () => void this.changeTag(item, tag, !item.tags.includes(tag)).catch(notify), "ex-tag-option"));
-    const input = node("input", "ex-tag-custom");
-    input.placeholder = "新标签，回车添加"; input.setAttribute("aria-label", "添加自定义标签");
-    input.addEventListener("keydown", event => {
-      if (event.key === "Enter" && !event.isComposing) {
-        event.preventDefault(); void this.changeTag(item, input.value, true).catch(notify);
-      }
-    });
-    editor.append(input);
-    mount.append(button("＋ 标签", () => { editor.hidden = !editor.hidden; }, "ex-add-tag"), editor);
-  }
-  private async changeTag(item: CardIndex, tag: string, add: boolean): Promise<void> {
-    const value = tag.trim().replace(/^#/, "");
-    await this.repo.setTag(item.path, value, add);
-    if (add) item.tags = [...new Set([...item.tags, value])];
-    else item.tags = item.tags.filter(existing => existing !== value);
-    this.showSuggestions(); this.renderTagsFilter(); this.drawCards();
   }
   private async toggleFavorite(item: CardIndex): Promise<void> {
     await this.repo.setFavorite(item.path, !item.favorite);
