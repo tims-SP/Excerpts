@@ -1,4 +1,4 @@
-# Excerpts — beta.10 architecture
+# Excerpts — beta.11 architecture
 
 ## Main invariant
 
@@ -24,3 +24,7 @@ Real Obsidian clients must confirm FileView registration on desktop and mobile, 
 ## Locked interaction contract
 
 See [UI_CONTRACT_V3.md](UI_CONTRACT_V3.md). Do not regress to a separate entry editor, collection schema, or comma-only tags.
+
+## v4 durability
+
+`src/main.ts` serializes settings and editor/capture drafts in plugin data. `src/view.ts` preserves active editor DOM through search and refresh, while H2 clicks replace only their sections. `src/repository.ts` performs a conflict-checked atomic note write and surgically changes the YAML `tags` field. No migration layer is introduced.
