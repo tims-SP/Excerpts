@@ -223,7 +223,8 @@
   display: flex; align-items: center; flex: 1 1 auto; min-width: 0;
   flex-wrap: nowrap; gap: 5px; overflow: hidden;
 }
-.excerpts-root .ex-chips.ex-tags-editing { flex-wrap: wrap; overflow: visible; }
+.excerpts-root .ex-chips.ex-tags-editing,
+.excerpts-root .ex-chips.ex-tags-expanded { flex-wrap: wrap; overflow: visible; }
 .excerpts-root .ex-chips .ex-btn[hidden] { display: none !important; }
 .excerpts-root button.ex-tag {
   position: relative; isolation: isolate; flex: 0 0 auto;
@@ -243,6 +244,7 @@
 .excerpts-root button.ex-tag.ex-selected { color: var(--text-accent); }
 .excerpts-root button.ex-tag.ex-selected::before { background: var(--background-modifier-hover); }
 .excerpts-root button.ex-tag-overflow,
+.excerpts-root button.ex-tag-collapse,
 .excerpts-root button.ex-add-tag {
   min-height: 32px; padding: 0 6px; color: var(--text-muted);
   font-size: 12px; border-radius: var(--radius-m, 8px);
