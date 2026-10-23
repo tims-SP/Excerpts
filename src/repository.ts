@@ -121,7 +121,7 @@ export class EntryRepository {
     await this.app.fileManager.processFrontMatter(file, frontmatter => {
       const existing = Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) :
         typeof frontmatter.tags === "string" ? frontmatter.tags.split(/[,\s]+/) : [];
-      const next = new Set(existing.map(t => t.replace(/^#/, "")).filter(Boolean));
+      const next = new Set(existing.map((t: string) => t.replace(/^#/, "")).filter(Boolean));
       if (add) next.add(normalized); else next.delete(normalized);
       if (next.size) frontmatter.tags = [...next]; else delete frontmatter.tags;
     });
