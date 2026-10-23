@@ -110,6 +110,7 @@ test('source groups, tag filter, random recall and edit use native components',a
 test('inline Markdown and YAML tags save together without a second editor pane',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   try{
+    const originalCard=root.querySelector('.ex-card');
     clickByLabel(root,'编辑摘录'); await wait();
     const editor=root.querySelector('.ex-entry-editor');
     assert.ok(editor);
@@ -133,6 +134,7 @@ test('inline Markdown and YAML tags save together without a second editor pane',
     [...editor.querySelectorAll('button')].find(b=>b.textContent==='保存修改').click();
     await wait();
     assert.equal(root.querySelector('.ex-entry-editor'),null);
+    assert.equal(root.querySelector('.ex-card'),originalCard,'save must keep card identity');
     const raw=t.files.get(t.md.path).data;
     assert.match(raw,/重写 Markdown/);
     assert.match(raw,/## 来源[\s\S]*## 来源/);
