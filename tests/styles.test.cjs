@@ -54,3 +54,24 @@ test('mobile touch and reduced-motion checks are present',()=>{
   assert.match(css,/min-height:\s*44px/);
   assert.match(css,/\.ex-chips \.ex-btn\[hidden\]/);
 });
+
+
+test('card spacing is optically balanced rather than uniformly padded',()=>{
+  const card=css.match(/\.excerpts-root \.ex-card \{([\s\S]*?)\}/)?.[1]||'';
+  assert.match(card,/--ex-card-pad:\s*20px/);
+  assert.match(card,/--ex-card-pad-bottom:\s*12px/);
+  assert.match(card,/--ex-prose-gap:\s*10px/);
+  assert.match(card,/padding:\s*var\(--ex-card-pad\) var\(--ex-card-pad\) var\(--ex-card-pad-bottom\)/);
+  assert.match(css,/--ex-card-pad:\s*16px/);
+  assert.match(css,/--ex-card-pad-bottom:\s*10px/);
+  assert.match(css,/\.excerpts-root \.ex-chips\s*\{[^}]*min-height:\s*36px/);
+  assert.match(css,/@media \(pointer: coarse\)\s*\{[\s\S]*?\.excerpts-root \.ex-chips \{ min-height: 44px; \}/);
+});
+
+test('section and footer vertical rhythm is compact without shrinking touch controls',()=>{
+  assert.match(css,/\.excerpts-root \.ex-extras \{[^}]*margin-top:\s*var\(--ex-space-3\)/);
+  assert.match(css,/\.excerpts-root \.ex-card-footer\s*\{[^}]*margin-top:\s*var\(--ex-space-2\)/);
+  assert.match(css,/\.excerpts-root \.ex-native-markdown p \{[^}]*var\(--ex-prose-gap/);
+  assert.match(css,/\.excerpts-root \.ex-tag-editor\s*\{[^}]*padding:\s*var\(--ex-space-2\) 0 0; margin-top:\s*var\(--ex-space-3\)/);
+  assert.match(css,/\.excerpts-root button\.ex-group-trigger\s*\{[^}]*min-height:\s*40px/);
+});
