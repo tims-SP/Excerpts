@@ -35,7 +35,8 @@ async function fixture(){
   const home=new TFile('摘录/首页.excerpts'); files.set(home.path,{file:home,data:''});
   const md=new TFile('摘录/测试.md'); files.set(md.path,{file:md,data:'# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记'});
   const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
-    async cachedRead(file){return files.get(file.path).data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
+    async cachedRead(file){return files.get(file.path).data;},
+    async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
   const leaf={lastFile:null,async openFile(file){this.lastFile=file;},async setViewState(){}};
   plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}}
@@ -88,8 +89,16 @@ test('H2 groups, filtering and editing without redundant card actions',async()=>
   for(const label of ['随机回顾','珍藏','取消珍藏','添加内容','更多摘录操作'])
     assert.equal(root.querySelector('button[aria-label="'+label+'"]'),null,label);
   assert.equal(root.querySelectorAll('.ex-card-actions button').length,1);
-  clickByLabel(root,'编辑 Markdown');await wait();
-  assert.equal(t.leaf.lastFile.path,t.md.path);
+  clickByLabel(root,'编辑摘录');await wait();
+  const editor=root.querySelector('.ex-editor-text');
+  assert.ok(editor);
+  assert.match(editor.value,/## 来源/);
+  assert.equal(t.leaf.lastFile,null);
+  editor.value += '\n新内容';
+  editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-edit-actions button')].find(x=>x.textContent==='保存').click();
+  await wait();
+  assert.match(t.files.get(t.md.path).data,/新内容/);
   const filter=clickByLabel(root,'筛选标签');
   assert.equal(filter.getAttribute('aria-expanded'),'true');
   assert.equal(root.querySelector('.ex-filter-tags').hidden,false);
