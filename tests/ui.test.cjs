@@ -112,6 +112,7 @@ test('empty groups stay hidden, menu can create an Extra, and draft survives ref
     await new Promise(resolve => setImmediate(resolve));
     await f.renderer.reload();
     const list = await f.repo.list(f.workspace);
+    assert.equal(list[0].extras.length, 1, 'Unexpected extras; last Notice: ' + Notice.last + '\nRaw: ' + f.files.get(list[0].path).data);
     assert.equal(list[0].extras[0].title, '《作品》');
     assert.equal(list[0].extras[0].content, '章节：一');
     assert.equal(f.container.querySelectorAll('.ex-extra-group').length, 1);
