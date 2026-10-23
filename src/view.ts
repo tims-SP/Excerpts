@@ -407,33 +407,137 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.renderContent(card, item, parsed);
     }).catch(notify);
   }
-  private renderTags(mount: HTMLElement, item: CardIndex): void {
+  private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();
-    for (const tag of item.tags) mount.append(button("#" + tag, () => {
-      this.tagFilter = this.tagFilter === tag ? "" : tag;
-      this.renderTagsFilter(); this.drawCards();
-    }, "ex-tag"));
+    mount.classList.toggle("ex-tags-empty", !item.tags.length);
+    for (const tag of item.tags) {
+      const pill = button("#" + tag, () => {
+        this.tagFilter = this.tagFilter === tag ? "" : tag;
+        this.renderTagsFilter(); this.drawCards();
+      }, "ex-tag");
+      pill.setAttribute("aria-pressed", String(this.tagFilter === tag));
+      mount.append(pill);
+    }
     const editor = node("div", "ex-tag-editor");
-    editor.hidden = true;
-    const options = [...new Set(this.items.flatMap(card => card.tags))].slice(0, 24);
-    for (const tag of options) editor.append(button((item.tags.includes(tag) ? "✓ " : "＋ ") + "#" + tag,
-      () => void this.changeTag(item, tag, !item.tags.includes(tag)).catch(notify), "ex-tag-option"));
+    editor.hidden = !editorOpen;
+    const optionRow = node("div", "ex-tag-suggestions");
     const input = node("input", "ex-tag-custom");
-    input.placeholder = "新标签，回车添加"; input.setAttribute("aria-label", "添加自定义标签");
+    input.type = "text";
+    input.placeholder = "查找或创建标签";
+    input.value = this.tagInputs.get(item.path) ?? "";
+    input.setAttribute("aria-label", "查找或创建标签");
+    const paintOptions = () => {
+      optionRow.replaceChildren();
+      const keyword = input.value.trim().replace(/^#/, "").toLocaleLowerCase();
+      const all = [...new Set(this.items.flatMap(card => card.tags))];
+      for (const tag of all.filter(t => t.toLocaleLowerCase().includes(keyword)).slice(0, 8)) {
+        const selected = item.tags.includes(tag);
+        const choice = button("#" + tag, () =>
+          void this.changeTag(item, tag, !selected).catch(notify),
+          "ex-tag-option" + (selected ? " ex-selected" : ""));
+        choice.setAttribute("aria-pressed", String(selected));
+        optionRow.append(choice);
+      }
+    };
+    input.addEventListener("input", () => {
+      this.tagInputs.set(item.path, input.value);
+      paintOptions();
+    });
     input.addEventListener("keydown", event => {
-      if (event.key === "Enter" && !event.isComposing) {
-        event.preventDefault(); void this.changeTag(item, input.value, true).catch(notify);
+      if (event.key === "Escape") {
+        event.preventDefault(); toggle.click(); toggle.focus();
+      } else if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        const value = input.value.trim().replace(/^#/, "");
+        if (value && !item.tags.includes(value))
+          void this.changeTag(item, value, true).catch(notify);
       }
     });
-    editor.append(input);
-    mount.append(button("＋ 标签", () => { editor.hidden = !editor.hidden; }, "ex-add-tag"), editor);
+    editor.append(optionRow, input);
+    const toggle = button("＋ 标签", () => {
+      const opened = editor.hidden;
+      editor.hidden = !opened;
+      if (opened) this.openTagEditors.add(item.path);
+      else this.openTagEditors.delete(item.path);
+      toggle.setAttribute("aria-expanded", String(opened));
+      if (opened) input.focus();
+    }, "ex-add-tag");
+    toggle.setAttribute("aria-expanded", String(editorOpen));
+    mount.append(toggle, editor);
+    paintOptions();
   }
   private async changeTag(item: CardIndex, tag: string, add: boolean): Promise<void> {
     const value = tag.trim().replace(/^#/, "");
     await this.repo.setTag(item.path, value, add);
     if (add) item.tags = [...new Set([...item.tags, value])];
     else item.tags = item.tags.filter(existing => existing !== value);
-    this.showSuggestions(); this.renderTagsFilter(); this.drawCards();
+    this.tagInputs.delete(item.path);
+    this.showSuggestions();
+    this.renderTagsFilter();
+    const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+      .find(el => el.dataset.path === item.path);
+    const mount = card?.querySelector<HTMLElement>(".ex-chips");
+    if (mount) {
+      this.renderTags(mount, item, this.openTagEditors.has(item.path));
+      if (this.openTagEditors.has(item.path))
+        mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
+    }
   }
 
+  private async startInlineEdit(item: CardIndex, card: HTMLElement): Promise<void> {
+    if (this.editingDrafts.has(item.path)) return;
+    const original = await this.repo.readRaw(item.path);
+    if (this.disposed || !card.isConnected) return;
+    this.editingDrafts.set(item.path, { original, value: original, saving: false });
+    this.renderInlineEditor(card, item, true);
+  }
+  private renderInlineEditor(card: HTMLElement, item: CardIndex, focus = false): void {
+    const draft = this.editingDrafts.get(item.path);
+    if (!draft) return;
+    this.unmountMarkdown(item.path);
+    card.classList.add("ex-editing");
+    card.querySelector<HTMLElement>(".ex-chips")!.hidden = true;
+    card.querySelector<HTMLElement>(".ex-extras")!.hidden = true;
+    card.querySelector<HTMLElement>(".ex-card-footer")!.hidden = true;
+    const body = card.querySelector<HTMLElement>(".ex-quote")!;
+    body.replaceChildren();
+    const editor = node("div", "ex-entry-editor");
+    const textarea = node("textarea", "ex-editor-text");
+    textarea.rows = 7;
+    textarea.value = draft.value;
+    textarea.setAttribute("aria-label", "编辑摘录 Markdown 原文");
+    textarea.addEventListener("input", () => { draft.value = textarea.value; });
+    const controls = node("div", "ex-edit-actions");
+    const cancel = button("取消", () => {
+      this.editingDrafts.delete(item.path);
+      const replacement = this.createCard(item);
+      card.replaceWith(replacement);
+      this.enqueue(() => this.hydrate(item, replacement, this.renderToken));
+    }, "ex-btn-quiet");
+    const save = button("保存", () => {
+      if (draft.saving) return;
+      draft.saving = true;
+      save.disabled = true; cancel.disabled = true; textarea.disabled = true;
+      save.textContent = "保存中…";
+      void this.repo.updateRaw(item.path, draft.value, draft.original).then(async () => {
+        this.editingDrafts.delete(item.path);
+        await this.reload();
+      }).catch(error => {
+        notify(error);
+        draft.saving = false;
+        save.disabled = false; cancel.disabled = false; textarea.disabled = false;
+        save.textContent = "保存";
+        textarea.focus();
+      });
+    }, "ex-btn-primary");
+    textarea.addEventListener("keydown", event => {
+      if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault(); save.click();
+      }
+    });
+    controls.append(cancel, save);
+    editor.append(textarea, controls);
+    body.append(editor);
+    if (focus) textarea.focus();
+  }
 }
