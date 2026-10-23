@@ -87,6 +87,9 @@
 }
 
 .excerpts-root .ex-chips.ex-tags-empty { margin-top: var(--ex-space-1); }
+.excerpts-root .ex-tag-editor { width: 100%; align-items: stretch; }
+.excerpts-root .ex-tag-editor .ex-tag-suggestions { flex: 0 0 auto; min-height: 0; }
+.excerpts-root .ex-tag-editor .ex-tag-custom { box-sizing: border-box; }
 .excerpts-root button.ex-tag-option.ex-selected { background: var(--background-modifier-hover); font-weight: 600; }
 .excerpts-root .ex-entry-editor { display: flex; flex-direction: column; gap: var(--ex-space-3); }
 .excerpts-root .ex-editor-text {
