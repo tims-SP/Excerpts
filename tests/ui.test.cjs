@@ -30,7 +30,7 @@ const Excerpts=require('../main.js');Module._load=old;
 const wait=()=>new Promise(resolve=>setTimeout(resolve,70));
 function clickByLabel(container,label){const el=container.querySelector(`button[aria-label="${label}"]`);assert.ok(el,'Missing button: '+label);el.click();return el;}
 
-async function fixture(){
+async function fixture(options={}){
   const files=new Map();
   const dir=new TFolder('摘录'); files.set('摘录',{file:dir});
   const home=new TFile('摘录/首页.excerpts'); files.set(home.path,{file:home,data:''});
@@ -41,13 +41,16 @@ async function fixture(){
     async process(file, transform){const x=files.get(file.path); const next=transform(x.data); x.data=next; file.stat.mtime+=1; file.stat.size=next.length;},
     async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
+  let lastSaved=null;
+  plugin.loadData=async()=>options.data||null;
+  plugin.saveData=async data=>{lastSaved=JSON.parse(JSON.stringify(data));};
   const leaf={lastFile:null,async openFile(file){this.lastFile=file;},async setViewState(){}};
   plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}}
     ,fileManager:{async processFrontMatter(f,fn){fn({tags:['哲学']});}},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
   await pane.openFile(home);await wait();
-  return {files,plugin,pane,leaf,md,home,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
+  return {files,plugin,pane,leaf,md,home,getSaved:()=>lastSaved,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
 }
 
 test('opening a .excerpts file displays beta.6-style direct feed without a selector page',async()=>{
@@ -264,5 +267,96 @@ test('saved property tag changes appear in the card before metadata cache reinde
     await wait();
     assert.ok(root.querySelector('.ex-chips').textContent.includes('#立即显示'));
     assert.ok(!root.querySelector('.ex-chips').textContent.includes('#哲学'));
+  }finally{await t.close();}
+});
+
+test('v4 quick capture remains collapsed until focus and persists an unsaved draft',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  try{
+    const composer=root.querySelector('.ex-composer');
+    const text=root.querySelector('.ex-compose-text');
+    assert.equal(composer.classList.contains('ex-is-composing'),false);
+    assert.equal(root.querySelector('.ex-compose-actions button.mod-cta').disabled,true);
+    text.value='没写完的句子';text.dispatchEvent(new window.Event('input',{bubbles:true}));
+    assert.equal(root.querySelector('.ex-compose-actions button.mod-cta').disabled,false);
+    await new Promise(resolve=>setTimeout(resolve,450));
+    const saved=t.getSaved();
+    assert.equal(saved.drafts['摘录/首页.excerpts:capture'].body,'没写完的句子');
+    await t.close();
+    const restored=await fixture({data:saved});
+    try{
+      assert.equal(restored.pane.contentEl.querySelector('.ex-compose-text').value,'没写完的句子');
+      assert.equal(restored.pane.contentEl.querySelector('.ex-composer').classList.contains('ex-is-composing'),true);
+    }finally{await restored.close();}
+  }finally{if(t.pane.contentEl.isConnected)await t.close();}
+});
+
+test('v4 persists a dirty inline editor and restores it on reopen',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  try{
+    clickByLabel(root,'编辑摘录');await wait();
+    const area=root.querySelector('.ex-editor-text');
+    area.value='未保存正文\n\n## 来源\n\n书';
+    area.dispatchEvent(new window.Event('input',{bubbles:true}));
+    await new Promise(resolve=>setTimeout(resolve,450));
+    const saved=t.getSaved();
+    assert.equal(saved.drafts['摘录/首页.excerpts:edit'].body,area.value);
+    await t.close();
+    const restored=await fixture({data:saved});
+    try{
+      const text=restored.pane.contentEl.querySelector('.ex-editor-text');
+      assert.ok(text,'dirty edit should auto-restore');
+      assert.equal(text.value,'未保存正文\n\n## 来源\n\n书');
+    }finally{await restored.close();}
+  }finally{if(t.pane.contentEl.isConnected)await t.close();}
+});
+
+test('v4 searching an unrelated note keeps the dirty editor mounted and focused',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  try{
+    clickByLabel(root,'编辑摘录');await wait();
+    const area=root.querySelector('.ex-editor-text');
+    area.value='保留我的未保存内容';
+    area.dispatchEvent(new window.Event('input',{bubbles:true}));
+    area.focus();
+    clickByLabel(root,'搜索');
+    const search=root.querySelector('.ex-search');
+    search.value='完全没有匹配的搜索短语';
+    search.dispatchEvent(new window.Event('input',{bubbles:true}));
+    await new Promise(resolve=>setTimeout(resolve,550));
+    const actual=root.querySelector('.ex-editor-text');
+    assert.equal(actual,area,'must not rebuild active textarea');
+    assert.equal(actual.value,'保留我的未保存内容');
+    assert.ok(actual.isConnected);
+    assert.equal(root.querySelectorAll('.ex-card.ex-is-editing').length,1);
+  }finally{await t.close();}
+});
+
+test('v4 H2 toggle changes only the section region, not the main Markdown mount',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  try{
+    const quote=root.querySelector('.ex-quote .ex-native-markdown');
+    assert.ok(quote);
+    const before=renders.filter(entry=>entry.path===t.md.path&&entry.content.includes('![[图片.png]]')).length;
+    const trigger=root.querySelector('.ex-group-trigger');
+    trigger.click();await wait();
+    assert.equal(root.querySelector('.ex-quote .ex-native-markdown'),quote);
+    assert.equal(root.querySelector('.ex-group-title'),null,'expanded H2 must not duplicate its heading');
+    assert.equal(renders.filter(entry=>entry.path===t.md.path&&entry.content.includes('![[图片.png]]')).length,before);
+  }finally{await t.close();}
+});
+
+test('v4 invalid custom tag is rejected visibly without adding a chip',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  try{
+    clickByLabel(root,'编辑摘录');await wait();
+    const editor=root.querySelector('.ex-entry-editor');
+    [...editor.querySelectorAll('button')].find(b=>b.textContent.includes('添加标签')).click();
+    const input=editor.querySelector('.ex-tags-input');
+    input.value='不 合法';
+    input.dispatchEvent(new window.Event('input',{bubbles:true}));
+    assert.match(editor.querySelector('.ex-tag-feedback').textContent,/空格/);
+    input.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    assert.doesNotMatch(editor.querySelector('.ex-tag-pills').textContent,/不 合法/);
   }finally{await t.close();}
 });
