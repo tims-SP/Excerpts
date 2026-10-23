@@ -13,11 +13,22 @@ function cleanStem(value: string): string {
   return name;
 }
 
-function readableLine(source: string): string {
-  let text = source.trim()
+function stripBlockPrefix(source: string): string {
+  return source.trim()
     .replace(/^(?:>\s*)+/, "")
     .replace(/^[-*+]\s+(?:\[[ xX]\]\s+)?/, "")
     .replace(/^\d+[.)]\s+/, "");
+}
+
+function isStandaloneAttachment(source: string): boolean {
+  const text = stripBlockPrefix(source);
+  return /^(?:(?:!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)]*\))\s*)+$/.test(text);
+}
+
+function readableLine(source: string): string {
+  let text = stripBlockPrefix(source)
+    // Obsidian callout markers are presentation syntax, not readable content.
+    .replace(/^\[![^\]]+\][+-]?\s*/i, "");
 
   // Use human-visible link text or attachment aliases, not attachment paths.
   text = text.replace(/!\[\[([^\]]+)\]\]/g, (_match, target: string) => {
@@ -72,7 +83,8 @@ export function excerptFileStem(markdown: string, now = new Date()): string {
   let fenceChar = "";
   let fenceLength = 0;
   let inComment = false;
-  let firstText = "";
+  let firstBody = "";
+  let firstAttachment = "";
   for (const raw of lines.slice(start)) {
     const line = raw.trim();
     if (inComment) {
@@ -102,7 +114,14 @@ export function excerptFileStem(markdown: string, now = new Date()): string {
       if (title) return fitFileStem(title);
     }
     if (/^ {0,3}#{1,6}\s+/.test(raw)) continue;
-    if (!firstText) firstText = readableLine(raw);
+    const readable = readableLine(raw);
+    if (!readable) continue;
+    if (isStandaloneAttachment(raw)) {
+      if (!firstAttachment) firstAttachment = readable;
+    } else if (!firstBody) {
+      firstBody = readable;
+    }
   }
-  return fitFileStem(firstText || localDateStem(now));
+  // A normal sentence takes priority even when an attachment appears earlier.
+  return fitFileStem(firstBody || firstAttachment || localDateStem(now));
 }
