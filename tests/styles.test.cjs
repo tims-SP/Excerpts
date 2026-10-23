@@ -11,5 +11,5 @@ test('mobile touch, collapsed filters and card layout are scoped',()=>{
   assert.match(css,/@container \(max-width: 480px\)/);
   assert.match(css,/@media \(pointer: coarse\)/);
   assert.match(css,/min-height: 44px/);
-  assert.match(css,/\.excerpts-root \.ex-search-wrap\[hidden\]/);
+  assert.match(css,/\.ex-search-wrap, \.ex-filter-tags, \.ex-tag-picker\)\[hidden\]/);
 });
