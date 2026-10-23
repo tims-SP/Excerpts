@@ -301,3 +301,25 @@ test('Extra undo refuses to overwrite a newer externally changed entry', async (
     assert.equal((await f.repo.list(f.workspace))[0].extras.length, 0);
   } finally { await f.close(); }
 });
+
+test('archiving is blocked while an unsaved quote draft exists', async () => {
+  const f = await fixture();
+  try {
+    const original = await f.repo.create(f.workspace, '保存的版本');
+    const raw = f.files.get(original.path).data;
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    type(f.container.querySelector('.ex-edit-panel textarea'), '未保存的正文');
+    click(f.container, '更多');
+    Menu.last.items.find(item => item.title === '移至回收站').action();
+    assert.match(Notice.last, /未保存的编辑草稿/);
+    assert.equal(f.files.get(original.path).data, raw);
+    assert.equal(f.renderer.lastTrash, null);
+    assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '未保存的正文');
+    click(f.container.querySelector('.ex-edit-panel'), '取消');
+    click(f.container, '更多');
+    Menu.last.items.find(item => item.title === '移至回收站').action();
+    assert.equal(Modal.last.isOpen, true);
+    click(Modal.last.contentEl, '取消');
+  } finally { await f.close(); }
+});
