@@ -20,3 +20,12 @@ test('card edit and tag components have scoped styles',()=>{
   assert.ok(css.includes('.ex-card-footer[hidden]'));
   assert.ok(css.includes('max-width: 720px'));
 });
+
+test('regression: expanded tag input never inherits vertical 100-percent flex basis',()=>{
+  assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+0\s+auto;/);
+  assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*height:\s*44px;/);
+  assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+0\s+100%/);
+  assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags > \.ex-chips\s*\{[^}]*display:\s*none/);
+  assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags \.ex-footer-tag\s*\{[^}]*display:\s*inline-flex/);
+  assert.match(css,/\.excerpts-root \.ex-card\.ex-editing\s*\{[^}]*border-color/);
+});
