@@ -16,7 +16,7 @@ class TFile extends TAbstractFile{constructor(path,n){super(path);const filename
 class TFolder extends TAbstractFile{}
 class Component{constructor(el){this.containerEl=el;this.children=[]}load(){this.onload?.()}unload(){this.onunload?.()}addChild(child){this.children.push(child)}removeChild(child){this.children=this.children.filter(v=>v!==child)}}
 class MarkdownRenderChild extends Component{}
-class FileView extends Component{constructor(){super(document.createElement("div"));this.file=null}async openFile(file){this.file=file;await this.onLoadFile(file)}}
+class FileView extends Component{constructor(){super(document.createElement("div"));this.contentEl=this.containerEl;this.file=null}async openFile(file){this.file=file;await this.onLoadFile(file)}}
 class Plugin{async loadData(){return null}async saveData(){}registerView(name,fn){this.factory=fn}registerExtensions(){}addSettingTab(){}addRibbonIcon(){}addCommand(){}registerEvent(){}}
 class PluginSettingTab{}class Setting{}
 class Notice{constructor(message){(window.__notices||=[]).push(String(message))}}
