@@ -44,6 +44,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private deletionInFlight = false;
   private quoteDrafts = new Map<string, { text: string; tags: string }>();
   private extraDrafts = new Map<string, { title: string; content: string }>();
+  private quoteBases = new Map<string, string>();
+  private extraBases = new Map<string, string>();
   private readonly draftRepo: DraftRepository;
   private savedDrafts = new Map<string, SavedDraft>();
   private recoverableDrafts: SavedDraft[] = [];
@@ -229,6 +231,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.quoteDrafts.has(entry.id)) { new Notice("当前存在未保存的编辑，请先处理后再恢复"); return; }
     this.savedDrafts.set("quote:" + entry.id, draft);
     this.quoteDrafts.set(entry.id, { text: draft.text, tags: draft.tags });
+    this.quoteBases.set(entry.id, draft.base);
     this.editing = entry.id;
     this.drawCards();
     new Notice("已加载原有编辑草稿");
@@ -284,7 +287,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const tools = node("div", "ex-card-actions");
     if (!entry.readOnly) {
       tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
-      tools.append(button("编辑", () => { this.editing = this.editing === entry.id ? null : entry.id; this.drawCards(); }, "ex-btn-quiet"));
+      tools.append(button("编辑", () => {
+        if (this.editing !== entry.id && !this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
+        this.editing = this.editing === entry.id ? null : entry.id;
+        this.drawCards();
+      }, "ex-btn-quiet"));
       if (this.recoverableDrafts.some(d => d.kind === "quote" && d.entryId === entry.id)) {
         tools.append(button("恢复草稿", () => this.restoreQuote(entry), "ex-btn-quiet"));
       }
@@ -334,6 +341,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return card;
   }
   private renderQuoteEditor(card: HTMLElement, entry: Entry) {
+    if (!this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
     const edit = node("div", "ex-edit-panel");
     const draft = this.quoteDrafts.get(entry.id) || { text: entry.text, tags: entry.tags.join(", ") };
     const content = textarea("摘录正文", draft.text); content.rows = 5;
@@ -348,16 +356,24 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const actions = node("div", "ex-actions");
     actions.append(button("取消", () => {
       this.quoteDrafts.delete(entry.id);
+      this.quoteBases.delete(entry.id);
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null; this.drawCards();
     }, "ex-btn-quiet"));
-    actions.append(button("保存修改", () => void this.saveEdit(entry, previous => ({
+    actions.append(button("保存修改", () => {
+      if (this.quoteBases.get(entry.id) !== revision(entry)) {
+        new Notice("摘录在编辑期间已发生变化，请复制草稿并重新打开编辑器，拒绝覆盖");
+        return;
+      }
+      void this.saveEdit(entry, previous => ({
       ...previous, text: content.value.trim(), tags: [...new Set(tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean))]
     }), () => {
       this.quoteDrafts.delete(entry.id);
+      this.quoteBases.delete(entry.id);
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null;
-    }), "ex-btn-primary"));
+    });
+    }, "ex-btn-primary"));
     edit.append(content, tags, actions); card.append(edit);
   }
   private renderExtraGroup(target: HTMLElement, entry: Entry, kind: ExtraKind) {
@@ -391,6 +407,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private extraEditor(target: HTMLElement, entry: Entry, kind: ExtraKind, original?: Extra) {
     const pane = node("div", "ex-edit-panel");
     const draftKey = `${entry.id}:${original?.id || "new:" + kind}`;
+    if (!this.extraBases.has(draftKey)) this.extraBases.set(draftKey, revision(entry));
     const draft = this.extraDrafts.get(draftKey) || { title: original?.title || "", content: original?.content || "" };
     const title = inputBox("标题，例如：原始出处 / 精简版", draft.title);
     const text = textarea("补充内容（支持存储 Markdown 文本）", draft.content); text.rows = 4;
@@ -398,19 +415,35 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     title.addEventListener("input", keepDraft);
     text.addEventListener("input", keepDraft);
     const actions = node("div", "ex-actions");
-    actions.append(button("取消", () => { this.extraDrafts.delete(draftKey); this.editingExtra = null; this.drawCards(); }, "ex-btn-quiet"));
-    actions.append(button("保存", () => void this.saveEdit(entry, previous => ({
+    actions.append(button("取消", () => {
+      this.extraDrafts.delete(draftKey); this.extraBases.delete(draftKey);
+      this.editingExtra = null; this.drawCards();
+    }, "ex-btn-quiet"));
+    actions.append(button("保存", () => {
+      if (this.extraBases.get(draftKey) !== revision(entry)) {
+        new Notice("附属条目在编辑期间已发生变化，请复制草稿后刷新，拒绝覆盖");
+        return;
+      }
+      void this.saveEdit(entry, previous => ({
       ...previous, extras: original ? previous.extras.map(x => x.id === original.id ? { ...x, title: title.value.trim(), content: text.value } : x)
         : [...previous.extras, { id: makeId("x"), kind, title: title.value.trim() || EXTRA_LABELS[kind], content: text.value }]
-    }), () => { this.extraDrafts.delete(draftKey); this.editingExtra = null; }), "ex-btn-primary"));
+    }), () => {
+      this.extraDrafts.delete(draftKey); this.extraBases.delete(draftKey);
+      this.editingExtra = null;
+    });
+    }, "ex-btn-primary"));
     if (original) {
       let confirm = false;
       const del = button("删除条目", () => {
         if (!confirm) { confirm = true; del.textContent = "确认删除"; return; }
+        if (this.extraBases.get(draftKey) !== revision(entry)) {
+          new Notice("文件已变化，拒绝用旧界面删除附属条目"); return;
+        }
         void this.saveEdit(entry, previous => ({ ...previous, extras: previous.extras.filter(x => x.id !== original.id) }), saved => {
           this.lastExtraRemoval = { after: saved, removed: original, index: entry.extras.findIndex(x => x.id === original.id) };
           if (this.undoExtraButton) this.undoExtraButton.hidden = false;
           this.extraDrafts.delete(draftKey);
+          this.extraBases.delete(draftKey);
           this.editingExtra = null;
         });
       }, "ex-btn-danger");
