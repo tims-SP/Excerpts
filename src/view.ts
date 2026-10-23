@@ -328,6 +328,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private drawCards(): void {
     if (this.editor) {
       const active = document.activeElement as HTMLElement | null;
+      // Restore focus only when it was actually inside the editor, never steal it from search.
+      this.editor.focus = undefined;
       if (active?.classList.contains("ex-editor-text")) {
         this.editor.focus = "body";
         const textarea = active as HTMLTextAreaElement;
