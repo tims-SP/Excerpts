@@ -24,6 +24,13 @@ async function test(){
     async createFolder(p){if(files.has(p))throw Error('exists');const f=new TFolder(p);files.set(p,{file:f});return f;},
     async create(p,data){if(files.has(p))throw Error('exists');const f=new TFile(p);files.set(p,{file:f,data});creates++;return f;},
     async cachedRead(f){return files.get(f.path).data;},
+    async read(f){return files.get(f.path).data;},
+    async rename(f,p){
+      if(files.has(p)) throw Error('destination exists');
+      const prior=files.get(f.path);
+      if(!prior) throw Error('source missing');
+      files.delete(f.path);f.path=p;files.set(p,prior);
+    },
     async process(f,callback){const holder=files.get(f.path);holder.data=callback(holder.data);return holder.data;},
     on(type,fn){events.set(type,fn);return {}},
   };
@@ -69,6 +76,29 @@ async function test(){
   await assert.rejects(()=>repo.update(saved,prev=>({...prev,favorite:false})),/损坏/);
   assert.equal(files.get(item.path).data,damagedRaw);
   files.get(item.path).data=goodRaw;
+  // Delete means archive: raw bytes are never edited or permanently erased.
+  const archiveInput=(await repo.list(ws))[0];
+  const beforeArchive=files.get(item.path).data;
+  const receipt=await repo.trash(ws,archiveInput);
+  assert.ok(receipt.recyclePath.startsWith('个人/收藏/句子/Excerpts-Recycle/'));
+  assert.equal(files.get(receipt.recyclePath).data,beforeArchive);
+  assert.ok(!files.has(item.path));
+  assert.equal((await repo.list(ws)).length,0);
+  // An occupied destination must never be overwritten by undo.
+  files.set(item.path,{file:new TFile(item.path),data:'DO NOT REPLACE'});
+  await assert.rejects(()=>repo.restore(ws,receipt),/拒绝覆盖/);
+  assert.equal(files.get(item.path).data,'DO NOT REPLACE');
+  files.delete(item.path);
+  // External changes to the archive also block an automatic restore.
+  files.get(receipt.recyclePath).data += '\\nexternal change'.replace('\\n','\n');
+  await assert.rejects(()=>repo.restore(ws,receipt),/发生变化/);
+  files.get(receipt.recyclePath).data=beforeArchive;
+  await repo.restore(ws,receipt);
+  assert.equal(files.get(item.path).data,beforeArchive);
+  assert.equal((await repo.list(ws)).length,1);
+  // Wrong collection identity or stale entry state blocks archiving.
+  await assert.rejects(()=>repo.trash(ws,{...archiveInput,collectionId:'other'}),/不属于/);
+  await assert.rejects(()=>repo.trash(ws,{...archiveInput,text:'outdated'}),/刷新/);
   // A path using Windows separators must not bypass the overlap check.
   await plugin.createWorkspace('另一个收藏集','其它/空间');
   await assert.rejects(()=>plugin.repointWorkspace(ws.id,'其它\\空间'),/重叠/);
