@@ -62,7 +62,7 @@ interface TagEditor {
 let tagEditorSerial = 0;
 function makeTagEditor(
   initial: string, available: () => string[], onChange: () => void,
-  options: { showInlineToggle?: boolean; onExpandedChange?: (expanded: boolean) => void } = {}
+  options: { showInlineToggle?: boolean; onExpandedChange?: (expanded: boolean) => void; focusAfterClose?: () => HTMLElement | null } = {}
 ): TagEditor {
   const element = node("div", "ex-tag-editor");
   const line = node("div", "ex-tag-selected-line");
@@ -76,11 +76,11 @@ function makeTagEditor(
   input.autocomplete = "off";
   const suggestions = node("div", "ex-tag-suggestions");
   suggestions.setAttribute("aria-label", "已有标签推荐");
-  const done = button("完成", () => setExpanded(false), "ex-btn-quiet ex-tag-done");
+  const done = button("完成", () => { setExpanded(false); (options.focusAfterClose?.() || toggle).focus(); }, "ex-btn-quiet ex-tag-done");
   let selected = parseTags(initial);
   let composing = false;
   let disabled = false;
-  const read = () => parseTags([...selected, input.value].join(","));
+  const read = () => [...selected];
   const draftValue = () => [...selected, input.value.trim()].filter(Boolean).join(", ");
   const toggle = button("添加标签", () => setExpanded(entry.hidden), "ex-tag-add");
   toggle.setAttribute("aria-controls", entry.id);
@@ -127,6 +127,8 @@ function makeTagEditor(
     if (!suggestions.childElementCount) suggestions.append(node("div", "ex-tag-hint", "输入文字创建新标签"));
   };
   const setExpanded = (expanded: boolean) => {
+    // Searching is not selecting. Closing must not silently turn a partial query into a tag.
+    if (!expanded && input.value) { input.value = ""; render(); onChange(); }
     entry.hidden = !expanded;
     input.hidden = !expanded;
     toggle.setAttribute("aria-expanded", String(expanded));
@@ -153,7 +155,7 @@ function makeTagEditor(
   input.addEventListener("keydown", e => {
     if (e.isComposing || composing || e.keyCode === 229) return;
     if (e.key === "Escape") {
-      e.preventDefault(); e.stopPropagation(); setExpanded(false); toggle.focus();
+      e.preventDefault(); e.stopPropagation(); setExpanded(false); (options.focusAfterClose?.() || toggle).focus();
     } else if (!(e.ctrlKey || e.metaKey || e.altKey) && (e.key === "Enter" || e.key === "," || e.key === "，")) {
       e.preventDefault(); commit();
     }
@@ -283,7 +285,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.captureInput = quote;
     let tagsToggle: HTMLButtonElement | null = null;
     const tagEditor = makeTagEditor("", () => this.items.flatMap(item => item.tags), () => queueCapture(), {
-      onExpandedChange: expanded => tagsToggle?.setAttribute("aria-expanded", String(expanded))
+      onExpandedChange: expanded => tagsToggle?.setAttribute("aria-expanded", String(expanded)),
+      focusAfterClose: () => tagsToggle
     });
     const tags = tagEditor.input;
     this.captureTags = tags;
