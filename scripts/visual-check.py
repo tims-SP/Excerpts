@@ -71,6 +71,14 @@ with sync_playwright() as playwright:
                 assert geometry["dateY"] < geometry["cardY"], (theme, width, geometry)
             else:
                 assert geometry["dateX"] < geometry["cardX"], (theme, width, geometry)
+            if width <= 480:
+                overflow = page.locator(".ex-card").first.locator(".ex-tag-overflow")
+                assert overflow.is_visible(), (theme, width, "missing +N overflow")
+                overflow.click()
+                assert page.locator(".ex-card").first.locator(".ex-chips.ex-tags-expanded").count() == 1
+                assert page.locator(".ex-card").first.locator(".ex-chips .ex-tag").count() == 9
+                page.locator(".ex-card").first.locator(".ex-tag-collapse").click()
+                assert page.locator(".ex-card").first.locator(".ex-chips.ex-tags-expanded").count() == 0
             page.screenshot(path=str(root / "artifacts" / f"feed-{theme}-{width}.png"), full_page=True)
 
             card = page.locator(".ex-card").first
