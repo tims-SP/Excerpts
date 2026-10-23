@@ -323,3 +323,98 @@ test('archiving is blocked while an unsaved quote draft exists', async () => {
     click(Modal.last.contentEl, '取消');
   } finally { await f.close(); }
 });
+
+async function reopenRenderer(f) {
+  f.renderer.onunload();
+  f.container.replaceChildren();
+  let next;
+  f.plugin.processor('workspace: ' + f.workspace.id, f.container, {
+    sourcePath: '隔离/摘录/首页.md',
+    addChild(child) { next = child; }
+  });
+  f.renderer = next;
+  next.onload();
+  await new Promise(resolve => setTimeout(resolve, 35));
+  await next.reload();
+}
+
+test('capture draft survives renderer restart and resolves only after a successful save', async () => {
+  const f = await fixture();
+  try {
+    const composer = f.container.querySelector('.ex-compose-text');
+    type(composer, '重启后恢复的摘录');
+    type(f.container.querySelector('.ex-tags-input'), '恢复, 草稿');
+    await new Promise(resolve => setTimeout(resolve, 430));
+    const draftFiles = [...f.files.keys()].filter(p => /Excerpts-Drafts\/d_.*\.md$/.test(p));
+    assert.equal(draftFiles.length, 1);
+    assert.match(f.files.get(draftFiles[0]).data, /重启后恢复的摘录/);
+    assert.equal(f.plugin.saved.workspaces.length, 1);
+    assert.equal('drafts' in f.plugin.saved, false);
+    await reopenRenderer(f);
+    click(f.container, '恢复未保存输入');
+    assert.equal(f.container.querySelector('.ex-compose-text').value, '重启后恢复的摘录');
+    assert.equal(f.container.querySelector('.ex-tags-input').value, '恢复, 草稿');
+    click(f.container, '保存摘录');
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal((await f.repo.list(f.workspace)).length, 1);
+    assert.deepEqual((await f.repo.list(f.workspace))[0].tags, ['恢复', '草稿']);
+    assert.equal(f.files.has(draftFiles[0]), false);
+    assert.ok([...f.files.keys()].some(p => p.includes('/Excerpts-Drafts/Resolved/')));
+  } finally { await f.close(); }
+});
+
+test('quote edit draft survives restart without automatically altering the Entry', async () => {
+  const f = await fixture();
+  try {
+    const original = await f.repo.create(f.workspace, '旧正文');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    type(f.container.querySelector('.ex-edit-panel textarea'), '尚未提交的新正文');
+    await new Promise(resolve => setTimeout(resolve, 430));
+    assert.equal((await f.repo.list(f.workspace))[0].text, '旧正文');
+    await reopenRenderer(f);
+    click(f.container, '恢复草稿');
+    assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '尚未提交的新正文');
+    assert.equal(f.files.get(original.path).data.includes('尚未提交的新正文'), false);
+    click(f.container.querySelector('.ex-edit-panel'), '保存修改');
+    await new Promise(resolve => setTimeout(resolve, 65));
+    assert.equal((await f.repo.list(f.workspace))[0].text, '尚未提交的新正文');
+    assert.ok([...f.files.keys()].some(p => p.includes('/Excerpts-Drafts/Resolved/')));
+  } finally { await f.close(); }
+});
+
+test('quote draft conflict stays copy-only and cannot overwrite external edits', async () => {
+  const f = await fixture();
+  try {
+    const original = await f.repo.create(f.workspace, '起始正文');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    type(f.container.querySelector('.ex-edit-panel textarea'), '重要的草稿');
+    await new Promise(resolve => setTimeout(resolve, 430));
+    const source = (await f.repo.list(f.workspace))[0];
+    await f.repo.update(source, x => ({ ...x, text: '外部更新正文' }));
+    await reopenRenderer(f);
+    click(f.container, '恢复草稿');
+    assert.match(Modal.last.contentEl.textContent, /版本冲突/);
+    assert.equal(Modal.last.contentEl.querySelector('textarea').readOnly, true);
+    assert.equal(Modal.last.contentEl.querySelector('textarea').value, '重要的草稿');
+    assert.equal((await f.repo.list(f.workspace))[0].text, '外部更新正文');
+    assert.ok([...f.files.keys()].some(p => /Excerpts-Drafts\/d_.*\.md$/.test(p)));
+  } finally { await f.close(); }
+});
+
+test('a manually corrupted draft is not offered or overwritten', async () => {
+  const f = await fixture();
+  try {
+    type(f.container.querySelector('.ex-compose-text'), '文件结构待保护');
+    await new Promise(resolve => setTimeout(resolve, 430));
+    const p = [...f.files.keys()].find(path => /Excerpts-Drafts\/d_.*\.md$/.test(path));
+    assert.ok(p);
+    const corrupted = f.files.get(p).data.replace('~~~json', '~~~javascript');
+    f.files.get(p).data = corrupted;
+    await reopenRenderer(f);
+    const recovery = [...f.container.querySelectorAll('button')].find(b => b.textContent.includes('恢复未保存输入'));
+    assert.equal(recovery.hidden, true);
+    assert.equal(f.files.get(p).data, corrupted);
+  } finally { await f.close(); }
+});
