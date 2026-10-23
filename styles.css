@@ -181,6 +181,10 @@
   .excerpts-root { padding: var(--ex-12) var(--ex-16) 48px; }
   .excerpts-root .ex-card { padding: var(--ex-16); }
 }
+@container (max-width: 260px) {
+  /* Keep the draft indicator above the paired actions in ultra-narrow panes. */
+  .excerpts-root .ex-editor-status { flex: 0 0 100%; }
+}
 @media (pointer: coarse) {
   .excerpts-root button.ex-icon-button, .excerpts-root button.ex-group-trigger,
   .excerpts-root button.ex-tag, .excerpts-root button.ex-btn-primary,
