@@ -627,7 +627,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           item.tags = [...new Set([...session.tags, ...item.inlineTags])];
           this.sectionsShown.delete(item.path);
           this.renderTagsFilter();
-          this.drawCards();
+          // Preserve the card node and its scroll anchor when no active filter changes its visibility.
+          if (!this.searchText && !this.tagFilter) this.redrawCard(item, card);
+          else this.drawCards();
           // Obsidian updates the metadata cache asynchronously; a later refresh reconciles it.
           this.requestRefresh();
         }
