@@ -2,6 +2,7 @@ import { MarkdownRenderChild, Notice, Menu, Modal } from "obsidian";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository, TrashedEntry } from "./repository";
 import { Entry, Extra, ExtraKind, EXTRA_KINDS, EXTRA_LABELS, Workspace, makeId } from "./model";
+import { DraftRepository, SavedDraft } from "./drafts";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
@@ -24,6 +25,9 @@ function dateLabel(value: string): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : value;
 }
 function errorMessage(e: unknown): string { return e instanceof Error ? e.message : String(e); }
+function revision(entry: Entry): string {
+  return JSON.stringify([entry.id, entry.collectionId, entry.created, entry.updated, entry.favorite, entry.tags, entry.text, entry.extras]);
+}
 
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: Entry[] = [];
@@ -40,6 +44,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private deletionInFlight = false;
   private quoteDrafts = new Map<string, { text: string; tags: string }>();
   private extraDrafts = new Map<string, { title: string; content: string }>();
+  private readonly draftRepo: DraftRepository;
+  private savedDrafts = new Map<string, SavedDraft>();
+  private recoverableDrafts: SavedDraft[] = [];
+  private draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private draftPending = new Map<string, { kind: "capture" | "quote"; entryId: string; base: string; text: string; tags: string }>();
+  private draftQueues = new Map<string, Promise<void>>();
+  private captureRecoveryButton: HTMLButtonElement | null = null;
+  private captureInput: HTMLTextAreaElement | null = null;
+  private captureTags: HTMLInputElement | null = null;
   private listEl: HTMLElement | null = null;
   private countEl: HTMLElement | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,9 +60,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace, private repo: EntryRepository) {
     super(container);
+    this.draftRepo = new DraftRepository(plugin.app);
   }
-  onload(): void { this.build(); void this.reload(); }
-  onunload(): void { this.disposed = true; if (this.refreshTimer) clearTimeout(this.refreshTimer); }
+  onload(): void { this.build(); void this.reload(); void this.loadDrafts(); }
+  onunload(): void {
+    // A final attempt is made without blocking Obsidian's component teardown.
+    for (const [key, timer] of this.draftTimers) {
+      clearTimeout(timer); void this.flushDraft(key);
+    }
+    this.draftTimers.clear();
+    this.disposed = true;
+    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+  }
   requestRefresh(): void {
     if (this.disposed) return;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
@@ -85,8 +107,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const form = node("div", "ex-composer");
     form.append(node("div", "ex-section-label", "收藏一段喜欢的文字"));
     const quote = textarea("一句话、一段文字，或刚刚闪现的灵感……", "", "ex-compose-text");
+    this.captureInput = quote;
     const tags = inputBox("标签（用逗号分隔，可选）");
     tags.classList.add("ex-tags-input");
+    this.captureTags = tags;
+    const recovery = button("恢复未保存输入", () => this.restoreCapture(), "ex-btn-quiet");
+    recovery.hidden = true;
+    this.captureRecoveryButton = recovery;
+    form.append(recovery);
+    const queueCapture = () => this.queueDraft("capture", { kind: "capture", entryId: "", base: "", text: quote.value, tags: tags.value });
+    quote.addEventListener("input", queueCapture);
+    tags.addEventListener("input", queueCapture);
     const composeActions = node("div", "ex-compose-actions");
     const saveButton = button("保存摘录", () => void save(), "ex-btn-primary");
     composeActions.append(tags, saveButton);
@@ -102,7 +133,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       try {
         const parsedTags = tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean);
         await this.repo.create(this.workspace, text, [...new Set(parsedTags)]);
-        quote.value = ""; tags.value = ""; await this.reload();
+        quote.value = ""; tags.value = "";
+        void this.resolveDraft("capture");
+        await this.reload();
       } catch(e) { new Notice(`保存失败：${errorMessage(e)}`); }
       finally {
         saving = false; saveButton.disabled = false; quote.disabled = false; tags.disabled = false;
@@ -117,6 +150,90 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toolbar.append(search, this.countEl); root.append(toolbar);
     this.listEl = node("div", "ex-card-list"); root.append(this.listEl);
   }
+  private queueDraft(key: string, value: { kind: "capture" | "quote"; entryId: string; base: string; text: string; tags: string }): void {
+    this.draftPending.set(key, value);
+    const previous = this.draftTimers.get(key);
+    if (previous) clearTimeout(previous);
+    this.draftTimers.set(key, setTimeout(() => { void this.flushDraft(key); }, 350));
+  }
+  private async flushDraft(key: string): Promise<void> {
+    const value = this.draftPending.get(key);
+    this.draftPending.delete(key);
+    if (!value || (!value.text && !value.tags)) return;
+    const previous = this.draftQueues.get(key) || Promise.resolve();
+    const next = previous.catch(() => {}).then(async () => {
+      const old = this.savedDrafts.get(key);
+      if (old) this.savedDrafts.set(key, await this.draftRepo.update(this.workspace, old, { text: value.text, tags: value.tags }));
+      else this.savedDrafts.set(key, await this.draftRepo.create(this.workspace, value));
+    });
+    this.draftQueues.set(key, next);
+    try { await next; }
+    catch(e) { new Notice(`草稿备份失败：${errorMessage(e)}；输入尚未丢失，请手动复制保存`); }
+  }
+  private async resolveDraft(key: string): Promise<void> {
+    const timer = this.draftTimers.get(key);
+    if (timer) clearTimeout(timer);
+    this.draftTimers.delete(key);
+    this.draftPending.delete(key);
+    try {
+      await this.draftQueues.get(key)?.catch(() => {});
+      const stored = this.savedDrafts.get(key);
+      if (stored) await this.draftRepo.resolve(this.workspace, stored);
+      this.savedDrafts.delete(key);
+      if (stored) {
+        this.recoverableDrafts = this.recoverableDrafts.filter(d => d.id !== stored.id);
+        this.updateRecoveryButton();
+      }
+    } catch(e) { new Notice(`内容已处理，但草稿备份未归档：${errorMessage(e)}`); }
+  }
+  private async loadDrafts(): Promise<void> {
+    try {
+      const drafts = await this.draftRepo.list(this.workspace);
+      if (this.disposed) return;
+      this.recoverableDrafts = drafts;
+      this.updateRecoveryButton();
+      this.drawCards();
+    } catch(e) { new Notice(`无法扫描草稿备份：${errorMessage(e)}`); }
+  }
+  private updateRecoveryButton(): void {
+    if (this.captureRecoveryButton) {
+      this.captureRecoveryButton.hidden = !this.recoverableDrafts.some(d => d.kind === "capture");
+    }
+  }
+  private restoreCapture(): void {
+    const draft = this.recoverableDrafts.find(d => d.kind === "capture");
+    const quote = this.captureInput, tags = this.captureTags;
+    if (!draft || !quote || !tags) return;
+    if (quote.value || tags.value) { new Notice("输入框已有内容，请先保存或清空再恢复草稿"); return; }
+    quote.value = draft.text; tags.value = draft.tags;
+    this.savedDrafts.set("capture", draft);
+    this.captureRecoveryButton!.hidden = true;
+    quote.focus();
+    new Notice("已加载草稿，保存前不会修改其他笔记");
+  }
+  private restoreQuote(entry: Entry): void {
+    const draft = this.recoverableDrafts.find(d => d.kind === "quote" && d.entryId === entry.id);
+    if (!draft) return;
+    if (draft.base !== revision(entry)) {
+      const modal = new Modal(this.plugin.app);
+      modal.contentEl.empty();
+      modal.contentEl.append(node("h3", "", "草稿与当前摘录存在版本冲突"));
+      modal.contentEl.append(node("p", "", "摘录可能已被同步或其他窗口修改。请手动复制下面的草稿内容，不会自动覆盖现有 Markdown。"));
+      const content = textarea("只读草稿", draft.text);
+      content.readOnly = true; content.rows = 8;
+      modal.contentEl.append(content, node("p", "", "原草稿文件仍保存在 Excerpts-Drafts 目录。"));
+      modal.contentEl.append(button("关闭", () => modal.close(), "ex-btn-quiet"));
+      modal.open();
+      return;
+    }
+    if (this.quoteDrafts.has(entry.id)) { new Notice("当前存在未保存的编辑，请先处理后再恢复"); return; }
+    this.savedDrafts.set("quote:" + entry.id, draft);
+    this.quoteDrafts.set(entry.id, { text: draft.text, tags: draft.tags });
+    this.editing = entry.id;
+    this.drawCards();
+    new Notice("已加载原有编辑草稿");
+  }
+
   private recallRandom(): void {
     const visible = this.visibleItems();
     if (!visible.length) { new Notice("当前筛选下没有可以回顾的摘录"); return; }
@@ -168,6 +285,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!entry.readOnly) {
       tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
       tools.append(button("编辑", () => { this.editing = this.editing === entry.id ? null : entry.id; this.drawCards(); }, "ex-btn-quiet"));
+      if (this.recoverableDrafts.some(d => d.kind === "quote" && d.entryId === entry.id)) {
+        tools.append(button("恢复草稿", () => this.restoreQuote(entry), "ex-btn-quiet"));
+      }
       const more = button("更多", () => {
         const menu = new Menu();
         menu.addItem(item => item.setTitle("移至回收站").onClick(() => this.confirmTrash(entry)));
@@ -219,13 +339,25 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const content = textarea("摘录正文", draft.text); content.rows = 5;
     const tags = inputBox("标签（逗号分隔）", draft.tags);
     const keepDraft = () => this.quoteDrafts.set(entry.id, { text: content.value, tags: tags.value });
-    content.addEventListener("input", keepDraft);
-    tags.addEventListener("input", keepDraft);
+    const queueQuote = () => {
+      keepDraft();
+      this.queueDraft("quote:" + entry.id, { kind: "quote", entryId: entry.id, base: revision(entry), text: content.value, tags: tags.value });
+    };
+    content.addEventListener("input", queueQuote);
+    tags.addEventListener("input", queueQuote);
     const actions = node("div", "ex-actions");
-    actions.append(button("取消", () => { this.quoteDrafts.delete(entry.id); this.editing = null; this.drawCards(); }, "ex-btn-quiet"));
+    actions.append(button("取消", () => {
+      this.quoteDrafts.delete(entry.id);
+      void this.resolveDraft("quote:" + entry.id);
+      this.editing = null; this.drawCards();
+    }, "ex-btn-quiet"));
     actions.append(button("保存修改", () => void this.saveEdit(entry, previous => ({
       ...previous, text: content.value.trim(), tags: [...new Set(tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean))]
-    }), () => { this.quoteDrafts.delete(entry.id); this.editing = null; }), "ex-btn-primary"));
+    }), () => {
+      this.quoteDrafts.delete(entry.id);
+      void this.resolveDraft("quote:" + entry.id);
+      this.editing = null;
+    }, "ex-btn-primary"));
     edit.append(content, tags, actions); card.append(edit);
   }
   private renderExtraGroup(target: HTMLElement, entry: Entry, kind: ExtraKind) {
