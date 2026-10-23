@@ -1,141 +1,52 @@
-const test = require('node:test');
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { serializeEntry, parseEntry, patchEntry } = require('../.test-compiled/codec.js');
-const { validateRelativePath, workspacePaths } = require('../.test-compiled/model.js');
-const example = () => ({
-  id:'e_test',collectionId:'w_test',created:'2026-10-23T00:00:00Z',updated:'2026-10-23T00:00:00Z',favorite:false,
-  tags:['文学','A: B'],text:'有些话\n只有沉默以后才听得见。',extras: [
-    {id:'x_source',kind:'source',title:'原始出处',content:'- 作者：测试\n- 链接：[[文档]]'},
-    {id:'x_var',kind:'variant',title:'改写',content:'> 有些沉默值得倾听。'}
-  ]
+const { parseMarkdown } = require('../.test-compiled/codec.js');
+const { belongsTo, isExcerptPath, validateRelativePath } = require('../.test-compiled/model.js');
+
+test('regular Markdown needs no dedicated schema or frontmatter', () => {
+  assert.deepEqual(parseMarkdown('# 时间\n\n普通正文\n\n## 来源\n\n《某本书》\n\n## 批注\n\n自己的理解'), {
+    title: '时间', body: '普通正文',
+    sections: [{name:'来源',markdown:'《某本书》'},{name:'批注',markdown:'自己的理解'}]
+  });
 });
-test('Markdown round-trip retains quote, tags and extras',()=>{
-  const source=example(), restored=parseEntry(serializeEntry(source));
-  assert.deepEqual(restored,source);
+test('arbitrary H2 groups, repeated groups and explicit body', () => {
+  const doc = parseMarkdown('开头\n\n## 想法\n\nA\n\n## 正文\n\n补充正文\n\n## 想法\n\nB');
+  assert.equal(doc.body,'开头\n\n补充正文');
+  assert.deepEqual(doc.sections,[{name:'想法',markdown:'A\n\nB'}]);
 });
-test('patch preserves user custom YAML and trailing notes',()=>{
-  const first=serializeEntry(example()).replace('excerpts_schema: 1','custom_author: "saved"\nexcerpts_schema: 1')+'\n## Unmanaged notes\nDo not delete\n';
-  const before=parseEntry(first); const next={...before,favorite:true,tags:['新标签'],extras:before.extras.map(e=>({...e,content:e.content+' updated'}))};
-  const after=patchEntry(first,before,next); const parsed=parseEntry(after);
-  assert.equal(parsed.favorite,true);assert.deepEqual(parsed.tags,['新标签']);
-  assert.match(after,/custom_author: "saved"/);assert.match(after,/Do not delete/);
-  assert.match(parsed.extras[0].content,/updated/);
+test('code fences and nested headings are never treated as H2 boundaries', () => {
+  const source = '# 标题\n\n'+'~~~md\n## 假标题\n~~~\n\n## 来源\n\n### 第三章\n内容';
+  const doc = parseMarkdown(source);
+  assert.match(doc.body,/## 假标题/);
+  assert.equal(doc.sections[0].name,'来源');
+  assert.match(doc.sections[0].markdown,/### 第三章/);
 });
-test('broken item marker makes document read-only',()=>{
-  const damaged=serializeEntry(example()).replace('<!-- excerpts:item:end -->','');
-  assert.equal(parseEntry(damaged).readOnly,true);
-  assert.throws(()=>patchEntry(damaged,example(),example()));
+test('frontmatter is omitted from display; section-only Markdown still has a body', () => {
+  const doc = parseMarkdown('---\ntags:\n  - 思考\n---\n\n## 来源\n\n书名\n\n## 批注\n\n说明');
+  assert.equal(doc.title,'');
+  assert.equal(doc.body,'书名');
+  assert.equal(doc.sections[0].name,'批注');
 });
-test('reserved markers cannot be injected',()=>{
-  assert.throws(()=>serializeEntry({...example(),text:'<!-- excerpts:extras:start -->'}));
+test('heading-free files show raw Markdown body without conversions', () => {
+  const source = '> 引用\n\n![[图片.png]]\n\n- [x] 完成';
+  const doc = parseMarkdown(source);
+  assert.equal(doc.body,source);
+  assert.deepEqual(doc.sections,[]);
 });
-test('paths are safe and relative',()=>{
-  assert.throws(()=>validateRelativePath('../outside'));
+test('scope accepts nested Markdown and excludes old draft/recycle paths', () => {
+  const ws={rootFolder:'资料/摘录',recursive:true};
+  assert.ok(isExcerptPath('资料/摘录/普通.md',ws));
+  assert.ok(isExcerptPath('资料/摘录/子目录/普通.md',ws));
+  assert.ok(!isExcerptPath('资料/摘录/Excerpts-Drafts/abc.md',ws));
+  assert.ok(!isExcerptPath('资料/摘录/Excerpts-Recycle/abc.md',ws));
+  assert.ok(!isExcerptPath('资料/摘录/图片.png',ws));
+  assert.ok(!isExcerptPath('资料/摘录夹/普通.md',ws));
+  assert.ok(!isExcerptPath('资料/摘录/子目录/普通.md',{...ws,recursive:false}));
+  assert.ok(belongsTo('a/b.md','a'));
+});
+test('unsafe Vault relative paths are rejected', () => {
+  assert.throws(()=>validateRelativePath('../private'));
+  assert.throws(()=>validateRelativePath('/private'));
   assert.throws(()=>validateRelativePath('.obsidian/plugins'));
-  assert.equal(workspacePaths({id:'w',name:'A',rootFolder:'选集/小说',entryFile:'首页.md',cardsFolder:'Cards',attachmentsFolder:'Media'}).cards,'选集/小说/Cards');
-});
-
-test('missing outer delimiter with remaining item marker is read-only',()=>{
-  const damaged=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','').replace('<!-- excerpts:extras:end -->','');
-  assert.equal(parseEntry(damaged).readOnly,true);
-});
-test('invalid stray item end fails closed',()=>{
-  const broken=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','<!-- excerpts:extras:start -->\n<!-- excerpts:item:end -->');
-  assert.equal(parseEntry(broken).readOnly,true);
-});
-
-test('missing extras boundaries block writes even without item markers',()=>{
-  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','').replace('<!-- excerpts:extras:end -->','');
-  const parsed=parseEntry(raw);
-  assert.equal(parsed.readOnly,true);
-  assert.throws(()=>patchEntry(raw,parsed,parsed),/取消写入/);
-});
-test('manual content before managed extras is protected from rewriting',()=>{
-  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','## My private notes\\nImportant!\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'));
-  const parsed=parseEntry(raw);
-  assert.equal(parsed.readOnly,true);
-  assert.throws(()=>patchEntry(raw,parsed,parsed));
-});
-test('unmanaged content inside extras cannot disappear on save',()=>{
-  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:end -->','## User notes\\nKeep me\\n<!-- excerpts:extras:end -->'.replaceAll('\\n','\n'));
-  const parsed=parseEntry(raw);
-  assert.equal(parsed.readOnly,true);
-  assert.match(parsed.problem,/附属区/);
-});
-test('unknown or duplicated extra IDs cannot be serialized',()=>{
-  const sample=example();
-  assert.throws(()=>serializeEntry({...sample,extras:[sample.extras[0],{...sample.extras[0]}]}),/重复/);
-  assert.throws(()=>serializeEntry({...sample,extras:[{...sample.extras[0],kind:'arbitrary'}]}));
-});
-test('ambiguous managed YAML or tags cannot be overwritten',()=>{
-  const raw=serializeEntry(example());
-  for (const invalid of [
-    raw.replace('tags:\\n'.replace('\\n','\n'),'tags: [abc]\\n'.replace('\\n','\n')),
-    raw.replace('excerpts_id:','excerpts_id: "e_shadow"\\nexcerpts_id:'.replace('\\n','\n')),
-    raw.replace('excerpts_schema: 1','excerpts_schema: 99')
-  ]) {
-    const parsed=parseEntry(invalid);
-    assert.equal(parsed.readOnly,true);
-    assert.throws(()=>patchEntry(invalid,parsed,parsed));
-  }
-});
-test('trailing unmanaged notes survive repeated edits without spacing drift',()=>{
-  const raw=serializeEntry(example())+'\\n## Personal notes\\nKeep exact spacing\\n'.replaceAll('\\n','\n');
-  const first=parseEntry(raw);
-  assert.equal(first.readOnly,undefined);
-  const changed={...first,favorite:true};
-  const once=patchEntry(raw,first,changed);
-  const twice=patchEntry(once,parseEntry(once),changed);
-  assert.ok(once.endsWith('\\n\\n## Personal notes\\nKeep exact spacing\\n'.replaceAll('\\n','\n')));
-  assert.equal(twice,once);
-});
-test('foreign paragraph in main quote region is treated as read-only',()=>{
-  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','This line is not a quote\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'));
-  assert.equal(parseEntry(raw).readOnly,true);
-});
-
-test('reject absolute, platform-reserved and ambiguous paths',()=>{
-  for (const invalid of ['/Users/demo','C:\\\\Vault', '//server/share', 'notes//quotes',
-    'notes/CON.md', 'notes/trailing.', 'notes/space /item', 'notes/a?.md', 'notes/../escape']) {
-    assert.throws(()=>validateRelativePath(invalid),invalid);
-  }
-  assert.equal(validateRelativePath('笔记\\摘录'), '笔记/摘录');
-});
-
-test('non-round-trippable quote whitespace is read-only',()=>{
-  const original=serializeEntry(example());
-  for (const raw of [
-    original.replace('> 有些话','>  有些话'),
-    original.replace('> 只有沉默以后才听得见。','> 只有沉默以后才听得见。  '),
-    original.replace('\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'),
-      '\\n\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'))
-  ]) {
-    const parsed=parseEntry(raw);
-    assert.equal(parsed.readOnly,true);
-    assert.throws(()=>patchEntry(raw,parsed,parsed));
-  }
-});
-
-test('a tagless entry accepts new extras without duplicating YAML tags', () => {
-  const entry = { ...example(), tags: [], extras: [] };
-  const raw = serializeEntry(entry);
-  const current = parseEntry(raw);
-  const next = { ...current, extras: [{ id: 'x_new', kind: 'source', title: '出处', content: '第一章' }] };
-  const saved = patchEntry(raw, current, next);
-  assert.equal((saved.match(/^tags:/gm) || []).length, 1);
-  assert.equal(parseEntry(saved).readOnly, undefined);
-  assert.deepEqual(parseEntry(saved).extras, next.extras);
-  const edited = patchEntry(saved, parseEntry(saved), { ...parseEntry(saved), tags: ['新标签'] });
-  assert.equal((edited.match(/^tags:/gm) || []).length, 1);
-  assert.deepEqual(parseEntry(edited).tags, ['新标签']);
-  assert.deepEqual(parseEntry(edited).extras, next.extras);
-});
-test('tag updates preserve custom YAML following an empty tag key', () => {
-  const entry = { ...example(), tags: [], extras: [] };
-  const raw = serializeEntry(entry).replace('tags:\n---', 'tags:\ncustom_after: "keep"\n---');
-  const current = parseEntry(raw);
-  const saved = patchEntry(raw, current, { ...current, tags: ['A'] });
-  assert.match(saved, /^custom_after: "keep"$/m);
-  assert.equal((saved.match(/^tags:/gm) || []).length, 1);
-  assert.deepEqual(parseEntry(saved).tags, ['A']);
+  assert.equal(validateRelativePath('资料\\摘录/'),'资料/摘录');
 });

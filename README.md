@@ -1,81 +1,27 @@
 # 摘录 / Excerpts
 
-An Obsidian community plugin for **folder-scoped local collections**. It never replaces the global Obsidian editor, theme, or file browser.
+A lightweight, local-first Obsidian Markdown card reader.
 
-## Features in v0.2.0-beta.3
+## Design (v0.2.0-beta.7)
 
-- Create one or more collections bound to user-selected folders, with an independently generated home Markdown file.
-- Open a flomo-inspired card feed in an authorized **native Obsidian collection pane** (with a configurable Markdown homepage fallback).
-- Save each excerpt as a regular Markdown file in the collection's `Cards/` directory.
-- Add tags, search, filter, favorite, and edit excerpts.
-- Attach multiple sources, variants, notes, contexts, links, and custom blocks.
-- Readable offline data; changing/deleting plugin settings does not delete Markdown.
-- No global CSS selectors and no extra ribbon/sidebar clutter.
-- Native Obsidian icon actions and theme tokens, with flomo-style quick capture and compact entry cards.
-- Responsive card layout, progressive extras, built-in search and random recall.
-
-## Installation
-
-Download the artifact produced by [GitHub Actions](../../actions/workflows/build.yml). Place `main.js`, `manifest.json`, and `styles.css` inside `YOUR_VAULT/.obsidian/plugins/excerpts/`. In Obsidian, enable **Community plugins → 摘录 Excerpts**.
+- **One Markdown file = one card.** Point a collection at any existing Vault folder; Markdown files copied into it show up immediately after a refresh. No private Entry/Extra schema, Cards directory, attachment database, or import conversion.
+- H1 is an optional card title. The content before the H2 headings is the default body. Arbitrary H2 headings become optional card sections; \`## 正文\` joins the default body.
+- Card content uses Obsidian \`MarkdownRenderer.render()\` to display Markdown and embeds in the same path context as its source file. Custom card UI handles sections, tags, favorites and edit entry points.
+- Tags use Obsidian's metadata cache. Clicking a capsule filters cards. Adding tags edits standard Frontmatter \`tags\`; removing an inline \`#tag\` requires editing the Markdown.
+- **Edit Markdown** opens the actual file in Obsidian's editor. **New Markdown** creates an empty \`.md\` in the selected folder, then opens it.
+- File updates can be event driven or manual; optional periodic verification is available. Listing uses Vault metadata, cards render on demand, content cache is bounded and full-text search scans in cancellable batches.
+- No custom attachment management. Embeds and relative links use ordinary Obsidian Markdown conventions.
+- Collection removal deletes only plugin settings, not source notes.
 
 ## Setup
 
-Open **Settings → Community plugins → 摘录 Excerpts**, enter a collection name and **folder path relative to the Vault**, then select **Create collection**. A home page is created automatically. Open that page in Reading view. No folder name is hardcoded.
+Install \`main.js\`, \`manifest.json\`, \`styles.css\` in \`.obsidian/plugins/excerpts/\`.
+Enable the plugin, then open Settings → Excerpts to add a collection name and a Vault-relative folder path.
+Existing folders are used as-is. Folders that do not exist are created without populating them with private schema files.
+Use the command **打开摘录收藏集** or the settings button to view the collection.
 
-## Build
+## Notes
 
-Official build (CI): `npm install && npm run verify`. CI also uploads a 7-day Linux Node 22 dependency snapshot for restricted offline debugging. `npm run build` uses esbuild and real Obsidian API typings.
+This beta intentionally makes a **breaking change** from the pre-beta.7 Entry/Extra workflow. There is no legacy migration or compatibility layer. Files are never converted or rewritten merely by opening a collection.
 
-For restricted environments, a zero-dependency `npm run build:offline` uses an already-installed global TypeScript compiler to create `main.js`. `npm run typecheck:offline` typechecks against minimal compatibility shims; **CI typechecks against the real Obsidian API**. `npm test` tests the Markdown codec without Obsidian.
-
-## Storage
-
-A collection folder contains a generated `首页.md`, `Cards/` with a Markdown file per entry and `Attachments/`. The actual root folder is chosen in settings. `excerpts_id` and `excerpts_collection` preserve stable identities. Supplemental blocks use readable Markdown and hidden boundary comments; malformed blocks open read-only to avoid accidental damage.
-
-## Limitations
-
-- Dedicated collection pages use a native Obsidian ItemView; the Markdown codeblock fallback is mainly for Reading view.
-- Files remain ordinary Markdown, but structured extras should be edited in the plugin to maintain markers.
-- A conflicting Git merge must be resolved externally; there is no automatic multi-device conflict resolver.
-- Full Obsidian desktop/iOS/Android acceptance tests have not yet run; mobile support is a build target.
-- Image attachments in the UI, multi-column gallery, import, and semantic search are deferred.
-- UI refresh is a beta; real Obsidian clients still require acceptance testing.
-
-## Roadmap
-
-1. v0.1: Collection setup, cards, metadata, extras editing, search and safe writes.
-2. v0.2: Source metadata fields, random review, template management and improved mobile UX.
-3. v0.3: Import/export, performance index, gallery and excerpt relationships.
-
-License: MIT (see LICENSE).
-
-## Project documents
-
-- [Product specification](docs/PRODUCT.md)
-- [Architecture and invariants](docs/ARCHITECTURE.md)
-- [Roadmap](docs/ROADMAP.md)
-- [Restricted-environment build and testing](docs/BUILD-AND-TEST.md)
-
-### v0.2.0-beta.2 — Native collection pane
-
-- Opening the configured collection homepage now switches that leaf to an isolated Obsidian `ItemView` instead of rendering a full page underneath repeated Markdown/file titles.
-- The homepage Markdown file remains intact for fallback; old homepages do **not** need migration, and no entry data is changed.
-- The Settings option **打开首页时进入摘录视图** can disable automatic redirection to let you edit the homepage as plain Markdown. The **打开首页** button still opens the native collection pane.
-- Capture is compact; tags and search expand on demand. Recent entries and random review appear together.
-- The actual Obsidian status/nav/toolbars cannot be made to look exactly like ChatGPT's conceptual preview; this plugin inherits host chrome and the current Obsidian theme.
-
-### v0.2.0-beta.3 — Five rounds of interface refinement
-
-See [five-round UI report](docs/FIVE_ROUND_UI_REVIEW.md) for the five implementation/test checkpoints, accessibility details, platform limitations, and screenshot acceptance criteria. No storage migrations.
-
-## Visual Rebuild (beta.4)
-
-See [the 11-round design/implementation report](docs/VISUAL_REBUILD_11_ROUNDS.md). UI layouts use the Obsidian native pane, theme variables and menus, with compact flomo-style capture and progressive content disclosure. Browser visual checks are mock-host checks; final Android/iOS QA is still pending.
-
-## Editor experience (beta.5)
-
-All inline editing fields auto-grow. Editing source/variant metadata now creates recoverable Markdown drafts; long text fields retain cursor position across card refreshes. The editor supports Cmd/Ctrl+Enter save without IME composition, consistent disabled saving state, and larger mobile tap targets. See [20-round change log](docs/EDITOR_REBUILD_20_ROUNDS.md).
-
-## Layout & surface refinement (beta.6)
-
-The mobile capture card and the excerpt card now share one 16px content alignment baseline. Capture uses an Obsidian primary surface with a subtle border, reading cards use the secondary surface, and editing actions no longer introduce another background-colored strip. Mobile tap targets and nested source-editor width have been repaired. See [the beta.6 layout audit and verification](docs/SPACING_SURFACE_REFINEMENT_BETA6.md).
+No official desktop/Android/iOS acceptance testing has yet been completed. Test on a copy of your Vault before relying on the beta.

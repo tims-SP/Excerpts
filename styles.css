@@ -1,195 +1,79 @@
-/* Excerpts visual rebuild: Obsidian owns color, typography and controls.
- * The collection view owns exactly one content inset, never the host chrome. */
-.excerpts-native-host { padding: 0; overflow: auto; overscroll-behavior: contain; container-type: inline-size; }
 .excerpts-root {
-  --ex-space-1: var(--size-4-1, 4px);
-  --ex-space-2: var(--size-4-2, 8px);
-  --ex-space-3: var(--size-4-3, 12px);
-  --ex-space-4: var(--size-4-4, 16px);
-  --ex-space-5: var(--size-4-5, 20px);
-  --ex-space-6: var(--size-4-6, 24px);
-  --ex-surface: var(--background-secondary);
-  --ex-subtle-border: var(--background-modifier-border);
-  --ex-radius: var(--radius-l, 12px);
+  --ex-space: 16px;
+  --ex-border: var(--background-modifier-border);
   box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
   color: var(--text-normal);
   font-family: var(--font-interface);
-  width: 100%;
-  max-width: 704px;
-  margin-inline: auto;
-  padding: var(--ex-space-5) var(--ex-space-4) 64px;
-  container-type: inline-size;
 }
 .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { box-sizing: border-box; }
-.excerpts-root [hidden] { display: none !important; }
-.excerpts-root .ex-header, .excerpts-root .ex-toolbar,
-.excerpts-root .ex-card-top, .excerpts-root .ex-compose-actions,
-.excerpts-root .ex-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--ex-space-2); }
-.excerpts-root .ex-header { padding: 0 0 var(--ex-space-4); min-width: 0; }
-.excerpts-root .ex-brand { min-width: 0; overflow-wrap: anywhere; }
-.excerpts-root .ex-title { margin: 0; font-size: var(--h3-size, 1.22em); font-weight: var(--h3-weight, 600); line-height: 1.4; }
-.excerpts-root .ex-actions { flex-wrap: wrap; justify-content: flex-end; }
-.excerpts-root .ex-header .ex-actions:empty { display: none; }
-.excerpts-root button { font-family: var(--font-interface); cursor: pointer; }
-.excerpts-root button.ex-icon-button { display: inline-flex; flex: 0 0 auto; justify-content: center; align-items: center; width: 36px; height: 36px; padding: 7px; border: 0; border-radius: var(--radius-m, 8px); background: transparent; color: var(--text-muted); box-shadow: none; }
-.excerpts-root button.ex-icon-button:hover, .excerpts-root button.ex-icon-button:focus-visible { background: var(--background-modifier-hover); color: var(--text-normal); }
-.excerpts-root button.ex-icon-button.ex-is-favorite { color: var(--text-accent); }
-.excerpts-root button:focus-visible, .excerpts-root input:focus-visible,
-.excerpts-root textarea:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
-.excerpts-root button.ex-btn { min-height: 34px; font-family: var(--font-interface); }
-.excerpts-root button.ex-btn.ex-btn-quiet, .excerpts-root button.ex-btn.ex-add-extra,
-.excerpts-root button.ex-btn.ex-tag, .excerpts-root button.ex-btn.ex-group-trigger {
-  background: transparent; border: 0; box-shadow: none; color: var(--text-muted);
+.excerpts-native-host { container-type: inline-size; overflow: auto; }
+.excerpts-root .ex-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.excerpts-root .ex-title { margin: 0; font-size: var(--h2-size); letter-spacing: -.02em; }
+.excerpts-root .ex-header-actions { display: flex; align-items: center; gap: 8px; }
+.excerpts-root button.ex-btn { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: var(--radius-s); padding: 6px 10px; min-height: 30px; font: inherit; font-size: var(--font-ui-small); color: var(--text-normal); background: transparent; cursor: pointer; }
+.excerpts-root button.ex-btn:hover, .excerpts-root button.ex-btn:focus-visible { background: var(--background-modifier-hover); }
+.excerpts-root button.ex-btn:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.excerpts-root button.ex-btn-primary { color: var(--text-on-accent); background: var(--interactive-accent); }
+.excerpts-root button.ex-btn-primary:hover { color: var(--text-on-accent); background: var(--interactive-accent-hover); }
+.excerpts-root button.ex-icon-button { width: 34px; height: 34px; padding: 5px; }
+.excerpts-root .ex-search-wrap { margin-bottom: 12px; }
+.excerpts-root input.ex-search, .excerpts-root input.ex-tag-custom {
+  width: 100%; font: inherit; color: var(--text-normal); background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m);
+  padding: 9px 12px;
 }
-.excerpts-root button.ex-btn.ex-btn-quiet:hover, .excerpts-root button.ex-btn.ex-add-extra:hover,
-.excerpts-root button.ex-btn.ex-group-trigger:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
-.excerpts-root button.ex-btn.ex-btn-danger { color: var(--text-error); }
-.excerpts-root .ex-input, .excerpts-root .ex-textarea { width: 100%; min-width: 0; background: var(--background-primary); color: var(--text-normal); font-family: var(--font-interface); font-size: var(--font-ui-medium, 14px); border: 1px solid var(--ex-subtle-border); border-radius: var(--radius-m, 8px); padding: var(--ex-space-2) var(--ex-space-3); box-shadow: none; }
-.excerpts-root .ex-input:focus, .excerpts-root .ex-textarea:focus { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
-.excerpts-root .ex-input::placeholder, .excerpts-root .ex-textarea::placeholder { color: var(--text-faint); opacity: 1; }
-.excerpts-root .ex-composer { background: var(--background-primary); padding: var(--ex-space-3) var(--ex-space-4); margin-bottom: var(--ex-space-5); border: 1px solid var(--ex-subtle-border); border-radius: var(--ex-radius); transition: border-color .15s ease; }
-.excerpts-root .ex-composer:focus-within { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
-.excerpts-root .ex-compose-text { display: block; background: transparent; border: 0; box-shadow: none; padding: 0; resize: none; overflow-y: auto; height: auto; min-height: 48px; max-height: min(42vh, 340px); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: var(--line-height-normal, 1.6); border-radius: 0; }
-.excerpts-root .ex-compose-text:focus { outline: 0; box-shadow: none; border-color: transparent; }
-.excerpts-root .ex-compose-actions { padding-top: var(--ex-space-2); min-height: 36px; }
-.excerpts-root .ex-capture-options { display: flex; align-items: center; gap: var(--ex-space-1); min-width: 0; }
-.excerpts-root .ex-tags-input { margin: var(--ex-space-2) 0 0; }
-.excerpts-root .ex-btn-primary { flex: 0 0 auto; padding-inline: var(--ex-space-4); }
-.excerpts-root .ex-toolbar { min-height: 36px; margin: 0 0 var(--ex-space-3); }
-.excerpts-root .ex-toolbar-title { display: flex; gap: var(--ex-space-2); align-items: baseline; flex-wrap: wrap; min-width: 0; }
-.excerpts-root .ex-list-heading { margin: 0; font-size: var(--font-ui-medium, 14px); line-height: 1.4; font-weight: 600; }
-.excerpts-root .ex-count { color: var(--text-muted); font-size: var(--font-ui-smaller, 12px); font-variant-numeric: tabular-nums; }
-.excerpts-root .ex-toolbar-actions { display: flex; align-items: center; gap: 0; }
-.excerpts-root .ex-search-wrap { width: 100%; margin-bottom: var(--ex-space-3); }
-.excerpts-root .ex-filter-tags { display: flex; gap: var(--ex-space-1); align-items: center; overflow-x: auto; scrollbar-width: thin; margin: 0 0 var(--ex-space-3); padding: 0 0 2px; }
-.excerpts-root .ex-filter-tags .ex-btn { flex: 0 0 auto; white-space: nowrap; border: 0; border-radius: var(--radius-m, 8px); padding: var(--ex-space-1) var(--ex-space-3); color: var(--text-muted); background: transparent; box-shadow: none; }
-.excerpts-root .ex-filter-tags .ex-btn.ex-selected { background: var(--background-secondary); color: var(--text-normal); font-weight: 600; }
-.excerpts-root .ex-filter-tags button[aria-pressed="true"] { color: var(--text-normal); }
-.excerpts-root .ex-card-list { display: flex; flex-direction: column; gap: var(--ex-space-3); }
-.excerpts-root .ex-card { min-width: 0; border: 1px solid transparent; background: var(--ex-surface); border-radius: var(--ex-radius); padding: var(--ex-space-4); overflow-wrap: anywhere; }
-.excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
-.excerpts-root .ex-card-top { align-items: center; gap: var(--ex-space-2); }
-.excerpts-root .ex-date { color: var(--text-muted); font-size: var(--font-ui-smaller, 12px); line-height: 1.5; font-variant-numeric: tabular-nums; }
-.excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); }
-.excerpts-root .ex-card-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 0; margin-inline-start: auto; }
-.excerpts-root .ex-card-actions .ex-icon-button svg, .excerpts-root .ex-toolbar-actions .ex-icon-button svg { width: 18px; height: 18px; }
-.excerpts-root .ex-quote { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; color: var(--text-normal); white-space: pre-wrap; overflow-wrap: anywhere; letter-spacing: normal; padding: 0; }
-.excerpts-root .ex-chips { display: flex; gap: var(--ex-space-1); flex-wrap: wrap; }
-.excerpts-root .ex-chips:empty { display: none; }
-.excerpts-root button.ex-tag { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); min-height: 32px; padding: 4px var(--ex-space-2); border-radius: var(--radius-m, 8px); }
-.excerpts-root .ex-extras { display: flex; gap: 2px; flex-wrap: wrap; align-items: center; padding-top: 0; }
-.excerpts-root .ex-extra-group { min-width: 0; }
-.excerpts-root .ex-extra-group:has(.ex-group-body) { flex-basis: 100%; }
-.excerpts-root button.ex-group-trigger { display: inline-flex; align-items: center; gap: var(--ex-space-1); white-space: nowrap; font-size: var(--font-ui-smaller, 12px); min-height: 32px; padding: var(--ex-space-1) var(--ex-space-2); border-radius: var(--radius-m, 8px); }
-.excerpts-root .ex-disclosure-icon, .excerpts-root .ex-disclosure-icon svg { width: 14px; height: 14px; }
-.excerpts-root .ex-group-body { padding: var(--ex-space-2) 0; }
-.excerpts-root .ex-extra-item { border-left: 1px solid var(--ex-subtle-border); padding: var(--ex-space-2) var(--ex-space-3); margin-bottom: var(--ex-space-2); }
-.excerpts-root .ex-extra-item:last-child { margin-bottom: 0; }
-.excerpts-root .ex-extra-title { font-size: var(--font-ui-small, 13px); font-weight: 600; }
-.excerpts-root .ex-extra-content { padding-top: var(--ex-space-1); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-ui-small, 13px); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
-.excerpts-root button.ex-add-extra { min-height: 32px; padding: var(--ex-space-1) var(--ex-space-2); font-size: var(--font-ui-smaller, 12px); }
-.excerpts-root .ex-edit-panel { display: flex; flex-direction: column; gap: var(--ex-space-3); background: transparent; border: 0; border-radius: var(--radius-m, 8px); padding: 0; margin: var(--ex-space-2) 0; }
-.excerpts-root .ex-edit-panel .ex-actions { justify-content: flex-end; }
-.excerpts-root .ex-empty { padding: var(--ex-space-6) var(--ex-space-4); color: var(--text-muted); text-align: center; }
-.excerpts-root .ex-warning { padding: var(--ex-space-2) 0; font-size: var(--font-ui-small, 13px); color: var(--text-error); }
-.excerpts-root .ex-loadmore { margin: var(--ex-space-3) auto; }
-.excerpts-root .ex-btn:disabled, .excerpts-root .ex-icon-button:disabled { opacity: .55; cursor: not-allowed; }
+.excerpts-root .ex-filter-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.excerpts-root .ex-count { color: var(--text-muted); font-size: var(--font-ui-smaller); padding: 4px 0 12px; }
+.excerpts-root .ex-feed { display: flex; flex-direction: column; gap: 12px; }
+.excerpts-root .ex-card {
+  border: 1px solid var(--ex-border); background: var(--background-secondary);
+  border-radius: var(--radius-l); padding: 18px 20px; min-width: 0; overflow: hidden;
+}
+.excerpts-root .ex-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.excerpts-root .ex-card-title { margin: 0; font-size: var(--h3-size); line-height: 1.45; overflow-wrap: anywhere; }
+.excerpts-root .ex-favorite { flex: 0 0 auto; color: var(--text-muted); }
+.excerpts-root .ex-card-content, .excerpts-root .ex-group-content { min-width: 0; overflow-wrap: anywhere; }
+.excerpts-root .ex-card-content > .markdown-rendered, .excerpts-root .ex-group-content > .markdown-rendered { max-width: 100%; }
+.excerpts-root .ex-card-content > :first-child, .excerpts-root .ex-group-content > :first-child { margin-top: 0; }
+.excerpts-root .ex-card-content > :last-child, .excerpts-root .ex-group-content > :last-child { margin-bottom: 0; }
+.excerpts-root .ex-card :is(img, video, iframe, audio, embed, canvas) { max-width: 100%; }
+.excerpts-root .ex-card :is(img, video, iframe, embed) { height: auto; border-radius: var(--radius-s); }
+.excerpts-root .ex-card :is(pre, table) { max-width: 100%; overflow-x: auto; }
+.excerpts-root .ex-placeholder, .excerpts-root .ex-empty, .excerpts-root .ex-warning { color: var(--text-muted); font-size: var(--font-ui-small); }
+.excerpts-root .ex-section-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--ex-border); margin-top: 16px; padding-top: 12px; }
+.excerpts-root .ex-section-caption { font-size: var(--font-ui-smaller); color: var(--text-muted); margin-right: 2px; }
+.excerpts-root button.ex-section-chip, .excerpts-root button.ex-section-add, .excerpts-root button.ex-section-option {
+  background: var(--background-modifier-hover); border-radius: var(--radius-s);
+}
+.excerpts-root .ex-section-picker { padding: 10px; background: var(--background-primary); border: 1px solid var(--ex-border); border-radius: var(--radius-m); margin: 6px 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.excerpts-root .ex-section-picker[hidden], .excerpts-root .ex-tag-editor[hidden] { display: none; }
+.excerpts-root .ex-group { padding-top: 14px; }
+.excerpts-root .ex-group-title { color: var(--text-normal); font-size: var(--font-ui-medium); font-weight: var(--font-semibold); margin: 0 0 8px; }
+.excerpts-root .ex-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; align-items: center; }
+.excerpts-root button.ex-tag { padding: 3px 10px; color: var(--text-muted); border: 1px solid var(--ex-border); border-radius: 999px; font-size: var(--font-ui-smaller); }
+.excerpts-root button.ex-tag.ex-selected { color: var(--text-on-accent); background: var(--interactive-accent); border-color: var(--interactive-accent); }
+.excerpts-root button.ex-add-tag { color: var(--text-muted); }
+.excerpts-root .ex-tag-editor { flex: 0 0 100%; padding: 10px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; background: var(--background-primary); border: 1px solid var(--ex-border); border-radius: var(--radius-m); }
+.excerpts-root .ex-tag-editor input.ex-tag-custom { flex: 0 0 100%; min-width: 0; margin-top: 6px; }
+.excerpts-root .ex-card-footer { display: flex; align-items: end; justify-content: space-between; gap: 12px; border-top: 1px solid var(--ex-border); padding-top: 12px; margin-top: 14px; }
+.excerpts-root .ex-card-location { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.excerpts-root .ex-date, .excerpts-root .ex-file-path { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.excerpts-root .ex-file-path { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.excerpts-root button.ex-edit-file { border: 1px solid var(--ex-border); flex-shrink: 0; }
+.excerpts-root button.ex-load-more { align-self: center; border: 1px solid var(--ex-border); margin: 12px; }
+.excerpts-root .ex-card .markdown-rendered { background: transparent; }
+.excerpts-root .ex-card .markdown-rendered :is(blockquote, .callout) { max-width: 100%; }
 @container (max-width: 480px) {
-  .excerpts-root { padding: var(--ex-space-3) var(--ex-space-4) 48px; }
-  .excerpts-root .ex-card { padding: var(--ex-space-4); }
-  .excerpts-root .ex-header { padding-bottom: var(--ex-space-3); }
-  .excerpts-root .ex-card-actions .ex-quick-action { display: none; }
-  .excerpts-root button.ex-icon-button { width: 40px; height: 40px; }
-  .excerpts-root .ex-card-top { flex-wrap: wrap; }
+  .excerpts-root { padding: 12px 12px 48px; }
+  .excerpts-root .ex-card { padding: 14px; }
+  .excerpts-root .ex-header { flex-wrap: wrap; }
+  .excerpts-root .ex-header-actions { margin-left: auto; }
 }
 @media (pointer: coarse) {
-  .excerpts-root button.ex-icon-button { width: 44px; height: 44px; }
-  .excerpts-root button.ex-group-trigger, .excerpts-root button.ex-add-extra,
-  .excerpts-root button.ex-tag, .excerpts-root .ex-filter-tags button,
-  .excerpts-root button.ex-btn-primary { min-height: 44px; }
-  .excerpts-root .ex-edit-panel button { min-height: 44px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { animation-duration: 0s; transition-duration: 0s; }
-}
-
-/* Reading-first footer: quote -> tags -> extras -> date/action, never a floating date above a large void. */
-.excerpts-root .ex-chips { margin-top: var(--ex-space-2); }
-.excerpts-root .ex-extras { margin-top: var(--ex-space-2); }
-.excerpts-root .ex-card-footer { margin-top: var(--ex-space-3); min-height: 32px; }
-.excerpts-root .ex-card-footer .ex-icon-button { width: 36px; height: 36px; }
-
-/* Extras are annotations, not a second toolbar. */
-.excerpts-root .ex-extra-group { border-radius: var(--radius-m, 8px); }
-.excerpts-root button.ex-group-trigger { padding-inline: var(--ex-space-2); }
-.excerpts-root .ex-group-body { margin-top: var(--ex-space-1); }
-
-/* Empty space is intentional, but not a large dashed onboarding dashboard. */
-.excerpts-root .ex-empty { margin-top: var(--ex-space-4); padding: var(--ex-space-6) var(--ex-space-4); }
-.excerpts-root .ex-empty-icon { width: 26px; height: 26px; margin: 0 auto var(--ex-space-3); color: var(--text-faint); }
-.excerpts-root .ex-empty-icon svg { width: 26px; height: 26px; }
-.excerpts-root .ex-empty-title { font-weight: 600; color: var(--text-normal); }
-.excerpts-root .ex-empty-description { color: var(--text-muted); margin: var(--ex-space-2) 0 0; font-size: var(--font-ui-small, 13px); }
-
-/* Responsive fallback for embedded Reading view where no container ancestor exists. */
-@media (max-width: 480px) {
-  .excerpts-root { padding-inline: var(--ex-space-4); }
-  .excerpts-root .ex-card-actions .ex-quick-action { display: none; }
-  .excerpts-root .ex-card-footer { flex-wrap: wrap; }
-}
-.excerpts-root .ex-composer, .excerpts-root .ex-card,
-.excerpts-root .ex-compose-actions, .excerpts-root .ex-toolbar { min-width: 0; }
-.excerpts-root .ex-chips button, .excerpts-root .ex-filter-tags button { max-width: 100%; overflow-wrap: anywhere; }
-.excerpts-root .ex-input, .excerpts-root .ex-textarea { max-width: 100%; }
-
-/* Long excerpts are readable but do not monopolize the entire scroll stream. */
-.excerpts-root button.ex-long-toggle { padding-inline: 0; color: var(--text-accent); font-size: var(--font-ui-small, 13px); }
-.excerpts-root .ex-quote { overflow-wrap: anywhere; word-break: normal; }
-
-/* Respect system high-contrast modes without forcing custom brand colors. */
-@media (forced-colors: active) {
-  .excerpts-root .ex-composer, .excerpts-root .ex-card { border-color: CanvasText; }
-  .excerpts-root button:focus-visible { outline: 2px solid Highlight; }
-}
-
-/* Editor design: native input components, editorial layout and no nested dashboard cards. */
-.excerpts-root .ex-editor-heading { color: var(--text-muted); font-size: var(--font-ui-small, 13px); font-weight: 600; letter-spacing: 0; }
-.excerpts-root .ex-entry-editor { background: transparent; border: 0; border-radius: 0; margin: 0; padding: 0; }
-.excerpts-root .ex-edit-panel .ex-actions { padding-top: var(--ex-space-2); }
-
-.excerpts-root .ex-entry-editor .ex-editor-text { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; border: 0; border-radius: 0; background: transparent; padding: var(--ex-space-2) 0; resize: none; }
-.excerpts-root .ex-entry-editor .ex-editor-text:focus { border: 0; box-shadow: none; outline: 2px solid var(--interactive-accent); outline-offset: 3px; border-radius: var(--radius-s, 4px); }
-
-.excerpts-root .ex-extra-editor .ex-editor-text { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.65; resize: none; }
-.excerpts-root .ex-extra-editor .ex-input { font-size: var(--font-ui-medium, 14px); }
-/* Mobile WebView: readable controls without iOS text-field auto-zoom. */
-@media (pointer: coarse) {
-  .excerpts-root .ex-edit-panel input,
-  .excerpts-root .ex-edit-panel textarea,
-  .excerpts-root .ex-tags-input { font-size: max(16px, var(--font-text-size, 16px)); }
-  .excerpts-root .ex-edit-panel { scroll-margin-block-end: 140px; }
-  .excerpts-root .ex-edit-panel .ex-actions { position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 1; background: var(--ex-surface); padding: var(--ex-space-2) 0; }
-}
-/* Final editor visual rhythm: writing first, actions second. */
-.excerpts-root .ex-entry-editor .ex-input { background: var(--background-primary); border-color: var(--ex-subtle-border); }
-.excerpts-root .ex-entry-editor .ex-input:focus { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
-.excerpts-root .ex-extra-editor { background: transparent; border: 0; padding: 0; margin: var(--ex-space-2) 0; }
-.excerpts-root .ex-extra-item .ex-extra-editor { margin: var(--ex-space-2) calc(-1 * var(--ex-space-3)) 0; padding: 0; border: 0; background: transparent; }
-.excerpts-root .ex-edit-panel .ex-btn-primary { min-height: 38px; }
-.excerpts-root .ex-edit-panel .ex-actions { gap: var(--ex-space-2); flex-wrap: wrap; }
-.excerpts-root .ex-edit-panel .ex-editor-text { overflow-wrap: anywhere; max-width: 100%; }
-@media (pointer: coarse) {
-  .excerpts-root .ex-edit-panel .ex-btn-primary,
-  .excerpts-root .ex-edit-panel .ex-btn-quiet,
-  .excerpts-root .ex-edit-panel .ex-btn-danger { min-height: 44px; }
-}
-
-/* Pointer and keyboard invariants are last to prevent smaller base controls overriding them. */
-@media (pointer: coarse) {
-  .excerpts-root .ex-card-footer button.ex-icon-button,
-  .excerpts-root button.ex-tag { min-width: 44px; min-height: 44px; }
-  .excerpts-root .ex-card-footer button.ex-icon-button { width: 44px; height: 44px; }
-  .excerpts-root .ex-input { min-height: 44px; }
-  .excerpts-root .ex-search-wrap .ex-input,
-  .excerpts-root .ex-tags-input { min-height: 44px; }
+  .excerpts-root button.ex-btn { min-height: 44px; }
+  .excerpts-root button.ex-icon-button { min-width: 44px; min-height: 44px; }
 }
