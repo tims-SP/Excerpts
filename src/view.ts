@@ -94,10 +94,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.setAttribute("aria-label", "摘录正文");
     const fit = () => {
       quote.style.height = "auto";
-      quote.style.height = Math.max(48, Math.min(340, quote.scrollHeight || 48)) + "px";
+      const maxHeight = Math.max(48, Math.min(window.innerHeight * 0.42, 340));
+      quote.style.height = Math.max(48, Math.min(maxHeight, quote.scrollHeight || 48)) + "px";
+      quote.style.overflowY = quote.scrollHeight > maxHeight ? "auto" : "hidden";
     };
-    quote.addEventListener("input", fit);
-    quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
+    quote.addEventListener("input", fit);\n    quote.addEventListener("compositionend", fit);\n    window.addEventListener("resize", fit);\n
+    quote.addEventListener("focus", () => { form.classList.add("ex-is-composing"); fit(); });
     const tagsPane = node("div", "ex-capture-tags");
     tagsPane.hidden = true;
     const tagsInput = node("input", "ex-tags-input");
@@ -150,13 +152,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       suggested.replaceChildren();
       const existing = new Set(tagsInput.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")));
       const all = [...new Set(this.items.flatMap(item => item.tags))].sort((a, b) => a.localeCompare(b, "zh")).slice(0, 8);
-      for (const tag of all) suggested.append(button((existing.has(tag) ? "✓ " : "＋ ") + "#" + tag, () => {
+      for (const tag of all) {\n        const choice = button((existing.has(tag) ? "✓ " : "＋ ") + "#" + tag, () => {
         if (existing.has(tag)) existing.delete(tag); else existing.add(tag);
         tagsInput.value = [...existing].filter(Boolean).join(", ");
         this.showSuggestions();
-      }, "ex-tag-option"));
+      }, "ex-tag-option" + (existing.has(tag) ? " ex-selected" : ""));\n        choice.setAttribute("aria-pressed", String(existing.has(tag)));\n        suggested.append(choice);\n      }
     };
-    tagsInput.addEventListener("input", this.showSuggestions);
+    tagsInput.addEventListener("input", this.showSuggestions);\n    fit();
     this.showSuggestions();
 
     const toolbar = node("div", "ex-toolbar");
