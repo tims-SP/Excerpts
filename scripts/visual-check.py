@@ -88,10 +88,12 @@ with sync_playwright() as p:
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.screenshot(path=str(root/'artifacts'/f'excerpts-tags-{mode}-{width}.png'),full_page=True)
             print('PASS expanded tags',mode,width,tag_input['height'])
-            tagless=page.locator('.ex-card.ex-card-no-tags').first
-            assert tagless.count()==1,(mode,width,'no-tag card not compact')
+            tagless=page.locator('.ex-card[data-path="摘录/无标签.md"]')
+            assert tagless.count()==1,(mode,width,'no-tag card missing')
+            assert tagless.evaluate("(el)=>el.classList.contains('ex-card-no-tags')")
             assert not tagless.locator('.ex-chips').is_visible()
             tagless.locator('.ex-footer-tag').click()
+            assert not tagless.evaluate("(el)=>el.classList.contains('ex-card-no-tags')")
             assert tagless.locator('.ex-tag-custom').is_visible()
             assert 43<=tagless.locator('.ex-tag-custom').bounding_box()['height']<=48
             page.close()
