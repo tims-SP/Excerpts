@@ -124,6 +124,7 @@ export class EntryRepository {
     const newline = fm?.[1].includes("\r\n") || (!fm && source.includes("\r\n")) ? "\r\n" : "\n";
     const block = tags.length ? ["tags:", ...tags.map(tag => "  - " + JSON.stringify(tag))] : [];
     if (!fm) {
+      if (source.startsWith("---")) throw new Error("YAML Frontmatter 未闭合，已保留原文件");
       return block.length ? "---" + newline + block.join(newline) + newline +
         "---" + newline + newline + source : source;
     }
