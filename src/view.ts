@@ -44,6 +44,90 @@ function autoGrow(field: HTMLTextAreaElement, min = 48, max = 340): () => void {
   return fit;
 }
 
+
+/** One tagging control for quick capture and entry editing. Stored tags remain plain strings. */
+function parseTags(raw: string): string[] {
+  return [...new Set(raw.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean))];
+}
+interface TagEditor {
+  element: HTMLElement;
+  input: HTMLInputElement;
+  entry: HTMLElement;
+  read(): string[];
+  draftValue(): string;
+  setValue(raw: string): void;
+  setExpanded(expanded: boolean): void;
+}
+function makeTagEditor(initial: string, available: () => string[], onChange: () => void): TagEditor {
+  const element = node("div", "ex-tag-editor");
+  const chips = node("div", "ex-tag-pills");
+  chips.setAttribute("aria-label", "已添加的标签");
+  const entry = node("div", "ex-tag-entry");
+  const input = inputBox("输入标签，按回车添加");
+  input.classList.add("ex-tags-input");
+  input.setAttribute("aria-label", "输入标签");
+  const suggestions = node("div", "ex-tag-suggestions");
+  suggestions.setAttribute("aria-label", "已有标签建议");
+  let selected = parseTags(initial);
+  let composing = false;
+  const read = () => parseTags([...selected, input.value].join(","));
+  const draftValue = () => [...selected, input.value.trim()].filter(Boolean).join(", ");
+  const render = () => {
+    chips.replaceChildren();
+    for (const tag of selected) {
+      const remove = button("", () => {
+        selected = selected.filter(item => item !== tag);
+        render(); onChange(); input.focus();
+      }, "ex-tag-chip");
+      remove.append(node("span", "", "#" + tag), node("span", "ex-tag-remove", "×"));
+      remove.setAttribute("aria-label", "移除标签：" + tag);
+      chips.append(remove);
+    }
+    suggestions.replaceChildren();
+    const match = input.value.trim().replace(/^#/, "").toLocaleLowerCase();
+    const candidates = [...new Set(available())].filter(tag =>
+      !selected.includes(tag) && (!match || tag.toLocaleLowerCase().includes(match))
+    ).slice(0, 5);
+    for (const tag of candidates) {
+      const suggestion = button("#" + tag, () => {
+        selected = parseTags([...selected, tag].join(","));
+        input.value = "";
+        render(); onChange(); input.focus();
+      }, "ex-tag-suggestion");
+      suggestion.setAttribute("aria-label", "添加已有标签：" + tag);
+      suggestions.append(suggestion);
+    }
+  };
+  const commit = () => {
+    if (!input.value.trim()) return;
+    selected = parseTags([...selected, input.value].join(","));
+    input.value = "";
+    render(); onChange();
+  };
+  input.addEventListener("compositionstart", () => { composing = true; });
+  input.addEventListener("compositionend", () => { composing = false; if (/[,，]/.test(input.value)) commit(); else { render(); onChange(); } });
+  input.addEventListener("input", () => {
+    if (composing) { onChange(); return; }
+    if (/[,，]/.test(input.value)) commit();
+    else { render(); onChange(); }
+  });
+  input.addEventListener("keydown", e => {
+    if (e.isComposing || composing || e.keyCode === 229) return;
+    if (e.key === "Enter" || e.key === "," || e.key === "，") {
+      e.preventDefault(); commit();
+    }
+  });
+  input.addEventListener("blur", () => { if (!composing) commit(); });
+  entry.append(input, suggestions);
+  element.append(chips, entry);
+  render();
+  return {
+    element, input, entry, read, draftValue,
+    setValue(raw) { selected = parseTags(raw); input.value = ""; render(); },
+    setExpanded(expanded) { entry.hidden = !expanded; input.hidden = !expanded; }
+  };
+}
+
 function dateLabel(value: string): string {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
@@ -85,6 +169,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private captureRecoveryButton: HTMLButtonElement | null = null;
   private captureInput: HTMLTextAreaElement | null = null;
   private captureTags: HTMLInputElement | null = null;
+  private captureTagEditor: TagEditor | null = null;
   private listEl: HTMLElement | null = null;
   private countEl: HTMLElement | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,39 +231,42 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // Focus expands the minimal composer; blur only contracts when no draft remains.
     quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
     quote.addEventListener("blur", () => {
-      if (!quote.value.trim() && !tags.value.trim()) form.classList.remove("ex-is-composing");
+      if (!quote.value.trim() && !tagEditor.read().length) form.classList.remove("ex-is-composing");
     });
     this.captureInput = quote;
-    const tags = inputBox("标签（用逗号分隔，可选）");
-    tags.classList.add("ex-tags-input");
+    const tagEditor = makeTagEditor("", () => this.items.flatMap(item => item.tags), () => queueCapture());
+    const tags = tagEditor.input;
     this.captureTags = tags;
+    this.captureTagEditor = tagEditor;
     const recovery = button("恢复未保存输入", () => this.restoreCapture(), "ex-btn-quiet");
     recovery.hidden = true;
     this.captureRecoveryButton = recovery;
     form.append(recovery);
-    const queueCapture = () => this.queueDraft("capture", { kind: "capture", entryId: "", base: "", text: quote.value, tags: tags.value });
+    const queueCapture = () => this.queueDraft("capture", { kind: "capture", entryId: "", base: "", text: quote.value, tags: tagEditor.draftValue() });
     quote.addEventListener("input", queueCapture);
-    tags.addEventListener("input", queueCapture);
     const composeActions = node("div", "ex-compose-actions");
     const captureOptions = node("div", "ex-capture-options");
     const tagsToggle = iconButton("hash", "添加标签", () => {
-      const isVisible = !tags.hidden;
-      tags.hidden = isVisible;
-      tagsToggle.setAttribute("aria-expanded", String(!isVisible));
-      if (!isVisible) tags.focus();
+      const show = tagEditor.entry.hidden;
+      tagEditor.setExpanded(show);
+      tagsToggle.setAttribute("aria-expanded", String(show));
+      if (show) tags.focus();
     });
     tagsToggle.setAttribute("aria-expanded", "false");
     const tagsId = "ex-tags-" + this.workspace.id.replace(/[^a-zA-Z0-9_-]/g, "");
     tags.id = tagsId;
     tagsToggle.setAttribute("aria-controls", tagsId);
     tags.addEventListener("keydown", e => {
-      if (e.key === "Escape") { e.preventDefault(); tags.hidden = true; tagsToggle.setAttribute("aria-expanded", "false"); tagsToggle.focus(); }
+      if (e.key === "Escape" && !e.isComposing && e.keyCode !== 229) {
+        e.preventDefault(); tagEditor.setExpanded(false);
+        tagsToggle.setAttribute("aria-expanded", "false"); tagsToggle.focus();
+      }
     });
-    tags.hidden = true;
+    tagEditor.setExpanded(false);
     captureOptions.append(tagsToggle, recovery);
     const saveButton = button("保存", () => void save(), "mod-cta ex-btn-primary");
     composeActions.append(captureOptions, saveButton);
-    form.append(quote, tags, composeActions); root.append(form);
+    form.append(quote, tagEditor.element, composeActions); root.append(form);
     let resumeTyping = false;
     quote.addEventListener("keydown", e => { if (!e.isComposing && e.keyCode !== 229 && (e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); resumeTyping = true; void save(); } });
     let saving = false;
@@ -189,9 +277,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       saving = true; saveButton.disabled = true; quote.disabled = true; tags.disabled = true;
       saveButton.textContent = "保存中…";
       try {
-        const parsedTags = tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean);
-        await this.repo.create(this.workspace, text, [...new Set(parsedTags)]);
-        quote.value = ""; tags.value = ""; tags.hidden = true;
+        await this.repo.create(this.workspace, text, tagEditor.read());
+        quote.value = ""; tagEditor.setValue(""); tagEditor.setExpanded(false);
         fitComposer();
         form.classList.remove("ex-is-composing");
         tagsToggle.setAttribute("aria-expanded", "false");
@@ -300,11 +387,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const draft = this.recoverableDrafts.find(d => d.kind === "capture");
     const quote = this.captureInput, tags = this.captureTags;
     if (!draft || !quote || !tags) return;
-    if (quote.value || tags.value) { new Notice("输入框已有内容，请先保存或清空再恢复草稿"); return; }
-    quote.value = draft.text; tags.value = draft.tags;
+    if (quote.value || this.captureTagEditor?.read().length) { new Notice("输入框已有内容，请先保存或清空再恢复草稿"); return; }
+    quote.value = draft.text; this.captureTagEditor?.setValue(draft.tags);
     quote.style.height = "auto";
     quote.style.height = Math.max(48, Math.min(340, quote.scrollHeight || 48)) + "px";
-    if (draft.tags) tags.hidden = false;
+    if (draft.tags) { this.captureTagEditor?.setExpanded(true); this.containerEl.querySelector(".ex-capture-options button[aria-controls]")?.setAttribute("aria-expanded", "true"); }
     this.savedDrafts.set("capture", draft);
     this.captureRecoveryButton!.hidden = true;
     quote.focus();
@@ -450,11 +537,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       favorite.classList.add("ex-quick-action");
       tools.append(favorite);
       const editButton = iconButton("pencil", "编辑", () => {
-        if (this.editing !== entry.id && !this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
-        this.editing = this.editing === entry.id ? null : entry.id;
+        if (this.editing === entry.id) {
+          this.listEl?.querySelector<HTMLTextAreaElement>(".ex-entry-editor textarea")?.focus();
+          return;
+        }
+        if (!this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
+        this.editing = entry.id;
         this.drawCards();
+        this.listEl?.querySelector<HTMLTextAreaElement>(".ex-entry-editor textarea")?.focus();
       });
-      editButton.classList.add("ex-quick-action");
+      editButton.classList.add("ex-edit-action");
+      editButton.setAttribute("aria-pressed", this.editing === entry.id ? "true" : "false");
       tools.append(editButton);
       if (this.recoverableDrafts.some(d => d.kind === "quote" && d.entryId === entry.id)) {
         tools.append(button("恢复草稿", () => this.restoreQuote(entry), "ex-btn-quiet"));
@@ -494,13 +587,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         card.append(toggle);
       }
     }
-    const chips = node("div", "ex-chips");
-    for (const tag of entry.tags) {
-      const b = button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, "ex-tag");
-      b.setAttribute("aria-label", `筛选标签：${tag}`);
-      chips.append(b);
+    if (this.editing !== entry.id) {
+      const chips = node("div", "ex-chips");
+      for (const tag of entry.tags) {
+        const b = button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, "ex-tag");
+        b.setAttribute("aria-label", `筛选标签：${tag}`);
+        chips.append(b);
+      }
+      card.append(chips);
     }
-    card.append(chips);
     if (entry.readOnly) card.append(node("div", "ex-warning", `文件结构存在问题，仅能阅读：${entry.problem || "未知错误"}`));
     const extras = node("div", "ex-extras");
     for (const kind of EXTRA_KINDS) {
@@ -543,19 +638,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
     const edit = node("div", "ex-edit-panel ex-entry-editor");
     edit.setAttribute("role", "group"); edit.setAttribute("aria-label", "编辑摘录");
-    edit.append(node("div", "ex-editor-heading", "编辑摘录"));
+    edit.append(node("div", "ex-editor-heading", "正文"));
     const draft = this.quoteDrafts.get(entry.id) || { text: entry.text, tags: entry.tags.join(", ") };
     const content = textarea("摘录正文", draft.text, "ex-editor-text"); content.rows = 3;
     autoGrow(content, 88, 520);
     content.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
-    const tags = inputBox("标签（逗号分隔）", draft.tags);
-    const keepDraft = () => this.quoteDrafts.set(entry.id, { text: content.value, tags: tags.value });
+    const tagEditor = makeTagEditor(draft.tags, () => this.items.flatMap(item => item.tags), () => queueQuote());
+    const tags = tagEditor.input;
+    const keepDraft = () => this.quoteDrafts.set(entry.id, { text: content.value, tags: tagEditor.draftValue() });
     const queueQuote = () => {
       keepDraft();
-      this.queueDraft("quote:" + entry.id, { kind: "quote", entryId: entry.id, base: revision(entry), text: content.value, tags: tags.value });
+      this.queueDraft("quote:" + entry.id, { kind: "quote", entryId: entry.id, base: revision(entry), text: content.value, tags: tagEditor.draftValue() });
     };
     content.addEventListener("input", queueQuote);
-    tags.addEventListener("input", queueQuote);
     // Consistent quick-save shortcut in capture and detail editing.
     const shortcutSave = (e: KeyboardEvent) => {
       if (!e.isComposing && e.keyCode !== 229 && (e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveEditButton.click(); }
@@ -577,7 +672,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       saveEditButton.disabled = true;
       try { await this.saveEdit(entry, previous => ({
-      ...previous, text: content.value.trim(), tags: [...new Set(tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean))]
+      ...previous, text: content.value.trim(), tags: tagEditor.read()
     }), () => {
       this.quoteDrafts.delete(entry.id);
       this.quoteBases.delete(entry.id);
@@ -586,7 +681,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }); } finally { saveEditButton.disabled = false; }
     }, "ex-btn-primary");
     actions.append(saveEditButton);
-    edit.append(content, tags, actions); card.append(edit);
+    edit.append(content, node("div", "ex-editor-heading", "标签"), tagEditor.element, actions); card.append(edit);
   }
   private renderExtraGroup(target: HTMLElement, entry: Entry, kind: ExtraKind) {
     const group = node("section", "ex-extra-group");
