@@ -360,3 +360,44 @@ test('v4 invalid custom tag is rejected visibly without adding a chip',async()=>
     assert.doesNotMatch(editor.querySelector('.ex-tag-pills').textContent,/不 合法/);
   }finally{await t.close();}
 });
+
+test('v4 YAML tag editing retains unrelated multiline fields, comments and CRLF bytes',async()=>{
+  const t=await fixture();
+  try{
+    const nl='\r\n';
+    const raw=['---','title: "保留标题"','# keep comment','meta:','  source: book',
+      '','tags:','  - "哲学"','','favorite: true','---','','正文','', '## 来源', '', '《一本书》'].join(nl);
+    t.files.get(t.md.path).data=raw;
+    await t.plugin.repo.saveMarkdown(t.md.path,raw,t.plugin.repo.editorBody(raw),['新标签'],['哲学']);
+    const next=t.files.get(t.md.path).data;
+    assert.match(next,/title: "保留标题"\r\n# keep comment\r\nmeta:\r\n  source: book\r\n/);
+    assert.match(next,/tags:\r\n  - "新标签"\r\n/);
+    assert.match(next,/favorite: true\r\n---\r\n\r\n正文/);
+    assert.match(next,/正文\r\n\r\n## 来源\r\n\r\n《一本书》/);
+    assert.doesNotMatch(next,/(?<!\r)\n/,'do not normalize CRLF in unrelated lines');
+  }finally{await t.close();}
+});
+test('v4 malformed or custom YAML tags fail closed and never overwrite the source',async()=>{
+  const t=await fixture();
+  try{
+    for(const raw of ['---\ntags:\n  - foo\n没有关闭',
+      '---\n"tags": [foo]\nother: stay\n---\n正文']){
+      t.files.get(t.md.path).data=raw;
+      await assert.rejects(()=>t.plugin.repo.saveMarkdown(t.md.path,raw,t.plugin.repo.editorBody(raw),['新'],['旧']));
+      assert.equal(t.files.get(t.md.path).data,raw);
+    }
+  }finally{await t.close();}
+});
+test('v4 IME-delimited selection preserves the unfinished final tag query',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  try{
+    clickByLabel(root,'添加标签');
+    const input=root.querySelector('.ex-capture-tags .ex-tags-input');
+    input.dispatchEvent(new window.CompositionEvent('compositionstart',{bubbles:true}));
+    input.value='文学,生活';
+    input.dispatchEvent(new window.CompositionEvent('compositionend',{bubbles:true}));
+    assert.equal(root.querySelector('.ex-capture-tags .ex-tag-pills').textContent.includes('#文学'),true);
+    assert.equal(input.value,'生活');
+    assert.equal(root.querySelector('.ex-capture-tags .ex-tag-picker').hidden,false);
+  }finally{await t.close();}
+});
