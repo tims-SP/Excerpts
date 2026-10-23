@@ -1,75 +1,67 @@
-"""Assert UI geometry against the compiled plugin in an Obsidian-like host.
-Requires system Chromium + Playwright; separate from the Node-only CI tests.
-No real Android or iOS environment is implied.
+"""Layout regression checks for the compiled Excerpts editorial feed.
+Uses a WebView simulation; it does not certify an actual Obsidian mobile client.
 """
 from pathlib import Path
-import re
 from playwright.sync_api import sync_playwright
 
 root = Path(__file__).resolve().parents[1]
-base = (root / "tests/fixtures/preview-template.html").read_text()
-html = base.replace("/*__EXCERPTS_CSS__*/", (root/"styles.css").read_text()).replace("/*__EXCERPTS_BUNDLE__*/", (root/"main.js").read_text())
+fixture = (root / "tests/fixtures/preview-template.html").read_text()
+html = fixture.replace("/*__EXCERPTS_CSS__*/", (root / "styles.css").read_text()).replace(
+    "/*__EXCERPTS_BUNDLE__*/", (root / "main.js").read_text())
 
-
-def check(page, width, mode):
-    page.set_content(html, wait_until="domcontentloaded")
-    page.wait_for_function("window.__ready === true || !!window.__error", timeout=10000)
-    assert not page.evaluate("window.__error"), page.evaluate("window.__error")
-    if mode == "dark":
-        page.evaluate("document.documentElement.classList.add('theme-dark')")
-    page.wait_for_timeout(180)  # allow focus border transitions to settle
-    values = page.evaluate("""() => {
-       let sel = x => document.querySelector(x);
-       let r = x => sel(x)?.getBoundingClientRect();
-       let style = x => getComputedStyle(sel(x));
-       return {width:innerWidth,scroll:document.documentElement.scrollWidth,
-         composerTextX:r('.ex-compose-text').left, quoteX:r('.ex-card .ex-quote').left,
-         composerLeft:r('.ex-composer').left, cardLeft:r('.ex-card').left,
-         rootTop:r('.excerpts-root').top, rootPadTop:style('.excerpts-root').paddingTop,
-         moreW:r('.ex-card-actions button:last-child').width,
-         moreH:r('.ex-card-actions button:last-child').height,
-         tagH:r('.ex-card .ex-tag').height,
-         composerBg:style('.ex-composer').backgroundColor,
-         cardBg:style('.ex-card').backgroundColor,
-         dateColor:style('.ex-card .ex-date').color,
-         cardBgDate:style('.ex-card').backgroundColor};
-    }""")
-    assert values["scroll"] <= width, (width, mode, 'overflow',values)
-    assert abs(values["composerLeft"] - values["cardLeft"]) < 1, values
-    assert abs(values["composerTextX"]-values["quoteX"]) < 1, values
-    assert values["composerBg"] != values["cardBg"], (mode,"insufficient interactive surface distinction")
-    if width <= 480:
-        assert values["rootPadTop"] == "12px", (width,values)
-        assert values["moreW"] >= 44 and values["moreH"] >= 44, (width,values)
-        assert values["tagH"] >= 44, (width,values)
-    return values
-
-
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=True, executable_path="/usr/bin/chromium", args=["--no-sandbox"])
-    for mode in ("light", "dark"):
-        for width in (320,390,768,1280):
-            page = browser.new_page(viewport={"width":width,"height":860},device_scale_factor=1,has_touch=(width<=480),is_mobile=(width<=480))
-            d=check(page,width,mode)
-            print('OK',mode,width,'composer and text aligned at',round(d['composerTextX'],1),'footer',d['moreW'],d['moreH'],'tag',d['tagH'])
-            page.locator('.ex-card').first.locator('button[aria-label="编辑摘录"]').click()
-            editor = page.locator('.ex-entry-editor .ex-editor-text').first
-            assert editor.bounding_box()['height'] >= 44
-            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            page.close()
-            # Test source editor width and all touch inputs on narrow screens.
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+    for theme in ("light", "dark"):
+        for width in (320, 390, 768, 1280):
+            page = browser.new_page(
+                viewport={"width": width, "height": 860},
+                has_touch=width <= 480,
+                is_mobile=width <= 480
+            )
+            page.set_content(html, wait_until="domcontentloaded")
+            page.wait_for_function("window.__ready === true || !!window.__error", timeout=12000)
+            assert not page.evaluate("window.__error"), page.evaluate("window.__error")
+            if theme == "dark":
+                page.evaluate("document.documentElement.classList.add('theme-dark')")
+            page.wait_for_selector(".ex-card .ex-section")
+            coords = page.evaluate("""() => {
+                const q = (s) => document.querySelector(s);
+                const r = (s) => q(s).getBoundingClientRect();
+                return {
+                    viewport: innerWidth,
+                    documentWidth: document.documentElement.scrollWidth,
+                    composerLeft: r('.ex-composer').left,
+                    composerTextLeft: r('.ex-compose-text').left,
+                    cardLeft: r('.ex-card').left,
+                    quoteLeft: r('.ex-quote').left,
+                    dateLeft: r('.ex-day-rail').left,
+                    dateBottom: r('.ex-day-rail').bottom,
+                    cardTop: r('.ex-card').top,
+                    cardRight: r('.ex-card').right,
+                    footerRight: r('.ex-card-footer').right,
+                    moreRight: r('.ex-card-options').right,
+                    inputHeight: r('.ex-compose-text').height,
+                    cardBg: getComputedStyle(q('.ex-card')).backgroundColor,
+                    composerBg: getComputedStyle(q('.ex-composer')).backgroundColor
+                };
+            }""")
+            assert coords["documentWidth"] <= width, (theme, width, coords)
+            assert coords["composerBg"] != coords["cardBg"], (theme, width, "composer/card surface", coords)
+            assert coords["moreRight"] <= coords["cardRight"], (theme, width, coords)
+            assert coords["inputHeight"] > 0, coords
             if width <= 480:
-                page = browser.new_page(viewport={"width":width,"height":860},has_touch=True,is_mobile=True)
-                check(page,width,mode)
-                card = page.locator('.ex-card').filter(has=page.locator('.ex-group-trigger')).first
-                card.locator('.ex-group-trigger').first.click()
-                assert card.locator('.ex-group-body').count() == 1
-                card.locator('button[aria-label="编辑摘录"]').click()
-                editor = card.locator('.ex-entry-editor .ex-editor-text')
-                card_width = card.bounding_box()['width']
-                editor_width = editor.bounding_box()['width']
-                assert editor_width >= card_width - 44, (mode,width,editor_width,card_width)
-                assert editor.bounding_box()['height'] >= 44
-                print('OK',mode,width,'inline editor width',round(editor_width,1))
-                page.close()
+                assert abs(coords["composerLeft"] - coords["cardLeft"]) <= 1, (theme, width, coords)
+                assert coords["dateBottom"] <= coords["cardTop"] + 1, (theme, width, coords)
+            else:
+                assert coords["dateLeft"] < coords["cardLeft"], (theme, width, coords)
+            card = page.locator(".ex-card").first
+            card.locator(".ex-add-tag").click()
+            editor = card.locator(".ex-tag-editor")
+            assert editor.is_visible()
+            field = editor.locator(".ex-tag-custom")
+            assert 43 <= field.bounding_box()["height"] <= 48
+            assert field.bounding_box()["y"] + field.bounding_box()["height"] <= card.locator(".ex-card-footer").bounding_box()["y"] + 1
+            assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+            print("OK", theme, width, "editor-and-footer", coords["cardLeft"])
+            page.close()
     browser.close()

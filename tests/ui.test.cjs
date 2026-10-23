@@ -48,7 +48,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   return {files,plugin,pane,leaf,md,home,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
 }
 
-test('opening a .excerpts file displays beta.6-style direct feed without a selector page',async()=>{
+test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
   assert.deepEqual(Object.keys(t.plugin.settings).sort(),['defaultHome','recursive']);
@@ -58,6 +58,11 @@ test('opening a .excerpts file displays beta.6-style direct feed without a selec
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(root.querySelector('.ex-card').classList.contains('ex-card-loading'),false);
+  assert.equal(root.querySelectorAll('.ex-day-group').length,1);
+  assert.ok(root.querySelector('.ex-day-rail .ex-day-title'));
+  assert.ok(root.querySelector('.ex-card-footer .ex-chips'));
+  assert.equal(root.querySelector('.ex-card').lastElementChild.classList.contains('ex-card-footer'),true);
   assert.ok(root.querySelector('.ex-note-heading').textContent.includes('测试标题'));
   assert.ok(renders.some(r=>r.content.includes('![[图片.png]]') && r.path===t.md.path));
   assert.ok(!root.textContent.includes('我的摘录'));
@@ -68,7 +73,7 @@ test('opening a .excerpts file displays beta.6-style direct feed without a selec
 });
 test('quick composer saves normal Markdown with native tags and restores continuous writing',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
-  const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';
+  const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'添加标签');assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
   const choice=[...root.querySelectorAll('.ex-capture-tags .ex-tag-option')].find(x=>x.textContent.includes('#哲学'));
   assert.ok(choice);choice.click();
@@ -92,7 +97,8 @@ test('card options open the native Markdown editor and preserve the homepage',as
   const source=[...root.querySelectorAll('.ex-group-trigger')].find(x=>x.textContent==='来源');
   assert.ok(source);source.click();await wait();
   assert.ok(renders.some(r=>r.content==='《某书》'));
-  assert.equal(root.querySelectorAll('.ex-group-body').length,1);
+  assert.equal(root.querySelectorAll('.ex-group-body').length,2);
+  assert.equal(root.querySelectorAll('.ex-group-body:not([hidden])').length,1);
   assert.ok(root.querySelector('.ex-chips button.ex-tag').textContent.includes('#哲学'));
   for(const label of ['随机回顾','珍藏','取消珍藏','添加内容','编辑摘录'])
     assert.equal(root.querySelector('button[aria-label="'+label+'"]'),null,label);
@@ -145,17 +151,15 @@ test('tag changes preserve expanded selection panel',async()=>{
 test('cards without tags use a single compact footer add action, then expand editor',async()=>{
   const t=await fixture(true);const root=t.pane.contentEl;
   const card=root.querySelector('.ex-card');
-  assert.ok(card.classList.contains('ex-card-no-tags'));
-  assert.ok(card.querySelector('.ex-chips .ex-add-tag'));
-  const add=card.querySelector('.ex-card-footer .ex-footer-tag');
+  assert.equal(card.querySelectorAll('.ex-chips .ex-tag').length,0);
+  const add=card.querySelector('.ex-card-footer .ex-add-tag');
   assert.ok(add);assert.equal(add.getAttribute('aria-label'),'添加标签');
   add.click();
-  assert.ok(!card.classList.contains('ex-card-no-tags'));
   assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
   assert.equal(card.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
   card.querySelector('.ex-tag-custom').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
-  assert.ok(card.classList.contains('ex-card-no-tags'));
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(card.querySelector('.ex-card-footer .ex-add-tag').textContent,'＋ 标签');
   await t.close();
 });
 
@@ -171,7 +175,7 @@ test('quick tags toggle without comma parsing and persist only the selected chip
   input.value='灵感';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,1);
-  root.querySelector('.ex-compose-text').value='一段新摘录';
+  root.querySelector('.ex-compose-text').value='一段新摘录';root.querySelector('.ex-compose-text').dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
   const entry=t.files.get('摘录/一段新摘录.md');
@@ -190,5 +194,80 @@ test('card tag picker allows explicit removal while ordinary chips still filter'
   assert.ok(remove);remove.click();await wait();
   assert.equal(root.querySelector('.ex-tag-editor').hidden,false);
   assert.equal(root.querySelector('.ex-card').querySelectorAll('.ex-tag').length,0);
+  await t.close();
+});
+
+test('date groups keep cards in date order and load-more appends without replacing existing cards',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  for(let i=0;i<84;i++){
+    const file=new TFile('摘录/样例-'+String(i).padStart(3,'0')+'.md');
+    file.stat.ctime=100-i*86400000;
+    t.files.set(file.path,{file,data:'第 '+i+' 段文字'});
+  }
+  t.pane.renderer.requestRefresh(true);
+  await wait();
+  assert.equal(root.querySelectorAll('.ex-card').length,40);
+  assert.equal(root.querySelectorAll('.ex-day-group').length,39); // fixture's original and first generated excerpt share the same date
+  const first=root.querySelector('.ex-card');
+  const buttons=[...root.querySelectorAll('.ex-loadmore')];
+  assert.equal(buttons.length,1);
+  buttons[0].click();await wait();
+  assert.equal(root.querySelectorAll('.ex-card').length,80);
+  assert.equal(root.querySelector('.ex-card'),first,'existing card element was replaced during pagination');
+  assert.equal(root.querySelectorAll('.ex-loadmore').length,1);
+  root.querySelector('.ex-loadmore').click();await wait();
+  assert.equal(root.querySelectorAll('.ex-card').length,85);
+  assert.equal(root.querySelectorAll('.ex-loadmore').length,0);
+  await t.close();
+});
+
+test('H2 disclosure toggles its own region without rebuilding the main Markdown',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card');
+  const source=[...card.querySelectorAll('.ex-group-trigger')].find(x=>x.textContent==='来源');
+  const count=()=>renders.filter(x=>x.path===t.md.path&&x.content.includes('![[图片.png]]')).length;
+  const initial=count();
+  source.click();await wait();
+  assert.equal(source.getAttribute('aria-expanded'),'true');
+  assert.equal(card.querySelectorAll('.ex-group-body:not([hidden])').length,1);
+  assert.equal(count(),initial);
+  source.click();
+  assert.equal(source.getAttribute('aria-expanded'),'false');
+  assert.equal(card.querySelectorAll('.ex-group-body:not([hidden])').length,0);
+  await t.close();
+});
+
+test('card tags are the last content group and not duplicated above H2 sections',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  assert.equal(card.children[0].classList.contains('ex-quote'),true);
+  assert.equal(card.children[1].classList.contains('ex-extras'),true);
+  assert.equal(card.children[2].classList.contains('ex-tag-editor'),true);
+  assert.equal(card.lastElementChild.classList.contains('ex-card-footer'),true);
+  assert.equal(card.querySelectorAll('.ex-chips').length,1);
+  assert.equal(card.querySelectorAll('.ex-card-options').length,1);
+  await t.close();
+});
+
+test('standalone leading Markdown media receives wider card treatment only without H1',async()=>{
+  const media=await fixture(false,'![[图片.png]]\n\n旅途中收集的风景\n\n## 来源\n相册');
+  assert.equal(media.pane.contentEl.querySelector('.ex-card').classList.contains('ex-media-first'),true);
+  await media.close();
+  const titled=await fixture();
+  assert.equal(titled.pane.contentEl.querySelector('.ex-card').classList.contains('ex-media-first'),false);
+  await titled.close();
+});
+
+test('empty capture is disabled and an unsaved draft survives reopening the home view',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const composer=root.querySelector('.ex-compose-text');
+  const save=[...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存');
+  assert.equal(save.disabled,true);
+  composer.value='重新打开后仍然存在的摘录';
+  composer.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(save.disabled,false);
+  await t.pane.onUnloadFile(t.home);
+  await t.pane.openFile(t.home);
+  await wait();
+  assert.equal(t.pane.contentEl.querySelector('.ex-compose-text').value,'重新打开后仍然存在的摘录');
   await t.close();
 });
