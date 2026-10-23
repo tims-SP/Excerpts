@@ -34,3 +34,8 @@ test('tag custom input cannot consume entire column height',()=>{
   assert.match(css,/\.ex-tag-custom\s*\{[^}]*flex:\s*0 1 auto;/);
   assert.doesNotMatch(css,/\.ex-tag-custom\s*\{\s*flex:\s*0 0 100%/);
 });
+
+test('tag editor input does not use 100 percent flex basis in column layout',()=>{
+  assert.match(css,/\.excerpts-root \.ex-tag-custom \{ flex: 0 1 auto; width: 100%;/);
+  assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom \{ flex: 0 0 100%; \}/);
+});
