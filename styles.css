@@ -103,3 +103,5 @@
 
 .excerpts-root .ex-group-chevron { display: inline-flex; flex: 0 0 auto; align-items: center; }
 .excerpts-root .ex-group-chevron svg { width: 14px; height: 14px; }
+
+.excerpts-root .ex-tag-option { border-radius: 999px; padding: 5px 10px; }
