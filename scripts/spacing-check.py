@@ -41,6 +41,20 @@ with sync_playwright() as playwright:
                     footerRight: r('.ex-card-footer').right,
                     moreRight: r('.ex-card-options').right,
                     inputHeight: r('.ex-compose-text').height,
+                    cardPaddingTop: parseFloat(getComputedStyle(q('.ex-card')).paddingTop),
+                    cardPaddingInline: parseFloat(getComputedStyle(q('.ex-card')).paddingLeft),
+                    cardPaddingBottom: parseFloat(getComputedStyle(q('.ex-card')).paddingBottom),
+                    quoteTop: r('.ex-quote').top,
+                    quoteLeft: r('.ex-quote').left,
+                    quoteRight: r('.ex-quote').right,
+                    cardBottom: r('.ex-card').bottom,
+                    footerBottom: r('.ex-card-footer').bottom,
+                    footerMargin: parseFloat(getComputedStyle(q('.ex-card-footer')).marginTop),
+                    footerHeight: r('.ex-card-footer').height,
+                    extrasMargin: parseFloat(getComputedStyle(q('.ex-extras')).marginTop),
+                    chipsHeight: r('.ex-chips').height,
+                    chipsCenter: (r('.ex-chips').top + r('.ex-chips').bottom) / 2,
+                    menuCenter: (r('.ex-card-options').top + r('.ex-card-options').bottom) / 2,
                     cardBg: getComputedStyle(q('.ex-card')).backgroundColor,
                     composerBg: getComputedStyle(q('.ex-composer')).backgroundColor
                 };
@@ -49,6 +63,20 @@ with sync_playwright() as playwright:
             assert coords["composerBg"] != coords["cardBg"], (theme, width, "composer/card surface", coords)
             assert coords["moreRight"] <= coords["cardRight"], (theme, width, coords)
             assert coords["inputHeight"] > 0, coords
+            # Container queries use the Obsidian pane width, not the device category.
+            compact = page.locator(".excerpts-native-host").evaluate("(el) => el.clientWidth <= 700")
+            expected_side, expected_bottom = (16, 10) if compact else (20, 12)
+            assert coords["cardPaddingTop"] == expected_side, (theme, width, coords)
+            assert coords["cardPaddingInline"] == expected_side, (theme, width, coords)
+            assert coords["cardPaddingBottom"] == expected_bottom, (theme, width, coords)
+            assert abs(coords["quoteTop"] - coords["cardTop"] - expected_side - 1) <= 1, (theme, width, coords)
+            assert abs(coords["quoteLeft"] - coords["cardLeft"] - expected_side - 1) <= 1, (theme, width, coords)
+            assert abs(coords["cardRight"] - coords["quoteRight"] - expected_side - 1) <= 1, (theme, width, coords)
+            assert abs(coords["cardBottom"] - coords["footerBottom"] - expected_bottom - 1) <= 1, (theme, width, coords)
+            assert coords["footerMargin"] == 8, (theme, width, coords)
+            assert coords["extrasMargin"] == 12, (theme, width, coords)
+            assert abs(coords["chipsCenter"] - coords["menuCenter"]) <= 2, (theme, width, coords)
+            assert coords["chipsHeight"] >= (44 if width <= 480 else 36), (theme, width, coords)
             if width <= 480:
                 assert abs(coords["composerLeft"] - coords["cardLeft"]) <= 1, (theme, width, coords)
                 assert coords["dateBottom"] <= coords["cardTop"] + 1, (theme, width, coords)
