@@ -93,6 +93,8 @@ test('H2 groups, filtering and editing without redundant card actions',async()=>
   const editor=root.querySelector('.ex-editor-text');
   assert.ok(editor);
   assert.match(editor.value,/## 来源/);
+  assert.equal(editor.selectionStart,0,'editor must open at the beginning');
+  assert.equal(editor.scrollTop,0);
   assert.equal(t.leaf.lastFile,null);
   editor.value += '\n新内容';
   editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
