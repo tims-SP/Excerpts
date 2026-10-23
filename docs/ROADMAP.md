@@ -16,7 +16,7 @@
 ## V0.2 — ergonomics
 
 - Quick capture command from selection; clipboard support and explicit link/reference metadata.
-- Random review, saved filters, richer card typography and custom extra categories.
+- Random review (implemented: filter-aware shuffle-to-top, theme-scoped highlight); saved filters, richer card typography and custom extra categories remain pending.
 - Undo operations and entry deletion with confirmation/Obsidian trash semantics.
 - Source provenance status: verified/unverified/personal rewrite; support multiple editions/translations.
 - List virtualization and persistent optional collection index (cache only, rebuildable).
@@ -36,3 +36,14 @@
 - Sync, conflict, file rename/move, app restart, timezone and UTF-8 roundtrips.
 - Screen-reader and keyboard focus tests, stylesheet conflict tests under common Obsidian themes.
 - Complete docs, downgrade/upgrade instructions and release artifacts.
+
+## 2026-10-23 — v0.2 development started (not a stable release)
+
+- **P0 fixed:** structurally ambiguous excerpts (missing/duplicate markers, unowned content within managed blocks, duplicate Extra IDs, ambiguous YAML) are read-only rather than rewritten; trailing unmanaged Markdown is preserved.
+- **P0 fixed:** Vault-relative path validation now rejects absolute paths, unsafe Windows names and ambiguous segments. Folder repoint verifies canonical overlap and a real `excerpts` fenced code block.
+- **P0 fixed:** repository update compares the originally loaded data snapshot with the current Vault.process content; silent overwrite of newer content is refused even without a frontmatter timestamp change.
+- **P0 fixed:** quote/extra edit drafts are retained in memory across card rerenders and explicitly discarded on Cancel or successful Save. Drafts are **not** crash-recovery persisted.
+- **v0.2 first feature:** random revisit respects current search/tag filters and surfaces the chosen card first. No Markdown write occurs during review.
+- **Tests:** Markdown data suite expanded from 7 to 15 tests, with mock-Vault smoke scenarios for stale writes, malformed records, path collisions and false homepage authorization.
+- **Still required:** authenticated end-to-end tests in actual Obsidian desktop/mobile, browser interactive regression tests checked into CI, 1k/10k performance fixtures, and reliable crash-recovery drafts.
+- **Release policy:** package/manifest remain at v0.1.0 while v0.2 features are developed. Do not advertise v0.2.0 as released until release acceptance gates are met.
