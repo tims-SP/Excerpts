@@ -521,6 +521,7 @@ test('composer focus and Escape close optional inputs with accessible focus', as
     assert.equal(tagsToggle.getAttribute('aria-controls'), tags.id);
     tags.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     assert.equal(tags.hidden, true);
+    assert.equal(document.activeElement, tagsToggle, 'Escape restores focus to visible capture toggle');
     const searchToggle = click(f.container, '搜索');
     const input = f.container.querySelector('.ex-search-wrap input');
     assert.equal(searchToggle.getAttribute('aria-controls'), input.parentElement.id);
@@ -796,5 +797,21 @@ test('opening another card does not silently discard a dirty editor', async () =
     click(other, '编辑');
     assert.equal(f.container.querySelector('.ex-entry-editor textarea').value, '第二条未保存');
     assert.match(Notice.last, /先保存或取消/);
+  } finally { await f.close(); }
+});
+
+test('search text alone never becomes a saved tag without explicit selection', async () => {
+  const f = await fixture();
+  try {
+    const target = await f.repo.create(f.workspace, '阅读');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    const editor = f.container.querySelector('.ex-entry-editor');
+    click(editor, '添加标签');
+    type(editor.querySelector('.ex-tags-input'), '只是搜索');
+    assert.equal(editor.querySelectorAll('.ex-tag-chip').length, 0);
+    click(editor, '保存修改');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual((await f.repo.list(f.workspace)).find(x => x.id === target.id).tags, []);
   } finally { await f.close(); }
 });
