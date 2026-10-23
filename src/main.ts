@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile } from "obsidian";
 import { DEFAULT_SETTINGS, PluginSettings, Workspace, isExcerptPath } from "./model";
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
@@ -93,12 +93,23 @@ export default class ExcerptsPlugin extends Plugin {
     await leaf.openFile(file);
     await this.app.workspace.revealLeaf(leaf);
   }
-  async openMarkdown(path: string): Promise<void> {
+  async openMarkdown(path: string, line?: number): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) throw new Error("Markdown 文件不存在：" + path);
+    // A new tab keeps the .excerpts homepage, its filters and scroll position intact.
     const leaf = this.app.workspace.getLeaf("tab");
     await leaf.openFile(file);
+    const view = leaf.view;
+    if (view instanceof MarkdownView) await view.setMode("source");
     await this.app.workspace.revealLeaf(leaf);
+    if (view instanceof MarkdownView) {
+      if (line !== undefined) {
+        const cursor = { line, ch: 0 };
+        view.editor.setCursor(cursor);
+        view.editor.scrollIntoView({ from: cursor, to: cursor }, true);
+      }
+      view.editor.focus();
+    }
   }
 }
 function showError(error: unknown): void { new Notice(error instanceof Error ? error.message : String(error)); }

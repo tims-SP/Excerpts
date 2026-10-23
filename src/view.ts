@@ -1,4 +1,5 @@
 import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, setIcon } from "obsidian";
+import { findSectionHeadingLine } from "./codec";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
 import { CardIndex, ParsedMarkdown, Workspace } from "./model";
@@ -52,7 +53,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reading = 0;
   private markdownChildren = new Map<string, MarkdownRenderChild[]>();
   private sectionsShown = new Map<string, Set<number>>();
-  private editingDrafts = new Map<string, { original: string; value: string; saving: boolean }>();
   private openTagEditors = new Set<string>();
   private tagInputs = new Map<string, string>();
   private disposed = false;
@@ -307,8 +307,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const item of visible.slice(0, this.pageSize)) {
       const card = this.createCard(item);
       this.listEl.append(card);
-      if (this.editingDrafts.has(item.path)) this.renderInlineEditor(card, item);
-      else if (this.observer) this.observer.observe(card);
+      if (this.observer) this.observer.observe(card);
       else this.enqueue(() => this.hydrate(item, card, token));
     }
     if (focusedTag) {
@@ -350,16 +349,43 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }, "ex-footer-tag");
     footerTag.setAttribute("aria-label", "添加标签");
     actions.append(footerTag);
-    actions.append(iconButton("pencil", "编辑摘录", () =>
-      void this.startInlineEdit(item, card).catch(notify)));
+    const options = iconButton("ellipsis", "卡片选项", () =>
+      void this.showCardMenu(item, options).catch(notify), "ex-card-options");
+    options.setAttribute("aria-haspopup", "menu");
+    actions.append(options);
     footer.append(actions);
     card.append(footer);
     card.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
     return card;
   }
+  private async showCardMenu(item: CardIndex, anchor: HTMLButtonElement): Promise<void> {
+    const parsed = await this.repo.read(item.path);
+    if (this.disposed || !anchor.isConnected) return;
+    const menu = new Menu();
+    menu.addItem(entry => entry.setTitle("编辑原文").onClick(() =>
+      void this.plugin.openMarkdown(item.path).catch(notify)));
+    const seen = new Map<string, number>();
+    for (let index = 0; index < parsed.sections.length; index++) {
+      const section = parsed.sections[index];
+      const count = (seen.get(section.name) ?? 0) + 1;
+      seen.set(section.name, count);
+      const suffix = parsed.sections.filter(part => part.name === section.name).length > 1
+        ? "（第 " + count + " 个）" : "";
+      menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() =>
+        void this.openSection(item.path, index).catch(notify)));
+    }
+    const rect = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+  }
+  private async openSection(path: string, index: number): Promise<void> {
+    const raw = await this.repo.readRaw(path);
+    const line = findSectionHeadingLine(raw, index);
+    if (line === null) throw new Error("无法定位该分组，请重新打开卡片选项");
+    await this.plugin.openMarkdown(path, line);
+  }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
     const parsed = await this.repo.read(item.path);
-    if (this.disposed || token !== this.renderToken || !card.isConnected || this.editingDrafts.has(item.path)) return;
+    if (this.disposed || token !== this.renderToken || !card.isConnected) return;
     this.renderContent(card, item, parsed);
   }
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
@@ -499,73 +525,4 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
   }
 
-  private async startInlineEdit(item: CardIndex, card: HTMLElement): Promise<void> {
-    if (this.editingDrafts.has(item.path)) return;
-    const original = await this.repo.readRaw(item.path);
-    if (this.disposed || !card.isConnected) return;
-    this.editingDrafts.set(item.path, { original, value: original, saving: false });
-    this.renderInlineEditor(card, item, true);
-  }
-  private renderInlineEditor(card: HTMLElement, item: CardIndex, focus = false): void {
-    const draft = this.editingDrafts.get(item.path);
-    if (!draft) return;
-    this.unmountMarkdown(item.path);
-    card.classList.add("ex-editing");
-    card.querySelector<HTMLElement>(".ex-chips")!.hidden = true;
-    card.querySelector<HTMLElement>(".ex-extras")!.hidden = true;
-    card.querySelector<HTMLElement>(".ex-card-footer")!.hidden = true;
-    const body = card.querySelector<HTMLElement>(".ex-quote")!;
-    body.replaceChildren();
-    const editor = node("div", "ex-entry-editor");
-    const textarea = node("textarea", "ex-editor-text");
-    textarea.rows = 7;
-    textarea.value = draft.value;
-    textarea.setAttribute("aria-label", "编辑摘录 Markdown 原文");
-    textarea.addEventListener("input", () => { draft.value = textarea.value; });
-    const controls = node("div", "ex-edit-actions");
-    const warning = node("p", "ex-warning");
-    warning.hidden = true;
-    warning.setAttribute("role", "alert");
-    const cancel = button("取消", () => {
-      this.editingDrafts.delete(item.path);
-      const replacement = this.createCard(item);
-      card.replaceWith(replacement);
-      this.enqueue(() => this.hydrate(item, replacement, this.renderToken));
-      replacement.querySelector<HTMLButtonElement>('button[aria-label="编辑摘录"]')?.focus();
-    }, "ex-btn-quiet");
-    const save = button("保存", () => {
-      if (draft.saving) return;
-      draft.saving = true;
-      save.disabled = true; cancel.disabled = true; textarea.disabled = true;
-      save.textContent = "保存中…";
-      void this.repo.updateRaw(item.path, draft.value, draft.original).then(async () => {
-        this.editingDrafts.delete(item.path);
-        await this.reload();
-        const newCard = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
-          .find(el => el.dataset.path === item.path);
-        newCard?.querySelector<HTMLButtonElement>('button[aria-label="编辑摘录"]')?.focus();
-      }).catch(error => {
-        warning.textContent = error instanceof Error ? error.message : String(error);
-        warning.hidden = false;
-        notify(error);
-        draft.saving = false;
-        save.disabled = false; cancel.disabled = false; textarea.disabled = false;
-        save.textContent = "保存";
-        textarea.focus();
-      });
-    }, "ex-btn-primary");
-    textarea.addEventListener("keydown", event => {
-      if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        event.preventDefault(); save.click();
-      }
-    });
-    controls.append(cancel, save);
-    editor.append(textarea, warning, controls);
-    body.append(editor);
-    if (focus) {
-      textarea.focus();
-      textarea.setSelectionRange(0, 0);
-      textarea.scrollTop = 0;
-    }
-  }
 }

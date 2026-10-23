@@ -32,7 +32,7 @@
 .excerpts-root .ex-compose-actions { padding-top: var(--ex-space-2); min-height: 36px; }
 .excerpts-root .ex-capture-options { display: flex; gap: 4px; }
 .excerpts-root .ex-capture-tags { padding: var(--ex-space-2) 0; }
-.excerpts-root .ex-capture-tags[hidden], .excerpts-root .ex-search-wrap[hidden], .excerpts-root .ex-filter-tags[hidden], .excerpts-root .ex-tag-editor[hidden], .excerpts-root .ex-chips[hidden], .excerpts-root .ex-extras[hidden], .excerpts-root .ex-card-footer[hidden] { display: none; }
+.excerpts-root .ex-capture-tags[hidden], .excerpts-root .ex-search-wrap[hidden], .excerpts-root .ex-filter-tags[hidden], .excerpts-root .ex-tag-editor[hidden] { display: none; }
 .excerpts-root .ex-tag-suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--ex-space-2); }
 .excerpts-root .ex-tags-input, .excerpts-root .ex-tag-custom, .excerpts-root .ex-input { width: 100%; min-width: 0; background: var(--background-primary); border: 1px solid var(--ex-border); border-radius: var(--radius-m, 8px); padding: 8px 10px; color: var(--text-normal); font: inherit; font-size: var(--font-ui-medium); }
 .excerpts-root .ex-toolbar { margin: 0 0 var(--ex-space-3); min-height: 36px; }
@@ -69,6 +69,7 @@
 .excerpts-root .ex-group-title { font-size: var(--font-ui-small); font-weight: 600; margin: 0 0 6px; }
 .excerpts-root .ex-card-footer { margin-top: var(--ex-space-3); min-height: 32px; }
 .excerpts-root .ex-card-actions, .excerpts-root .ex-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.excerpts-root .ex-card-options { position: static; margin: 0; }
 .excerpts-root .ex-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); }
 .excerpts-root .ex-empty-title { color: var(--text-normal); font-weight: 600; }
 .excerpts-root .ex-empty-description { font-size: var(--font-ui-small); }
@@ -83,7 +84,7 @@
   .excerpts-root button.ex-icon-button, .excerpts-root button.ex-tag,
   .excerpts-root button.ex-group-trigger, .excerpts-root button.ex-btn-primary { min-width: 44px; min-height: 44px; }
   .excerpts-root .ex-tags-input, .excerpts-root .ex-tag-custom, .excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
-  .excerpts-root button.ex-tag-option, .excerpts-root button.ex-add-tag, .excerpts-root button.ex-loadmore, .excerpts-root .ex-edit-actions button { min-width: 44px; min-height: 44px; }
+  .excerpts-root button.ex-tag-option, .excerpts-root button.ex-add-tag, .excerpts-root button.ex-loadmore { min-width: 44px; min-height: 44px; }
 }
 
 .excerpts-root .ex-chips.ex-tags-empty { margin-top: var(--ex-space-1); }
@@ -91,25 +92,12 @@
 .excerpts-root .ex-tag-editor .ex-tag-suggestions { flex: 0 0 auto; min-height: 0; }
 .excerpts-root .ex-tag-editor .ex-tag-custom { box-sizing: border-box; }
 .excerpts-root button.ex-tag-option.ex-selected { background: var(--background-modifier-hover); font-weight: 600; }
-.excerpts-root .ex-entry-editor { display: flex; flex-direction: column; gap: var(--ex-space-3); }
-.excerpts-root .ex-editor-text {
-  width: 100%; min-width: 0; min-height: 180px; max-height: min(60vh, 520px);
-  resize: vertical; padding: var(--ex-space-3) 0; border: 0;
-  border-radius: 0; background: transparent;
-  color: var(--text-normal); font-family: var(--font-monospace);
-  font-size: var(--font-text-size, 16px); line-height: 1.6; overflow-y: auto;
-}
-.excerpts-root .ex-edit-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--ex-space-2); }
-
-.excerpts-root .ex-tag-custom:focus-visible, .excerpts-root .ex-search:focus-visible,
-.excerpts-root .ex-editor-text:focus-visible { outline: none; box-shadow: none; }
+.excerpts-root .ex-tag-custom:focus-visible, .excerpts-root .ex-search:focus-visible { outline: none; box-shadow: none; }
 
 .excerpts-root .ex-group-chevron { display: inline-flex; flex: 0 0 auto; align-items: center; }
 .excerpts-root .ex-group-chevron svg { width: 14px; height: 14px; }
 
 .excerpts-root .ex-tag-option { border-radius: 999px; padding: 5px 10px; }
-
-.excerpts-root .ex-card.ex-editing { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
 
 /* Empty-tag cards keep the add affordance in the existing footer row. */
 .excerpts-root .ex-card.ex-card-no-tags > .ex-chips { display: none; }

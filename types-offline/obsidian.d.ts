@@ -22,6 +22,7 @@ declare module "obsidian" {
   }
   export function getAllTags(cache: CachedMetadata): string[] | null;
   export interface WorkspaceLeaf {
+    view: FileView;
     openFile(file: TFile): Promise<void>;
     setViewState(state: any): Promise<void>;
   }
@@ -54,6 +55,16 @@ declare module "obsidian" {
     onLoadFile(file: TFile): Promise<void>;
     onUnloadFile(file: TFile): Promise<void>;
     onClose(): Promise<void>;
+  }
+  export interface EditorPosition { line: number; ch: number; }
+  export interface Editor {
+    setCursor(pos: EditorPosition): void;
+    scrollIntoView(range: { from: EditorPosition; to: EditorPosition }, center?: boolean): void;
+    focus(): void;
+  }
+  export class MarkdownView extends FileView {
+    editor: Editor;
+    setMode(mode: "source" | "preview"): Promise<void>;
   }
   export class MarkdownRenderer {
     static render(app: App, markdown: string, target: HTMLElement, sourcePath: string, child: Component): Promise<void>;

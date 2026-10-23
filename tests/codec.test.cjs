@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseMarkdown } = require('../.test-compiled/codec.js');
+const { parseMarkdown, findSectionHeadingLine } = require('../.test-compiled/codec.js');
 const { belongsTo, isExcerptPath, validateRelativePath } = require('../.test-compiled/model.js');
 
 test('regular Markdown needs no dedicated schema or frontmatter', () => {
@@ -52,4 +52,12 @@ test('unsafe Vault relative paths are rejected', () => {
   assert.throws(()=>validateRelativePath('/private'));
   assert.throws(()=>validateRelativePath('.obsidian/plugins'));
   assert.equal(validateRelativePath('资料\\摘录/'),'资料/摘录');
+});
+
+test('H2 source-line lookup skips YAML and fenced headings, preserves duplicates and CRLF', () => {
+  const raw = '---\r\ntags: [例子]\r\n---\r\n\r\n~~~md\r\n## 假分组\r\n~~~\r\n## 来源\r\nA\r\n## 来源\r\nB';
+  assert.equal(findSectionHeadingLine(raw, 0), 7);
+  assert.equal(findSectionHeadingLine(raw, 1), 9);
+  assert.equal(findSectionHeadingLine(raw, 2), null);
+  assert.equal(findSectionHeadingLine(raw, -1), null);
 });

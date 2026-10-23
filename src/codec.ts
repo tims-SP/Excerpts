@@ -52,3 +52,34 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
   const body = bodyParts.join("\n\n").trim();
   return { title, body, sections };
 }
+
+/** Find the source line of an H2 by ordinal, not by text, so repeated groups stay distinct. */
+export function findSectionHeadingLine(raw: string, sectionIndex: number): number | null {
+  if (!Number.isInteger(sectionIndex) || sectionIndex < 0) return null;
+  const lines = raw.split(/\r\n|\r|\n/);
+  let start = 0;
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (end > 0) start = end + 1;
+  }
+  let fenceChar = "";
+  let fenceLength = 0;
+  let found = 0;
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = line.match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const char = fence[1][0];
+      if (!fenceChar) { fenceChar = char; fenceLength = fence[1].length; }
+      else if (char === fenceChar && fence[1].length >= fenceLength &&
+               fence[2].trim() === "") { fenceChar = ""; fenceLength = 0; }
+      continue;
+    }
+    if (fenceChar) continue;
+    if (/^ {0,3}##[ \t]+(.+?)[ \t]*#*[ \t]*$/.test(line)) {
+      if (found === sectionIndex) return i;
+      found++;
+    }
+  }
+  return null;
+}

@@ -136,15 +136,6 @@ export class EntryRepository {
   async readRaw(path: string): Promise<string> {
     return this.app.vault.cachedRead(this.file(path));
   }
-  /** Reject an external edit instead of silently overwriting it. */
-  async updateRaw(path: string, content: string, expected: string): Promise<void> {
-    const file = this.file(path);
-    await this.app.vault.process(file, current => {
-      if (current !== expected) throw new Error("文件已在其他位置修改，请检查后再保存");
-      return content;
-    });
-    this.invalidate(path);
-  }
   async setTag(path: string, tag: string, add: boolean): Promise<void> {
     const file = this.file(path);
     const normalized = tag.replace(/^#/, "").trim();

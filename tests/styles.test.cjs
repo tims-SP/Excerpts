@@ -14,10 +14,11 @@ test('mobile touch, collapsed filters and card layout are scoped',()=>{
   assert.match(css,/\.excerpts-root \.ex-search-wrap\[hidden\]/);
 });
 
-test('card edit and tag components have scoped styles',()=>{
-  for(const name of ['.ex-entry-editor','.ex-editor-text','.ex-edit-actions','.ex-tag-editor','.ex-tag-custom','.ex-tag-option','.ex-group-body','.ex-warning'])
+test('card options and tag components have scoped styles without an inline editor',()=>{
+  for(const name of ['.ex-card-options','.ex-tag-editor','.ex-tag-custom','.ex-tag-option','.ex-group-body','.ex-warning'])
     assert.ok(css.includes('.excerpts-root '+name),'missing '+name);
-  assert.ok(css.includes('.ex-card-footer[hidden]'));
+  for(const name of ['.ex-entry-editor','.ex-editor-text','.ex-edit-actions','.ex-card.ex-editing'])
+    assert.ok(!css.includes(name),'obsolete '+name);
   assert.ok(css.includes('max-width: 720px'));
 });
 
@@ -27,7 +28,7 @@ test('regression: expanded tag input never inherits vertical 100-percent flex ba
   assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+0\s+100%/);
   assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags > \.ex-chips\s*\{[^}]*display:\s*none/);
   assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags \.ex-footer-tag\s*\{[^}]*display:\s*inline-flex/);
-  assert.match(css,/\.excerpts-root \.ex-card\.ex-editing\s*\{[^}]*border-color/);
+
 });
 
 test('tag custom input cannot consume entire column height',()=>{
