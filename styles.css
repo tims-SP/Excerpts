@@ -1,5 +1,5 @@
 /* All rules are strictly scoped to the Excerpts renderer. */
-.excerpts-root { --ex-radius: 14px; font-family: var(--font-interface); color: var(--text-normal); max-width: 900px; margin: 0 auto; padding: 14px 6px 36px; }
+.excerpts-root { --ex-radius: 14px; font-family: var(--font-interface); color: var(--text-normal); max-width: 900px; container-type: inline-size; margin: 0 auto; padding: 14px 6px 36px; }
 .excerpts-root * { box-sizing: border-box; }
 .excerpts-root .ex-header,.excerpts-root .ex-card-top,.excerpts-root .ex-compose-actions,.excerpts-root .ex-toolbar,.excerpts-root .ex-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .excerpts-root .ex-header { padding: 8px 4px 22px; }
@@ -48,3 +48,15 @@
 /* v0.2: revisited card uses the host theme accent; no global styling. */
 .excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
 .excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: 12px; }
+
+/* Obsidian side panes can be narrow even on wide desktop screens.
+   Respond to the collection width instead of only the device viewport. */
+@container (max-width: 520px) {
+  .excerpts-root .ex-card { padding: 14px; }
+  .excerpts-root .ex-compose-actions { flex-wrap: wrap; align-items: stretch; }
+  .excerpts-root .ex-compose-actions > * { flex: 1 1 180px; }
+  .excerpts-root .ex-card-top { align-items: flex-start; flex-wrap: wrap; }
+  .excerpts-root .ex-card-actions { flex-wrap: wrap; }
+  .excerpts-root .ex-header { flex-wrap: wrap; }
+  .excerpts-root .ex-extras .ex-add-extra { min-height: 36px; }
+}
