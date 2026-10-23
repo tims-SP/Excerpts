@@ -310,6 +310,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
 
   private confirmTrash(entry: Entry): void {
     if (entry.readOnly || this.deletionInFlight) return;
+    // Archiving a record while its unsaved editor is open would discard the
+    // draft. Require the user to finish or explicitly cancel editing first.
+    if (this.editing === entry.id || this.quoteDrafts.has(entry.id) ||
+        [...this.extraDrafts.keys()].some(key => key.startsWith(entry.id + ":"))) {
+      new Notice("此摘录存在未保存的编辑草稿，请先保存或取消后再删除");
+      return;
+    }
     const modal = new Modal(this.plugin.app);
     modal.contentEl.empty();
     modal.contentEl.append(node("h3", "", "将摘录移至回收站？"));
