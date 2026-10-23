@@ -128,6 +128,7 @@ function makeTagEditor(
   };
   const setExpanded = (expanded: boolean) => {
     entry.hidden = !expanded;
+    input.hidden = !expanded;
     toggle.setAttribute("aria-expanded", String(expanded));
     options.onExpandedChange?.(expanded);
     if (expanded) { render(); input.focus(); }
