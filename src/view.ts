@@ -457,7 +457,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         return;
       }
       const previous = this.items.find(value => value.path === this.editor!.path);
-      const previousCard = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+      const previousCard = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
         .find(value => value.dataset.path === this.editor!.path);
       if (previous && previousCard) this.finishEdit(previous, previousCard);
       else this.editor = null;
