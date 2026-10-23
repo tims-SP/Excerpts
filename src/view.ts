@@ -648,6 +648,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (session.focus === "body") {
       textArea.focus();
       if (session.caret) textArea.setSelectionRange(session.caret[0], session.caret[1]);
+      if (!session.caret || session.caret[0] === 0) textArea.scrollTop = 0;
     } else if (session.focus === "tags") {
       picker.setExpanded(true);
     }
