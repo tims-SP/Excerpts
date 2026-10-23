@@ -70,6 +70,9 @@ async function main(){
   await vault.create('资料/摘录/HELLO.md','existing');
   const caseConflict=await plugin.repo.create(ws,'hello');
   assert.equal(caseConflict.path,'资料/摘录/hello-2.md');
+  await vault.create('资料/摘录/Cafe\u0301.md','existing NFD name');
+  const normalizedConflict=await plugin.repo.create(ws,'# Café');
+  assert.equal(normalizedConflict.path,'资料/摘录/Café-2.md');
   const many=await Promise.all([plugin.repo.create(ws,'并发摘录'),plugin.repo.create(ws,'并发摘录')]);
   assert.deepEqual(many.map(x=>x.path).sort(),['资料/摘录/并发摘录-2.md','资料/摘录/并发摘录.md'].sort());
   // Simulate an external writer winning the create race.
@@ -86,6 +89,18 @@ async function main(){
   const retried=await plugin.repo.create(ws,'竞态');
   assert.equal(retried.path,'资料/摘录/竞态-2.md');
   assert.equal(files.get('资料/摘录/竞态.md').data,'created externally');
+  vault.create=normalCreate;
+  // EEXIST can arrive before a remote/cloud Vault index refreshes.
+  let stale=true;
+  vault.create=async function(path,data){
+    if(stale && path==='资料/摘录/延迟同步.md'){
+      stale=false;
+      throw Object.assign(Error('File already exists'),{code:'EEXIST'});
+    }
+    return normalCreate.call(this,path,data);
+  };
+  const delayed=await plugin.repo.create(ws,'延迟同步');
+  assert.equal(delayed.path,'资料/摘录/延迟同步-2.md');
   vault.create=normalCreate;
   // Propagate unrelated errors, do not silently retry them as conflicts.
   vault.create=async function(path,data){
