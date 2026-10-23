@@ -345,10 +345,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     info.append(date);
     footer.append(info);
     const actions = node("div", "ex-card-actions");
+    const footerTag = button("＋ 标签", () => {
+      tags.querySelector<HTMLButtonElement>(".ex-add-tag")?.click();
+    }, "ex-footer-tag");
+    footerTag.setAttribute("aria-label", "添加标签");
+    actions.append(footerTag);
     actions.append(iconButton("pencil", "编辑摘录", () =>
       void this.startInlineEdit(item, card).catch(notify)));
     footer.append(actions);
     card.append(footer);
+    card.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
     return card;
   }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
@@ -449,7 +455,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
     input.addEventListener("keydown", event => {
       if (event.key === "Escape") {
-        event.preventDefault(); toggle.click(); toggle.focus();
+        event.preventDefault(); toggle.click();
       } else if (event.key === "Enter" && !event.isComposing) {
         event.preventDefault();
         const value = input.value.trim().replace(/^#/, "");
@@ -464,7 +470,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (opened) this.openTagEditors.add(item.path);
       else this.openTagEditors.delete(item.path);
       toggle.setAttribute("aria-expanded", String(opened));
+      const card = mount.closest<HTMLElement>(".ex-card");
+      const noTags = !item.tags.length && !opened;
+      card?.classList.toggle("ex-card-no-tags", noTags);
       if (opened) input.focus();
+      else if (noTags) card?.querySelector<HTMLButtonElement>(".ex-footer-tag")?.focus();
     }, "ex-add-tag");
     toggle.setAttribute("aria-expanded", String(editorOpen));
     mount.append(toggle, editor);
@@ -483,6 +493,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const mount = card?.querySelector<HTMLElement>(".ex-chips");
     if (mount) {
       this.renderTags(mount, item, this.openTagEditors.has(item.path));
+      card?.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
       if (this.openTagEditors.has(item.path))
         mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
     }
