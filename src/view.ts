@@ -98,7 +98,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       quote.style.height = Math.max(48, Math.min(maxHeight, quote.scrollHeight || 48)) + "px";
       quote.style.overflowY = quote.scrollHeight > maxHeight ? "auto" : "hidden";
     };
-    quote.addEventListener("input", fit);\n    quote.addEventListener("compositionend", fit);\n    window.addEventListener("resize", fit);\n
+    quote.addEventListener("input", fit);
+    quote.addEventListener("compositionend", fit);
+
     quote.addEventListener("focus", () => { form.classList.add("ex-is-composing"); fit(); });
     const tagsPane = node("div", "ex-capture-tags");
     tagsPane.hidden = true;
