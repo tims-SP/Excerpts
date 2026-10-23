@@ -55,6 +55,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private sectionsShown = new Map<string, Set<number>>();
   private openTagEditors = new Set<string>();
   private tagInputs = new Map<string, string>();
+  private pendingTags = new Set<string>();
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
     private repo: EntryRepository) { super(container); }
@@ -85,7 +86,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     header.firstElementChild!.append(node("h2", "ex-title", "摘录"));
     root.append(header);
 
-    // A compact flomo-style capture surface, not a detached 'New file' button.
+    // The outer composer is the only rounded surface; textarea has no native chrome.
     const form = node("section", "ex-composer");
     form.setAttribute("aria-label", "快速摘录");
     const quote = node("textarea", "ex-compose-text");
@@ -93,33 +94,59 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.rows = 2;
     quote.setAttribute("aria-label", "摘录正文");
     const fit = () => {
+      // Let CSS enforce its responsive max-height; no competing JS viewport limit.
       quote.style.height = "auto";
-      const maxHeight = Math.max(48, Math.min(window.innerHeight * 0.42, 340));
-      quote.style.height = Math.max(48, Math.min(maxHeight, quote.scrollHeight || 48)) + "px";
-      quote.style.overflowY = quote.scrollHeight > maxHeight ? "auto" : "hidden";
+      quote.style.height = Math.max(quote.scrollHeight, 0) + "px";
     };
     quote.addEventListener("input", fit);
     quote.addEventListener("compositionend", fit);
-
     quote.addEventListener("focus", () => { form.classList.add("ex-is-composing"); fit(); });
+
     const tagsPane = node("div", "ex-capture-tags");
     tagsPane.hidden = true;
-    const tagsInput = node("input", "ex-tags-input");
-    tagsInput.placeholder = "输入标签，用逗号分隔";
-    tagsInput.setAttribute("aria-label", "快速摘录标签");
+    const tagSearch = node("input", "ex-tags-input");
+    tagSearch.type = "search";
+    tagSearch.placeholder = "搜索或创建标签";
+    tagSearch.setAttribute("aria-label", "搜索或创建摘录标签");
     const suggested = node("div", "ex-tag-suggestions");
+    const selectedTags = new Set<string>();
+    const selectedChips = node("div", "ex-capture-selected");
+    const repaintSelected = () => {
+      selectedChips.replaceChildren();
+      for (const tag of selectedTags) {
+        const pill = button("#" + tag + " ×", () => toggleTag(tag, false), "ex-tag ex-tag-remove");
+        pill.setAttribute("aria-label", "移除标签：" + tag);
+        selectedChips.append(pill);
+      }
+      selectedChips.hidden = !selectedTags.size;
+    };
+    const toggleTag = (tag: string, add: boolean) => {
+      const value = tag.trim().replace(/^#/, "");
+      if (!value || /\s/.test(value)) {
+        new Notice("标签不能为空或包含空格");
+        return;
+      }
+      const canonical = [...new Set([...this.items.flatMap(item => item.tags), ...selectedTags])]
+        .find(t => t.toLocaleLowerCase() === value.toLocaleLowerCase()) ?? value;
+      if (add) selectedTags.add(canonical);
+      else selectedTags.delete(canonical);
+      tagSearch.value = "";
+      repaintSelected();
+      this.showSuggestions();
+      tagSearch.focus();
+    };
     const tagToggle = iconButton("hash", "添加标签", () => {
       tagsPane.hidden = !tagsPane.hidden;
       tagToggle.setAttribute("aria-expanded", String(!tagsPane.hidden));
-      if (!tagsPane.hidden) tagsInput.focus();
+      if (!tagsPane.hidden) tagSearch.focus();
     });
     tagToggle.setAttribute("aria-expanded", "false");
     const composeActions = node("div", "ex-compose-actions");
     const options = node("div", "ex-capture-options");
-    options.append(tagToggle);
+    options.append(tagToggle, selectedChips);
     const saveButton = button("保存", () => void save(), "ex-btn-primary mod-cta");
     composeActions.append(options, saveButton);
-    tagsPane.append(suggested, tagsInput);
+    tagsPane.append(tagSearch, suggested);
     form.append(quote, tagsPane, composeActions);
     root.append(form);
     let saving = false;
@@ -129,38 +156,51 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         event.preventDefault(); resume = true; void save();
       }
     });
-    tagsInput.addEventListener("keydown", event => {
-      if (event.key === "Escape") { tagsPane.hidden = true; tagToggle.setAttribute("aria-expanded", "false"); tagToggle.focus(); }
+    tagSearch.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        tagsPane.hidden = true;
+        tagToggle.setAttribute("aria-expanded", "false");
+        tagToggle.focus();
+      } else if (event.key === "Enter" && !event.isComposing) {
+        event.preventDefault();
+        const value = tagSearch.value.trim().replace(/^#/, "");
+        if (value) toggleTag(value, true);
+      }
     });
     const save = async () => {
       if (saving) return;
       const markdown = quote.value.trim();
       if (!markdown) { new Notice("请输入摘录内容"); return; }
-      saving = true; quote.disabled = true; tagsInput.disabled = true; saveButton.disabled = true;
+      saving = true;
+      quote.disabled = true; tagSearch.disabled = true; tagToggle.disabled = true; saveButton.disabled = true;
+      selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = true; });
       saveButton.textContent = "保存中…";
       try {
-        const tags = tagsInput.value.split(/[,，]/).map(t => t.trim().replace(/^#/, "")).filter(Boolean);
-        await this.repo.create(this.workspace, markdown, tags);
-        quote.value = ""; tagsInput.value = ""; tagsPane.hidden = true; fit();
+        await this.repo.create(this.workspace, markdown, [...selectedTags]);
+        quote.value = ""; tagSearch.value = ""; selectedTags.clear();
+        repaintSelected();
+        tagsPane.hidden = true; fit();
         tagToggle.setAttribute("aria-expanded", "false");
         form.classList.remove("ex-is-composing");
         await this.reload();
         if (resume) quote.focus();
       } catch (error) { notify(error); }
-      finally { saving = false; resume = false; quote.disabled = false; tagsInput.disabled = false; saveButton.disabled = false; saveButton.textContent = "保存"; }
+      finally {
+        saving = false; resume = false;
+        quote.disabled = false; tagSearch.disabled = false; tagToggle.disabled = false; saveButton.disabled = false;
+        selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = false; });
+        saveButton.textContent = "保存";
+      }
     };
-    quote.addEventListener("blur", () => { if (!quote.value && !tagsInput.value) form.classList.remove("ex-is-composing"); });
-    this.showSuggestions = () => {
-      suggested.replaceChildren();
-      const existing = new Set(tagsInput.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")));
-      const all = [...new Set(this.items.flatMap(item => item.tags))].sort((a, b) => a.localeCompare(b, "zh")).slice(0, 8);
-      for (const tag of all) {\n        const choice = button((existing.has(tag) ? "✓ " : "＋ ") + "#" + tag, () => {
-        if (existing.has(tag)) existing.delete(tag); else existing.add(tag);
-        tagsInput.value = [...existing].filter(Boolean).join(", ");
-        this.showSuggestions();
-      }, "ex-tag-option" + (existing.has(tag) ? " ex-selected" : ""));\n        choice.setAttribute("aria-pressed", String(existing.has(tag)));\n        suggested.append(choice);\n      }
-    };
-    tagsInput.addEventListener("input", this.showSuggestions);\n    fit();
+    quote.addEventListener("blur", () => {
+      if (!quote.value && !selectedTags.size && tagsPane.hidden) form.classList.remove("ex-is-composing");
+    });
+    this.showSuggestions = () =>
+      this.paintTagChoices(tagSearch, suggested, selectedTags, toggleTag);
+    tagSearch.addEventListener("input", this.showSuggestions);
+    repaintSelected();
+    fit();
     this.showSuggestions();
 
     const toolbar = node("div", "ex-toolbar");
@@ -447,38 +487,54 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.renderContent(card, item, parsed);
     }).catch(notify);
   }
+  /** Identical search/select/create semantics for quick capture and card tags. */
+  private paintTagChoices(input: HTMLInputElement, mount: HTMLElement,
+    selected: ReadonlySet<string>, toggle: (tag: string, add: boolean) => void): void {
+    mount.replaceChildren();
+    const keyword = input.value.trim().replace(/^#/, "");
+    const folded = keyword.toLocaleLowerCase();
+    const all = [...new Set([...this.items.flatMap(item => item.tags), ...selected])]
+      .sort((a, b) => a.localeCompare(b, "zh"));
+    const matches = all.filter(tag => tag.toLocaleLowerCase().includes(folded)).slice(0, 8);
+    for (const tag of matches) {
+      const active = selected.has(tag);
+      const choice = button("#" + tag + (active ? " ✓" : ""), () => toggle(tag, !active),
+        "ex-tag-option" + (active ? " ex-selected" : ""));
+      choice.setAttribute("aria-pressed", String(active));
+      mount.append(choice);
+    }
+    if (keyword && !/\s/.test(keyword) && !all.some(tag => tag.toLocaleLowerCase() === folded)) {
+      const create = button("＋ 创建 #" + keyword, () => toggle(keyword, true),
+        "ex-tag-option ex-tag-create");
+      mount.append(create);
+    }
+  }
   private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();
     mount.classList.toggle("ex-tags-empty", !item.tags.length);
     for (const tag of item.tags) {
-      const pill = button("#" + tag, () => {
-        this.tagFilter = this.tagFilter === tag ? "" : tag;
-        this.renderTagsFilter(); this.drawCards();
-      }, "ex-tag");
-      pill.setAttribute("aria-pressed", String(this.tagFilter === tag));
+      const pill = button("#" + tag + (editorOpen ? " ×" : ""), () => {
+        if (editorOpen) {
+          void this.changeTag(item, tag, false).catch(notify);
+        } else {
+          this.tagFilter = this.tagFilter === tag ? "" : tag;
+          this.renderTagsFilter(); this.drawCards();
+        }
+      }, "ex-tag" + (editorOpen ? " ex-tag-remove" : ""));
+      pill.setAttribute("aria-label", (editorOpen ? "移除标签：" : "筛选标签：") + tag);
+      pill.setAttribute("aria-pressed", String(!editorOpen && this.tagFilter === tag));
       mount.append(pill);
     }
     const editor = node("div", "ex-tag-editor");
     editor.hidden = !editorOpen;
-    const optionRow = node("div", "ex-tag-suggestions");
     const input = node("input", "ex-tag-custom");
-    input.type = "text";
-    input.placeholder = "查找或创建标签";
+    input.type = "search";
+    input.placeholder = "搜索或创建标签";
     input.value = this.tagInputs.get(item.path) ?? "";
     input.setAttribute("aria-label", "查找或创建标签");
-    const paintOptions = () => {
-      optionRow.replaceChildren();
-      const keyword = input.value.trim().replace(/^#/, "").toLocaleLowerCase();
-      const all = [...new Set(this.items.flatMap(card => card.tags))];
-      for (const tag of all.filter(t => t.toLocaleLowerCase().includes(keyword)).slice(0, 8)) {
-        const selected = item.tags.includes(tag);
-        const choice = button("#" + tag, () =>
-          void this.changeTag(item, tag, !selected).catch(notify),
-          "ex-tag-option" + (selected ? " ex-selected" : ""));
-        choice.setAttribute("aria-pressed", String(selected));
-        optionRow.append(choice);
-      }
-    };
+    const optionRow = node("div", "ex-tag-suggestions");
+    const paintOptions = () => this.paintTagChoices(input, optionRow, new Set(item.tags),
+      (tag, add) => { void this.changeTag(item, tag, add).catch(notify); });
     input.addEventListener("input", () => {
       this.tagInputs.set(item.path, input.value);
       paintOptions();
@@ -493,7 +549,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           void this.changeTag(item, value, true).catch(notify);
       }
     });
-    editor.append(optionRow, input);
+    editor.append(input, optionRow);
     const toggle = button("＋ 标签", () => {
       const opened = editor.hidden;
       editor.hidden = !opened;
@@ -512,21 +568,28 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private async changeTag(item: CardIndex, tag: string, add: boolean): Promise<void> {
     const value = tag.trim().replace(/^#/, "");
-    await this.repo.setTag(item.path, value, add);
-    if (add) item.tags = [...new Set([...item.tags, value])];
-    else item.tags = item.tags.filter(existing => existing !== value);
-    this.tagInputs.delete(item.path);
-    this.showSuggestions();
-    this.renderTagsFilter();
-    const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
-      .find(el => el.dataset.path === item.path);
-    const mount = card?.querySelector<HTMLElement>(".ex-chips");
-    if (mount) {
-      this.renderTags(mount, item, this.openTagEditors.has(item.path));
-      card?.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
-      if (this.openTagEditors.has(item.path))
-        mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
+    if (this.pendingTags.has(item.path)) return;
+    this.pendingTags.add(item.path);
+    try {
+      await this.repo.setTag(item.path, value, add);
+      if (add) item.tags = [...new Set([...item.tags, value])];
+      else item.tags = item.tags.filter(existing => existing !== value);
+      this.tagInputs.delete(item.path);
+      this.showSuggestions();
+      this.renderTagsFilter();
+      const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+        .find(el => el.dataset.path === item.path);
+      const mount = card?.querySelector<HTMLElement>(".ex-chips");
+      if (mount) {
+        this.renderTags(mount, item, this.openTagEditors.has(item.path));
+        card?.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
+        if (this.openTagEditors.has(item.path))
+          mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
+      }
+    } finally {
+      this.pendingTags.delete(item.path);
     }
   }
+
 
 }
