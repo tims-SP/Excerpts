@@ -80,9 +80,10 @@
   min-width: 0; padding: var(--ex-16); border: 1px solid transparent;
   border-radius: var(--ex-radius); background: var(--ex-surface);
   overflow-wrap: anywhere; scroll-margin: var(--ex-24);
+  display: flex; flex-direction: column; align-items: stretch;
 }
 .excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
-.excerpts-root .ex-quote { color: var(--text-normal); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.7; }
+.excerpts-root .ex-quote { min-width: 0; display: flow-root; color: var(--text-normal); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.7; }
 .excerpts-root .ex-note-heading { font-size: var(--font-ui-medium, 14px); font-weight: 600; margin: 0 0 var(--ex-8); }
 .excerpts-root .ex-native-markdown { font: inherit; overflow-wrap: anywhere; }
 .excerpts-root .ex-native-markdown > :first-child { margin-top: 0; }
@@ -90,10 +91,10 @@
 .excerpts-root .ex-card :is(img, video, audio, iframe, embed) { max-width: 100%; }
 .excerpts-root .ex-card :is(img, video, iframe) { height: auto; }
 .excerpts-root .ex-card :is(pre, table) { max-width: 100%; overflow-x: auto; }
-.excerpts-root .ex-chips { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ex-4); margin-top: var(--ex-8); }
+.excerpts-root .ex-chips { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: var(--ex-4); margin-top: var(--ex-8); }
 .excerpts-root .ex-chips:empty { display: none; }
 .excerpts-root button.ex-tag { font-size: var(--font-ui-smaller, 12px); color: var(--text-accent); padding: 3px 6px; }
-.excerpts-root .ex-extras { display: flex; flex-direction: column; gap: var(--ex-8); margin-top: var(--ex-12); }
+.excerpts-root .ex-extras { min-width: 0; display: flex; flex-direction: column; gap: var(--ex-8); margin-top: var(--ex-12); }
 .excerpts-root .ex-extras:empty { display: none; }
 .excerpts-root .ex-group-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ex-4); }
 .excerpts-root button.ex-group-trigger {
@@ -108,8 +109,22 @@
   padding: var(--ex-8) 0 var(--ex-8) var(--ex-12);
   border-left: 1px solid var(--ex-border);
 }
-.excerpts-root .ex-card-footer { margin-top: var(--ex-12); min-height: 32px; }
-.excerpts-root .ex-card-meta, .excerpts-root .ex-card-actions { display: flex; align-items: center; gap: var(--ex-4); }
+.excerpts-root .ex-card-footer {
+  /* Actions belong below Markdown and wrap rather than compete for reading width. */
+  position: static; clear: both; display: flex; flex-wrap: wrap;
+  align-items: center; gap: var(--ex-4) var(--ex-8);
+  margin-top: var(--ex-12); min-width: 0; min-height: 32px;
+}
+.excerpts-root .ex-card-meta {
+  display: flex; min-width: 0; flex: 1 1 65px; align-items: center; gap: var(--ex-4);
+}
+.excerpts-root .ex-card-actions {
+  display: flex; flex: 0 0 auto; align-items: center; gap: var(--ex-4);
+  margin-inline-start: auto;
+}
+.excerpts-root .ex-card-actions > button {
+  position: static; inset: auto; float: none; flex: 0 0 auto;
+}
 .excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); }
 .excerpts-root .ex-empty { padding: 28px var(--ex-16); text-align: center; color: var(--text-muted); }
 .excerpts-root .ex-empty-title { color: var(--text-normal); font-weight: 600; }
@@ -133,7 +148,8 @@
 }
 .excerpts-root .ex-edit-actions {
   display: flex; align-items: center; justify-content: flex-end; gap: var(--ex-8);
-  flex-wrap: wrap; margin-top: var(--ex-4);
+  flex-wrap: wrap; position: static; bottom: auto; z-index: auto;
+  min-width: 0; width: 100%; margin-top: var(--ex-4);
 }
 .excerpts-root .ex-editor-status { margin-right: auto; font-size: var(--font-ui-smaller, 12px); color: var(--text-muted); }
 .excerpts-root .ex-tag-picker-control { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ex-4); min-width: 0; }
@@ -176,7 +192,9 @@
   .excerpts-root .ex-tags-input, .excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
   .excerpts-root .ex-tag-pill { min-height: 44px; }
   .excerpts-root .ex-edit-actions {
-    position: sticky; bottom: env(safe-area-inset-bottom, 0px);
-    z-index: 1; padding: var(--ex-8) 0; background: var(--ex-surface);
+    /* Mobile edit buttons must never stick on top of Markdown text or media. */
+    position: static; bottom: auto; z-index: auto;
+    padding: var(--ex-8) 0 max(var(--ex-8), env(safe-area-inset-bottom, 0px));
+    background: var(--ex-surface);
   }
 }
