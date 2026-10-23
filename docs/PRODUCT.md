@@ -1,4 +1,4 @@
-# Excerpts — product specification (beta.10)
+# Excerpts — product specification (beta.11)
 
 Excerpts is an Obsidian Markdown card stream for collecting and rereading passages, ideas, dialogue and quotations.
 
@@ -20,6 +20,10 @@ Each `.md` is a card; frontmatter is optional, tags and favorite use standard Ob
 ## Development constraints
 
 This is a deliberately breaking development release. No migration or legacy compatibility. Full client QA on Windows/macOS and Android/iOS, large-vault pressure tests and complex Markdown embed/reference checks remain mandatory before stable release.
+
+## v4 validated interaction states
+
+Compact, focus-expandable capture; inline Markdown editing with persistent drafts; active dirty editor remains visible across filters; H2 regions toggle in place without duplicate headings; selected-first tags and explicit invalid input feedback. Screenshot geometry is checked across mobile/desktop and light/dark mocks. Real Obsidian platform testing remains required.
 
 ## Interaction source of truth
 
