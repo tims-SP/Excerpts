@@ -43,3 +43,53 @@ test('invalid stray item end fails closed',()=>{
   const broken=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','<!-- excerpts:extras:start -->\n<!-- excerpts:item:end -->');
   assert.equal(parseEntry(broken).readOnly,true);
 });
+
+test('missing extras boundaries block writes even without item markers',()=>{
+  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','').replace('<!-- excerpts:extras:end -->','');
+  const parsed=parseEntry(raw);
+  assert.equal(parsed.readOnly,true);
+  assert.throws(()=>patchEntry(raw,parsed,parsed),/取消写入/);
+});
+test('manual content before managed extras is protected from rewriting',()=>{
+  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','## My private notes\\nImportant!\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'));
+  const parsed=parseEntry(raw);
+  assert.equal(parsed.readOnly,true);
+  assert.throws(()=>patchEntry(raw,parsed,parsed));
+});
+test('unmanaged content inside extras cannot disappear on save',()=>{
+  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:end -->','## User notes\\nKeep me\\n<!-- excerpts:extras:end -->'.replaceAll('\\n','\n'));
+  const parsed=parseEntry(raw);
+  assert.equal(parsed.readOnly,true);
+  assert.match(parsed.problem,/附属区/);
+});
+test('unknown or duplicated extra IDs cannot be serialized',()=>{
+  const sample=example();
+  assert.throws(()=>serializeEntry({...sample,extras:[sample.extras[0],{...sample.extras[0]}]}),/重复/);
+  assert.throws(()=>serializeEntry({...sample,extras:[{...sample.extras[0],kind:'arbitrary'}]}));
+});
+test('ambiguous managed YAML or tags cannot be overwritten',()=>{
+  const raw=serializeEntry(example());
+  for (const invalid of [
+    raw.replace('tags:\\n'.replace('\\n','\n'),'tags: [abc]\\n'.replace('\\n','\n')),
+    raw.replace('excerpts_id:','excerpts_id: "e_shadow"\\nexcerpts_id:'.replace('\\n','\n')),
+    raw.replace('excerpts_schema: 1','excerpts_schema: 99')
+  ]) {
+    const parsed=parseEntry(invalid);
+    assert.equal(parsed.readOnly,true);
+    assert.throws(()=>patchEntry(invalid,parsed,parsed));
+  }
+});
+test('trailing unmanaged notes survive repeated edits without spacing drift',()=>{
+  const raw=serializeEntry(example())+'\\n## Personal notes\\nKeep exact spacing\\n'.replaceAll('\\n','\n');
+  const first=parseEntry(raw);
+  assert.equal(first.readOnly,undefined);
+  const changed={...first,favorite:true};
+  const once=patchEntry(raw,first,changed);
+  const twice=patchEntry(once,parseEntry(once),changed);
+  assert.ok(once.endsWith('\\n\\n## Personal notes\\nKeep exact spacing\\n'.replaceAll('\\n','\n')));
+  assert.equal(twice,once);
+});
+test('foreign paragraph in main quote region is treated as read-only',()=>{
+  const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','This line is not a quote\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'));
+  assert.equal(parseEntry(raw).readOnly,true);
+});
