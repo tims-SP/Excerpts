@@ -1,0 +1,36 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Excerpts native redesign preview</title><style>
+:root{--font-interface:system-ui,-apple-system,sans-serif;--font-text:system-ui,-apple-system,sans-serif;--font-text-size:16px;--h2-size:1.4em;--text-normal:#202326;--text-muted:#656c74;--text-faint:#8b949e;--text-accent:#466895;--text-on-accent:#fff;--interactive-accent:#54769e;--background-primary:#fff;--background-secondary:#f5f5f6;--background-modifier-border:#e5e5e6;--background-modifier-border-hover:#bdc5cc;--background-modifier-hover:#f1f1f2;--radius-s:5px;--radius-m:8px;--radius-l:12px;}
+.theme-dark{--text-normal:#e7e9eb;--text-muted:#adb2b8;--text-faint:#808890;--text-accent:#a7c5ef;--text-on-accent:#fff;--interactive-accent:#617d9c;--background-primary:#232529;--background-secondary:#2d3035;--background-modifier-border:#41454a;--background-modifier-border-hover:#62666d;--background-modifier-hover:#393b40;} body{background:var(--background-primary);color:var(--text-normal);margin:0;padding:12px;font:14px var(--font-interface);} button{font:inherit;padding:6px 10px;color:var(--text-normal);border:1px solid var(--background-modifier-border);background:var(--background-secondary);border-radius:var(--radius-s);cursor:pointer;}button.mod-cta{background:var(--interactive-accent);color:var(--text-on-accent);border-color:transparent;}
+
+/*__EXCERPTS_CSS__*/
+body { padding: 0; }
+</style></head><body><div id="mount"></div><script>
+const module={exports:{}};
+function require(id){if(id!=='obsidian')throw Error(id);return mock;}
+class TAbstractFile{constructor(path){this.path=path}}
+class TFile extends TAbstractFile{}; class TFolder extends TAbstractFile{};
+class ItemView { constructor(leaf){this.leaf=leaf;this.contentEl=document.createElement("div");} async setState(s){this.state=s;} };class Plugin{registerView(type,cb){this.viewType=type;this.factory=cb;}async loadData(){return null};async saveData(v){this.saved=v};addSettingTab(){};registerEvent(){};addCommand(){};registerMarkdownCodeBlockProcessor(n,cb){this.processor=cb}}
+class MarkdownRenderChild{constructor(el){this.containerEl=el}onload(){}onunload(){}}
+class PluginSettingTab{};class Setting{};class Notice{constructor(message){console.log('notice',message)}};
+class Menu{constructor(){this.items=[]}addItem(fn){const o={setTitle(s){this.title=s;return this},onClick(f){this.fn=f;return this}};fn(o);this.items.push(o)}showAtPosition(){window.__menu=this}};
+class Modal{constructor(){this.contentEl=document.createElement('div')}open(){}close(){}}
+function setIcon(node,name){node.dataset.icon=name;const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('width','18');svg.setAttribute('height','18');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2'); const paths={shuffle:'M16 3h5v5 M4 20L21 3 M16 16l5 5 M21 16v5 M4 4l5 5', 'refresh-cw':'M20 11a8 8 0 0 0-15-4L2 10 M2 5v5h5 M4 13a8 8 0 0 0 15 4l3-3 m-5 0h5v5',search:'M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14M16 16l5 5',bookmark:'M6 4h12v17l-6-4-6 4V4', 'bookmark-check':'M6 4h12v17l-6-4-6 4V4 m3 6l2 2l4-4',pencil:'M4 20l4-1 12-12-3-3L5 16l-1 4',ellipsis:'M5 12h.1M12 12h.1M19 12h.1','chevron-down':'M6 9l6 6 6-6','chevron-up':'M6 15l6-6 6 6'};const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',paths[name]||paths.bookmark);svg.appendChild(p);node.appendChild(svg)}
+const mock={TAbstractFile,TFile,TFolder,ItemView,Plugin,PluginSettingTab,MarkdownRenderChild,Setting,Notice,Menu,Modal,setIcon};
+HTMLElement.prototype.empty=function(){this.replaceChildren()};HTMLElement.prototype.addClass=function(x){this.classList.add(x)};HTMLElement.prototype.setText=function(x){this.textContent=x};
+const files=new Map(), vault={getAbstractFileByPath(p){return files.get(p)?.file||null},getMarkdownFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file)},async createFolder(p){const f=new TFolder(p);files.set(p,{file:f});return f},async create(p,content){const f=new TFile(p);files.set(p,{file:f,data:content});return f},async cachedRead(f){return files.get(f.path).data},async process(f,cb){const x=files.get(f.path);x.data=cb(x.data)},on(){return {}}};
+const app={vault,workspace:{getLeaf(){return {view:{getViewType(){return "markdown"}},async setViewState(){}}},revealLeaf(){}}};
+</script><script>/*__EXCERPTS_BUNDLE__*/</script><script>
+(async()=>{
+ const Excerpts=module.exports;
+ const plugin=new Excerpts();plugin.app=app;app.workspace.on=(key,cb)=>{};app.workspace.onLayoutReady=cb=>cb();app.workspace.getActiveFile=()=>null;await plugin.onload();
+ const ws=await plugin.createWorkspace('我喜欢的句子','阅读/摘录');
+ const entries=[
+ ['你所经历的一切，都会成为你理解世界的方式。','思考,阅读', [{kind:'source',title:'来源',content:'个人阅读随记'}, {kind:'variant',title:'简写',content:'经历塑造理解。'}]],
+ ['不要急着给每一个问题寻找答案。有时候，认真生活本身就是一种回应。','生活,随想',[{kind:'note',title:'我的理解',content:'有些问题需要时间慢慢展开。'}]],
+ ['让我们记住每一件真正值得珍藏的小事。','摘录',[]]];
+ for(const [txt,tags,extra] of entries){const item=await plugin.repo.create(ws,txt,tags.split(','));if(extra.length)await plugin.repo.update(item,old=>({...old,extras:extra.map((x,i)=>({...x,id:'x_'+i}))}));}
+ const mount=document.querySelector('#mount');
+ plugin.processor('workspace: '+ws.id,mount,{sourcePath:'阅读/摘录/首页.md',addChild(child){child.onload();window.child=child}});
+ window.__ready=true;
+})().catch(e=>{console.error(e);window.__error=e.message});
+</script></body></html>

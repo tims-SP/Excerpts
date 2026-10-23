@@ -155,7 +155,8 @@ test('quote draft survives refresh but Cancel discards it without writing', asyn
     await f.renderer.reload();
     click(f.container, '编辑');
     type(f.container.querySelector('.ex-edit-panel textarea'), '尚未提交的草稿');
-    click(f.container, '刷新');
+    click(f.container, '列表选项');
+    Menu.last.items.find(item => item.title === '刷新').action();
     await f.renderer.reload();
     assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '尚未提交的草稿');
     click(f.container.querySelector('.ex-edit-panel'), '取消');
@@ -583,5 +584,48 @@ test('Ctrl+Enter in supplementary editor saves the text and leaves the quote int
     assert.equal(saved.text, '不会被修改的主摘录');
     assert.equal(saved.extras[0].title, '译文差异');
     assert.equal(saved.extras[0].content, '翻译后的不同版本');
+  } finally { await f.close(); }
+});
+
+test('keyboard capture remains ready for the next excerpt after Ctrl+Enter', async () => {
+  const f = await fixture();
+  try {
+    const quote = f.container.querySelector('.ex-compose-text');
+    quote.focus();
+    type(quote, '第一条，继续输入');
+    quote.dispatchEvent(new window.KeyboardEvent('keydown', { ctrlKey: true, key: 'Enter', bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(quote.value, '');
+    assert.equal(document.activeElement, quote);
+    assert.equal((await f.repo.list(f.workspace)).length, 1);
+  } finally { await f.close(); }
+});
+
+test('long excerpts expand without changing stored Markdown', async () => {
+  const f = await fixture();
+  try {
+    const longText = '摘录内容。'.repeat(120);
+    const entry = await f.repo.create(f.workspace, longText);
+    const before = f.files.get(entry.path).data;
+    await f.renderer.reload();
+    const quote = f.container.querySelector('.ex-quote');
+    assert.ok(quote.textContent.length < longText.length);
+    const toggle = click(f.container, '展开全文');
+    assert.ok(f.container.querySelector('.ex-quote').textContent.length === longText.length);
+    click(f.container, '收起全文');
+    assert.equal(f.files.get(entry.path).data, before);
+    assert.equal(f.processes, 0);
+  } finally { await f.close(); }
+});
+
+
+test('list actions use one native overflow menu instead of permanent refresh and filter icons', async () => {
+  const f = await fixture();
+  try {
+    assert.equal(f.container.querySelectorAll('.ex-toolbar-actions button').length, 3);
+    click(f.container, '列表选项');
+    assert.deepEqual(Menu.last.items.map(x => x.title), ['标签筛选','刷新']);
+    Menu.last.items[0].action();
+    assert.equal(f.renderer.filterOpen, true);
   } finally { await f.close(); }
 });
