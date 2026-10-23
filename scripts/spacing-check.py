@@ -52,14 +52,10 @@ with sync_playwright() as p:
             page = browser.new_page(viewport={"width":width,"height":860},device_scale_factor=1,has_touch=(width<=480),is_mobile=(width<=480))
             d=check(page,width,mode)
             print('OK',mode,width,'composer and text aligned at',round(d['composerTextX'],1),'footer',d['moreW'],d['moreH'],'tag',d['tagH'])
-            page.locator('.ex-card').first.locator('button[aria-label="更多摘录操作"]').click()
-            page.evaluate("window.__menu.items.find(i=>i.title==='编辑摘录').fn()")
-            if width <= 480:
-                editorBg = page.locator('.ex-entry-editor .ex-actions').evaluate('(el)=>getComputedStyle(el).backgroundColor')
-                cardBg = page.locator('.ex-card').first.evaluate('(el)=>getComputedStyle(el).backgroundColor')
-                assert editorBg == cardBg, (mode, width, editorBg, cardBg)
-                for sel in ('.ex-entry-editor .ex-input',):
-                    assert page.locator(sel).first.bounding_box()['height'] >= 44
+            page.locator('.ex-card').first.locator('button[aria-label="编辑摘录"]').click()
+            editor = page.locator('.ex-entry-editor .ex-editor-text').first
+            assert editor.bounding_box()['height'] >= 44
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             page.close()
             # Test source editor width and all touch inputs on narrow screens.
             if width <= 480:
@@ -67,12 +63,13 @@ with sync_playwright() as p:
                 check(page,width,mode)
                 card = page.locator('.ex-card').filter(has=page.locator('.ex-group-trigger')).first
                 card.locator('.ex-group-trigger').first.click()
-                page.locator('.ex-extra-item').first.locator('.ex-btn-quiet').first.click()
-                cardWidth=page.locator('.ex-card').filter(has=page.locator('.ex-extra-editor')).first.bounding_box()['width']
-                editor=page.locator('.ex-extra-editor').first
-                entryWidth=editor.locator('input').first.bounding_box()['width']
-                assert entryWidth >= cardWidth - 42, (mode,width,entryWidth,cardWidth)
-                assert editor.locator('input').first.bounding_box()['height'] >= 44, (mode,width)
-                print('OK',mode,width,'extra input width',round(entryWidth,1))
+                assert card.locator('.ex-group-body').count() == 1
+                card.locator('button[aria-label="编辑摘录"]').click()
+                editor = card.locator('.ex-entry-editor .ex-editor-text')
+                card_width = card.bounding_box()['width']
+                editor_width = editor.bounding_box()['width']
+                assert editor_width >= card_width - 44, (mode,width,editor_width,card_width)
+                assert editor.bounding_box()['height'] >= 44
+                print('OK',mode,width,'inline editor width',round(editor_width,1))
                 page.close()
     browser.close()
