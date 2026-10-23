@@ -24,6 +24,13 @@ function headerFor(entry: Entry): string {
   ].join("\n");
 }
 export function renderExtras(extras: Extra[]): string {
+  const ids = new Set<string>();
+  for (const item of extras) {
+    if (!EXTRA_KINDS.includes(item.kind) || !/^[a-zA-Z0-9_-]+$/.test(item.id) || ids.has(item.id)) {
+      throw new Error("附属条目类型或 ID 无效、重复");
+    }
+    ids.add(item.id);
+  }
   const chunks = [EXTRA_START];
   for (const kind of EXTRA_KINDS) {
     const subset = extras.filter(x => x.kind === kind);
@@ -63,6 +70,22 @@ function readTags(header: string): string[] {
     const raw = s.slice(2);
     try { return JSON.parse(raw); } catch { return raw.replace(/^'|'$/g, ""); }
   }).filter(x => typeof x === "string" && x.length > 0);
+}
+/** Reject free-form content that cannot be round-tripped through the quote editor. */
+function isCanonicalQuote(block: string): boolean {
+  const trimmed = block.replace(/^\n+|\n+$/g, "");
+  const lines = trimmed.split("\n");
+  return lines.some(line => line.startsWith("> ") && line.slice(2).trim().length > 0) &&
+    lines.every(line => line === ">" || line.startsWith("> "));
+}
+function hasSafeManagedHeader(header: string): boolean {
+  for (const key of ["excerpts_type", "excerpts_schema", "excerpts_id", "excerpts_collection",
+    "excerpts_created", "excerpts_updated", "excerpts_favorite", "tags"]) {
+    const matches = header.match(new RegExp(`^${key}:`, "gm")) || [];
+    if (matches.length !== 1) return false;
+  }
+  return readScalar(header, "excerpts_schema") === "1" &&
+    /^tags:[ \t]*$/m.test(header);
 }
 function decodeQuote(block: string): string {
   const trimmed = block.trim();
@@ -119,10 +142,12 @@ export function parseEntry(raw: string): Entry | null {
     favorite: readScalar(header, "excerpts_favorite") === "true", tags: readTags(header),
     text: decodeQuote(first < 0 ? content : content.slice(0, first)), extras: []
   };
+  if (!hasSafeManagedHeader(header) || !isCanonicalQuote(first < 0 ? content : content.slice(0, first))) {
+    entry.readOnly = true; entry.problem = "元数据或正文包含无法安全回写的格式";
+    return entry;
+  }
   if (first < 0 && last < 0) {
-    if (content.includes("<!-- excerpts:item:")) {
-      entry.readOnly = true; entry.problem = "附属条目存在，但其边界标记缺失";
-    }
+    entry.readOnly = true; entry.problem = "缺少受管理的附属区边界，禁止自动补写";
     return entry;
   }
   if (first < 0 || last < first || content.indexOf(EXTRA_START, first + EXTRA_START.length) !== -1 || content.indexOf(EXTRA_END, last + EXTRA_END.length) !== -1) {
@@ -130,6 +155,11 @@ export function parseEntry(raw: string): Entry | null {
   }
   try {
     entry.extras = readExtras(content.slice(first + EXTRA_START.length, last));
+    const owned = content.slice(first, last + EXTRA_END.length);
+    if (renderExtras(entry.extras) !== owned) {
+      entry.readOnly = true;
+      entry.problem = "附属区存在非规范或未管理的内容，禁止覆盖";
+    }
   } catch (e) {
     entry.readOnly = true;
     entry.problem = e instanceof Error ? e.message : "附属内容格式错误";
@@ -160,6 +190,6 @@ export function patchEntry(raw: string, current: Entry, updated: Entry): string 
   const normalized = raw.replace(/\r\n?/g, "\n");
   const body = normalized.slice(normalized.indexOf("\n---\n", 4) + "\n---\n".length);
   const index = body.indexOf(EXTRA_START);
-  const tail = index >= 0 ? body.slice(body.indexOf(EXTRA_END, index) + EXTRA_END.length).replace(/^\n*/, "") : "";
-  return `---\n${head.trimEnd()}\n---\n\n${encodeQuote(updated.text)}\n\n${renderExtras(updated.extras)}\n${tail}`;
+  const tail = body.slice(body.indexOf(EXTRA_END, index) + EXTRA_END.length);
+  return `---\n${head.trimEnd()}\n---\n\n${encodeQuote(updated.text)}\n\n${renderExtras(updated.extras)}${tail}`;
 }
