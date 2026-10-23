@@ -206,7 +206,7 @@ test('date groups keep cards in date order and load-more appends without replaci
   t.pane.renderer.requestRefresh(true);
   await wait();
   assert.equal(root.querySelectorAll('.ex-card').length,40);
-  assert.equal(root.querySelectorAll('.ex-day-group').length,40);
+  assert.equal(root.querySelectorAll('.ex-day-group').length,39); // fixture's original and first generated excerpt share the same date
   const first=root.querySelector('.ex-card');
   const buttons=[...root.querySelectorAll('.ex-loadmore')];
   assert.equal(buttons.length,1);
