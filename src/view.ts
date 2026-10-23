@@ -139,6 +139,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       for (const tag of selectedTags) {
         const pill = button("#" + tag + " ×", () => toggleTag(tag, false), "ex-tag ex-tag-remove");
         pill.setAttribute("aria-label", "移除标签：" + tag);
+        pill.replaceChildren(node("span", "ex-tag-label", "#" + tag + " ×"));
         selectedChips.append(pill);
       }
       selectedChips.hidden = !selectedTags.size;
@@ -511,6 +512,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         const opened = region.hidden;
         region.hidden = !opened;
         trigger.setAttribute("aria-expanded", String(opened));
+        trigger.setAttribute("aria-label", (opened ? "收起" : "展开") + "分组：" + section.name);
         trigger.querySelector(".ex-group-chevron")?.replaceChildren();
         setIcon(trigger.querySelector(".ex-group-chevron") as HTMLElement, opened ? "chevron-down" : "chevron-right");
         if (opened) {
@@ -570,6 +572,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
       }, "ex-tag");
       pill.setAttribute("aria-label", (editorOpen ? "移除标签：" : "筛选标签：") + tag);
+      pill.replaceChildren(node("span", "ex-tag-label", "#" + tag + (editorOpen ? " ×" : "")));
       pill.setAttribute("aria-pressed", String(!editorOpen && this.tagFilter === tag));
       if (!editorOpen && this.tagFilter === tag) pill.classList.add("ex-selected");
       mount.append(pill);
@@ -590,7 +593,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else this.openTagEditors.delete(item.path);
       this.renderTags(mount, item, opened);
       if (opened) editor?.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
-      else toggle.focus();
+      else mount.querySelector<HTMLButtonElement>(".ex-add-tag")?.focus();
     }, "ex-add-tag");
     toggle.setAttribute("aria-label", "添加标签");
     toggle.setAttribute("aria-expanded", String(editorOpen));
