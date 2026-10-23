@@ -32,6 +32,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private expanded = new Set<string>();
   private editing: string | null = null;
   private editingExtra: string | null = null;
+  private quoteDrafts = new Map<string, { text: string; tags: string }>();
+  private extraDrafts = new Map<string, { title: string; content: string }>();
   private listEl: HTMLElement | null = null;
   private countEl: HTMLElement | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -141,13 +143,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private renderQuoteEditor(card: HTMLElement, entry: Entry) {
     const edit = node("div", "ex-edit-panel");
-    const content = textarea("摘录正文", entry.text); content.rows = 5;
-    const tags = inputBox("标签（逗号分隔）", entry.tags.join(", "));
+    const draft = this.quoteDrafts.get(entry.id) || { text: entry.text, tags: entry.tags.join(", ") };
+    const content = textarea("摘录正文", draft.text); content.rows = 5;
+    const tags = inputBox("标签（逗号分隔）", draft.tags);
+    const keepDraft = () => this.quoteDrafts.set(entry.id, { text: content.value, tags: tags.value });
+    content.addEventListener("input", keepDraft);
+    tags.addEventListener("input", keepDraft);
     const actions = node("div", "ex-actions");
-    actions.append(button("取消", () => { this.editing = null; this.drawCards(); }, "ex-btn-quiet"));
+    actions.append(button("取消", () => { this.quoteDrafts.delete(entry.id); this.editing = null; this.drawCards(); }, "ex-btn-quiet"));
     actions.append(button("保存修改", () => void this.saveEdit(entry, previous => ({
       ...previous, text: content.value.trim(), tags: [...new Set(tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean))]
-    }), () => { this.editing = null; }), "ex-btn-primary"));
+    }), () => { this.quoteDrafts.delete(entry.id); this.editing = null; }), "ex-btn-primary"));
     edit.append(content, tags, actions); card.append(edit);
   }
   private renderExtraGroup(target: HTMLElement, entry: Entry, kind: ExtraKind) {
@@ -183,19 +189,24 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private extraEditor(target: HTMLElement, entry: Entry, kind: ExtraKind, original?: Extra) {
     const pane = node("div", "ex-edit-panel");
-    const title = inputBox("标题，例如：原始出处 / 精简版", original?.title || "");
-    const text = textarea("补充内容（支持存储 Markdown 文本）", original?.content || ""); text.rows = 4;
+    const draftKey = `${entry.id}:${original?.id || "new:" + kind}`;
+    const draft = this.extraDrafts.get(draftKey) || { title: original?.title || "", content: original?.content || "" };
+    const title = inputBox("标题，例如：原始出处 / 精简版", draft.title);
+    const text = textarea("补充内容（支持存储 Markdown 文本）", draft.content); text.rows = 4;
+    const keepDraft = () => this.extraDrafts.set(draftKey, { title: title.value, content: text.value });
+    title.addEventListener("input", keepDraft);
+    text.addEventListener("input", keepDraft);
     const actions = node("div", "ex-actions");
-    actions.append(button("取消", () => { this.editingExtra = null; this.drawCards(); }, "ex-btn-quiet"));
+    actions.append(button("取消", () => { this.extraDrafts.delete(draftKey); this.editingExtra = null; this.drawCards(); }, "ex-btn-quiet"));
     actions.append(button("保存", () => void this.saveEdit(entry, previous => ({
       ...previous, extras: original ? previous.extras.map(x => x.id === original.id ? { ...x, title: title.value.trim(), content: text.value } : x)
         : [...previous.extras, { id: makeId("x"), kind, title: title.value.trim() || EXTRA_LABELS[kind], content: text.value }]
-    }), () => { this.editingExtra = null; }), "ex-btn-primary"));
+    }), () => { this.extraDrafts.delete(draftKey); this.editingExtra = null; }), "ex-btn-primary"));
     if (original) {
       let confirm = false;
       const del = button("删除条目", () => {
         if (!confirm) { confirm = true; del.textContent = "确认删除"; return; }
-        void this.saveEdit(entry, previous => ({ ...previous, extras: previous.extras.filter(x => x.id !== original.id) }), () => { this.editingExtra = null; });
+        void this.saveEdit(entry, previous => ({ ...previous, extras: previous.extras.filter(x => x.id !== original.id) }), () => { this.extraDrafts.delete(draftKey); this.editingExtra = null; });
       }, "ex-btn-danger");
       actions.append(del);
     }
