@@ -56,14 +56,14 @@
 .excerpts-root .ex-card :is(pre, table) { max-width: 100%; overflow-x: auto; }
 .excerpts-root .ex-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--ex-space-2); }
 .excerpts-root .ex-chips:empty { display: none; }
-.excerpts-root button.ex-tag { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); padding: 4px 8px; }
-.excerpts-root button.ex-add-tag { color: var(--text-muted); padding: 4px 8px; }
+.excerpts-root button.ex-tag { color: var(--text-muted); background: var(--background-primary); font-size: var(--font-ui-smaller, 12px); padding: 5px 10px; border-radius: 999px; }
+.excerpts-root button.ex-add-tag { color: var(--text-muted); padding: 5px 10px; border-radius: 999px; }
 .excerpts-root .ex-tag-editor { display: flex; flex: 0 0 100%; flex-direction: column; gap: var(--ex-space-2); min-width: 0; padding: var(--ex-space-2) 0 0; }
 .excerpts-root .ex-tag-custom { flex: 0 0 100%; }
 .excerpts-root .ex-extras { display: flex; flex-direction: column; gap: var(--ex-space-2); margin-top: var(--ex-space-2); }
 .excerpts-root .ex-extras:empty { display: none; }
 .excerpts-root .ex-group-summary { display: flex; flex-wrap: wrap; gap: 4px; }
-.excerpts-root button.ex-group-trigger { color: var(--text-muted); font-size: var(--font-ui-smaller, 12px); padding: 4px 8px; }
+.excerpts-root button.ex-group-trigger { color: var(--text-muted); background: var(--background-primary); font-size: var(--font-ui-smaller, 12px); padding: 5px 10px; border-radius: 999px; gap: var(--ex-space-1); }
 .excerpts-root button.ex-group-trigger.ex-selected { background: var(--background-modifier-hover); color: var(--text-normal); }
 .excerpts-root .ex-group-body { padding: var(--ex-space-2) 0 var(--ex-space-2) var(--ex-space-3); border-left: 1px solid var(--ex-border); }
 .excerpts-root .ex-group-title { font-size: var(--font-ui-small); font-weight: 600; margin: 0 0 6px; }
