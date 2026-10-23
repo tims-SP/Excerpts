@@ -29,3 +29,8 @@ test('regression: expanded tag input never inherits vertical 100-percent flex ba
   assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags \.ex-footer-tag\s*\{[^}]*display:\s*inline-flex/);
   assert.match(css,/\.excerpts-root \.ex-card\.ex-editing\s*\{[^}]*border-color/);
 });
+
+test('tag custom input cannot consume entire column height',()=>{
+  assert.match(css,/\.ex-tag-custom\s*\{[^}]*flex:\s*0 1 auto;/);
+  assert.doesNotMatch(css,/\.ex-tag-custom\s*\{\s*flex:\s*0 0 100%/);
+});
