@@ -61,4 +61,31 @@ with sync_playwright() as p:
         page.screenshot(path=str(root/'artifacts'/f'excerpts-editor-{mode}-{width}.png'),full_page=True)
         print('editor',mode,width,'entry height',editor.bounding_box()['height'])
         page.close()
+    # Regression screenshots and geometry: expanded tag input must not overrun H2 or footer.
+    for mode in ('light','dark'):
+        for width in (320,390,768,1280):
+            page=browser.new_page(viewport={'width':width,'height':900},has_touch=width<=480,is_mobile=width<=480)
+            page.set_content(html,wait_until='domcontentloaded')
+            page.wait_for_function('window.__ready === true || !!window.__error',timeout=12000)
+            assert not page.evaluate('window.__error'),page.evaluate('window.__error')
+            page.wait_for_selector('.ex-card .ex-group-trigger')
+            if mode=='dark': page.evaluate("document.documentElement.classList.add('theme-dark')")
+            first=page.locator('.ex-card').first
+            first.locator('.ex-add-tag').click()
+            tag_input=first.locator('.ex-tag-custom').bounding_box()
+            group=first.locator('.ex-extras').bounding_box()
+            footer=first.locator('.ex-card-footer').bounding_box()
+            assert 43<=tag_input['height']<=48,(mode,width,tag_input)
+            assert tag_input['y']+tag_input['height']<=group['y']+1,(mode,width,'tag/H2 overlap',tag_input,group)
+            assert tag_input['y']+tag_input['height']<=footer['y']+1,(mode,width,'tag/footer overlap',tag_input,footer)
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            page.screenshot(path=str(root/'artifacts'/f'excerpts-tags-{mode}-{width}.png'),full_page=True)
+            print('PASS expanded tags',mode,width,tag_input['height'])
+            tagless=page.locator('.ex-card.ex-card-no-tags').first
+            assert tagless.count()==1,(mode,width,'no-tag card not compact')
+            assert not tagless.locator('.ex-chips').is_visible()
+            tagless.locator('.ex-footer-tag').click()
+            assert tagless.locator('.ex-tag-custom').is_visible()
+            assert 43<=tagless.locator('.ex-tag-custom').bounding_box()['height']<=48
+            page.close()
     browser.close()
