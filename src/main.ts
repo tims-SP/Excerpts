@@ -10,17 +10,12 @@ export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   repo!: EntryRepository;
   private rendered = new Set<ExcerptsRenderChild>();
-  private checkTimer: ReturnType<typeof setInterval> | null = null;
   async onload(): Promise<void> {
     const data = await this.loadData() as Partial<PluginSettings> | null;
     // This is a breaking development release. Ignore the former collections schema.
     this.settings = {
       defaultHome: typeof data?.defaultHome === "string" ? data.defaultHome : "",
-      recursive: data?.recursive !== false,
-      autoRefresh: data?.autoRefresh !== false,
-      checkMinutes: Number.isFinite(data?.checkMinutes) ? Number(data?.checkMinutes) : 0,
-      batchSize: [20, 40, 80].includes(Number(data?.batchSize)) ? Number(data?.batchSize) : 40,
-      defaultSort: data?.defaultSort === "oldest" ? "oldest" : "newest"
+      recursive: data?.recursive !== false
     };
     this.repo = new EntryRepository(this.app);
     this.registerView(EXCERPTS_HOME_VIEW, leaf => new ExcerptsHomeFileView(leaf, this, this.repo));
@@ -52,32 +47,22 @@ export default class ExcerptsPlugin extends Plugin {
       if (file.path.endsWith(".excerpts") || oldPath.endsWith(".excerpts")) this.refreshViews(true);
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
-    this.configurePolling();
   }
-  onunload(): void { if (this.checkTimer) clearInterval(this.checkTimer); }
   private onFileChange(path: string): void {
     this.repo.invalidate(path);
-    if (!this.settings.autoRefresh) return;
     for (const child of this.rendered) if (isExcerptPath(path, child.workspace)) child.requestRefresh();
   }
   trackRenderer(child: ExcerptsRenderChild): void { this.rendered.add(child); }
   untrackRenderer(child: ExcerptsRenderChild): void { this.rendered.delete(child); }
   refreshViews(force = false): void {
     if (force) this.repo.invalidate();
-    for (const child of this.rendered) child.requestRefresh(force);
-  }
-  configurePolling(): void {
-    if (this.checkTimer) clearInterval(this.checkTimer);
-    this.checkTimer = null;
-    if (this.settings.checkMinutes > 0) {
-      this.checkTimer = setInterval(() => {
-        if (this.rendered.size) this.refreshViews(true);
-      }, this.settings.checkMinutes * 60_000);
+    for (const child of this.rendered) {
+      child.workspace.recursive = this.settings.recursive;
+      child.requestRefresh(force);
     }
   }
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
-    this.configurePolling();
   }
   getHomeFiles(): TFile[] {
     return this.app.vault.getFiles().filter(file => file.extension === "excerpts")

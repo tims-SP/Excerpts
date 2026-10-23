@@ -28,7 +28,7 @@ function dateLabel(timestamp: number): string {
   return date.toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" });
 }
 
-/** beta.6 homepage chrome, with normal Markdown files and native Markdown rendering. */
+/** Minimal Markdown-based excerpt homepage. */
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: CardIndex[] = [];
   private listEl!: HTMLElement;
@@ -36,10 +36,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private searchInput!: HTMLInputElement;
   private searchWrap!: HTMLElement;
   private tagBar!: HTMLElement;
+  private filterButton!: HTMLButtonElement;
   private searchText = "";
   private tagFilter = "";
   private filterOpen = false;
-  private recalledPath = "";
   private matches: Set<string> | null = null;
   private searchToken = 0;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,7 +84,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
 
     // A compact flomo-style capture surface, not a detached 'New file' button.
     const form = node("section", "ex-composer");
-    form.setAttribute("aria-label", "快速收藏");
+    form.setAttribute("aria-label", "快速摘录");
     const quote = node("textarea", "ex-compose-text");
     quote.placeholder = "记录你想留下的文字……";
     quote.rows = 2;
@@ -158,7 +158,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
 
     const toolbar = node("div", "ex-toolbar");
     const title = node("div", "ex-toolbar-title");
-    title.append(node("h3", "ex-list-heading", "最近收藏"));
+    title.append(node("h3", "ex-list-heading", "最近摘录"));
     this.countEl = node("span", "ex-count");
     this.countEl.setAttribute("role", "status");
     title.append(this.countEl);
@@ -168,7 +168,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchWrap.hidden = true;
     this.searchInput = node("input", "ex-input ex-search");
     this.searchInput.type = "search";
-    this.searchInput.placeholder = "搜索摘录、来源、变种或批注…";
+    this.searchInput.placeholder = "搜索摘录内容或标签…";
     this.searchInput.setAttribute("aria-label", "搜索摘录");
     this.searchWrap.append(this.searchInput);
     const searchButton = iconButton("search", "搜索", () => {
@@ -189,16 +189,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.scheduleSearch(); searchButton.focus();
     });
     actions.append(searchButton);
-    actions.append(iconButton("shuffle", "随机回顾", () => this.recallRandom()));
-    const moreButton = iconButton("ellipsis", "列表选项", () => {
-      const menu = new Menu();
-      menu.addItem(item => item.setTitle(this.filterOpen ? "收起标签筛选" : "标签筛选")
-        .onClick(() => { this.filterOpen = !this.filterOpen; this.renderTagsFilter(); }));
-      menu.addItem(item => item.setTitle("刷新").onClick(() => this.requestRefresh(true)));
-      const rect = moreButton.getBoundingClientRect();
-      menu.showAtPosition({ x: rect.left, y: rect.bottom }, moreButton.ownerDocument);
+    this.filterButton = iconButton("tags", "筛选标签", () => {
+      this.filterOpen = !this.filterOpen;
+      this.renderTagsFilter();
     });
-    actions.append(moreButton);
+    this.filterButton.setAttribute("aria-expanded", "false");
+    actions.append(this.filterButton);
     toolbar.append(actions);
     root.append(toolbar, this.searchWrap);
     this.tagBar = node("div", "ex-filter-tags");
@@ -210,8 +206,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private async reload(): Promise<void> {
     const token = ++this.refreshToken;
     const cards = this.repo.list(this.workspace);
-    const direction = this.plugin.settings.defaultSort === "oldest" ? 1 : -1;
-    cards.sort((a, b) => direction * (a.ctime - b.ctime));
+    cards.sort((a, b) => b.ctime - a.ctime);
     if (this.disposed || token !== this.refreshToken) return;
     this.items = cards;
     this.showSuggestions();
@@ -229,7 +224,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private async search(token: number): Promise<void> {
     try {
       const matches = await this.repo.search(this.items, this.searchText,
-        this.plugin.settings.batchSize, () => this.disposed || token !== this.searchToken,
+        () => this.disposed || token !== this.searchToken,
         done => { if (token === this.searchToken) this.countEl.textContent = "搜索中 " + done + "/" + this.items.length; });
       if (this.disposed || token !== this.searchToken) return;
       this.matches = matches;
@@ -242,24 +237,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       (!this.tagFilter || item.tags.includes(this.tagFilter)) &&
       (!this.searchText || (this.matches !== null && this.matches.has(item.path)))
     );
-    if (this.recalledPath) {
-      const index = found.findIndex(item => item.path === this.recalledPath);
-      if (index > 0) found.unshift(found.splice(index, 1)[0]);
-    }
     return found;
-  }
-  private recallRandom(): void {
-    const items = this.visibleItems();
-    if (!items.length) { new Notice("没有可回顾的摘录"); return; }
-    const index = Math.floor(Math.random() * items.length);
-    this.recalledPath = items[index].path;
-    this.pageSize = Math.max(this.pageSize, 40);
-    this.drawCards();
-    this.listEl.querySelector<HTMLElement>(".ex-recalled")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   }
   private renderTagsFilter(): void {
     this.tagBar.replaceChildren();
     this.tagBar.hidden = !this.filterOpen && !this.tagFilter;
+    this.filterButton.setAttribute("aria-expanded", String(!this.tagBar.hidden));
+    this.filterButton.disabled = !this.items.some(item => item.tags.length) && !this.tagFilter;
     if (this.tagBar.hidden) return;
     const all = button("全部", () => { this.tagFilter = ""; this.renderTagsFilter(); this.drawCards(); },
       this.tagFilter ? "ex-btn-quiet" : "ex-selected");
@@ -295,7 +279,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.unmountMarkdown();
     this.listEl.replaceChildren();
     const visible = this.visibleItems();
-    this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条收藏";
+    this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
     if (!visible.length) {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
@@ -337,7 +321,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private createCard(item: CardIndex): HTMLElement {
     const card = node("article", "ex-card");
     card.dataset.path = item.path;
-    if (item.path === this.recalledPath) card.classList.add("ex-recalled");
     card.append(node("div", "ex-quote ex-markdown", ""));
     const tags = node("div", "ex-chips");
     this.renderTags(tags, item);
@@ -346,47 +329,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     card.append(groups);
     const footer = node("div", "ex-card-top ex-card-footer");
     const info = node("div", "ex-card-meta");
-    if (item.path === this.recalledPath) info.append(node("span", "ex-recall-hint", "随机回顾"));
     const date = node("time", "ex-date", dateLabel(item.ctime));
     date.dateTime = new Date(item.ctime).toISOString();
     info.append(date);
     footer.append(info);
     const actions = node("div", "ex-card-actions");
-    const add = iconButton("plus", "添加内容", () => {
-      const menu = new Menu();
-      const available = this.sectionsShown.get(item.path) ?? new Set<string>();
-      void this.repo.read(item.path).then(parsed => {
-        for (const section of parsed.sections) menu.addItem(entry => entry.setTitle(
-          (available.has(section.name) ? "隐藏" : "显示") + " · " + section.name).onClick(() => {
-            if (available.has(section.name)) available.delete(section.name); else available.add(section.name);
-            this.sectionsShown.set(item.path, available);
-            this.redrawCard(item, card);
-          }));
-        menu.addItem(entry => entry.setTitle("编辑 Markdown，添加新章节").onClick(() =>
-          void this.plugin.openMarkdown(item.path).catch(notify)));
-        const rect = add.getBoundingClientRect();
-        menu.showAtPosition({ x: rect.left, y: rect.bottom }, add.ownerDocument);
-      }).catch(notify);
-    });
-    actions.append(add);
-    actions.append(iconButton(item.favorite ? "bookmark-check" : "bookmark",
-      item.favorite ? "取消珍藏" : "珍藏", () => void this.toggleFavorite(item).catch(notify),
-      item.favorite ? "ex-is-favorite" : ""));
-    actions.append(iconButton("pencil", "编辑 Markdown", () => void this.plugin.openMarkdown(item.path).catch(notify)));
-    const more = iconButton("ellipsis", "更多摘录操作", () => {
-      const menu = new Menu();
-      menu.addItem(entry => entry.setTitle("编辑原始 Markdown").onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
-      menu.addItem(entry => entry.setTitle("复制正文").onClick(() => {
-        void this.repo.read(item.path).then(parsed => {
-          if (!navigator.clipboard?.writeText) throw new Error("当前环境不支持剪贴板");
-          return navigator.clipboard.writeText(parsed.body);
-        }).then(() => new Notice("已复制正文")).catch(notify);
-      }));
-      menu.addItem(entry => entry.setTitle("刷新").onClick(() => this.requestRefresh(true)));
-      const rect = more.getBoundingClientRect();
-      menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
-    });
-    actions.append(more);
+    actions.append(iconButton("pencil", "编辑 Markdown", () =>
+      void this.plugin.openMarkdown(item.path).catch(notify)));
     footer.append(actions);
     card.append(footer);
     return card;
@@ -474,9 +423,5 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     else item.tags = item.tags.filter(existing => existing !== value);
     this.showSuggestions(); this.renderTagsFilter(); this.drawCards();
   }
-  private async toggleFavorite(item: CardIndex): Promise<void> {
-    await this.repo.setFavorite(item.path, !item.favorite);
-    item.favorite = !item.favorite;
-    this.drawCards();
-  }
+
 }

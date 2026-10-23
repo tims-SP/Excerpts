@@ -51,7 +51,7 @@ test('opening a .excerpts file displays beta.6-style direct feed without a selec
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
   assert.equal(t.pane.getDisplayText(),'首页');
   assert.ok(root.querySelector('.ex-composer .ex-compose-text'));
-  assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近收藏'));
+  assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
@@ -77,19 +77,22 @@ test('quick composer saves normal Markdown with native tags and restores continu
   assert.equal(textarea.value,'');
   await t.close();
 });
-test('source groups, tag filter, random recall and edit use native components',async()=>{
+test('H2 groups, filtering and editing without redundant card actions',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const source=[...root.querySelectorAll('.ex-group-trigger')].find(x=>x.textContent==='来源');
   assert.ok(source);source.click();await wait();
   assert.ok(renders.some(r=>r.content==='《某书》'));
   assert.equal(root.querySelectorAll('.ex-group-body').length,1);
   assert.ok(root.querySelector('.ex-chips button.ex-tag').textContent.includes('#哲学'));
-  clickByLabel(root,'随机回顾');await wait();
-  assert.ok(root.querySelector('.ex-recalled'));
+  for(const label of ['随机回顾','珍藏','取消珍藏','添加内容','更多摘录操作'])
+    assert.equal(root.querySelector('button[aria-label="'+label+'"]'),null,label);
+  assert.equal(root.querySelectorAll('.ex-card-actions button').length,1);
   clickByLabel(root,'编辑 Markdown');await wait();
   assert.equal(t.leaf.lastFile.path,t.md.path);
-  clickByLabel(root,'列表选项');
-  const toggle=Menu.last.items.find(i=>i.title==='标签筛选');assert.ok(toggle);toggle.handler();
+  const filter=clickByLabel(root,'筛选标签');
+  assert.equal(filter.getAttribute('aria-expanded'),'true');
   assert.equal(root.querySelector('.ex-filter-tags').hidden,false);
+  clickByLabel(root,'筛选标签');
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   await t.close();
 });

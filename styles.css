@@ -22,7 +22,6 @@
 .excerpts-root button.ex-btn:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .excerpts-root button.ex-icon-button { flex: 0 0 auto; width: 36px; height: 36px; padding: 7px; color: var(--text-muted); }
 .excerpts-root button.ex-icon-button svg { width: 18px; height: 18px; }
-.excerpts-root button.ex-is-favorite { color: var(--text-accent); }
 .excerpts-root button.ex-btn-primary { background: var(--interactive-accent); color: var(--text-on-accent); padding-inline: var(--ex-space-4); }
 .excerpts-root button.ex-btn-primary:hover { background: var(--interactive-accent-hover); color: var(--text-on-accent); }
 .excerpts-root button:disabled { opacity: .55; cursor: not-allowed; }
@@ -47,7 +46,6 @@
 .excerpts-root .ex-filter-tags .ex-selected { background: var(--background-secondary); font-weight: 600; }
 .excerpts-root .ex-card-list { display: flex; flex-direction: column; gap: var(--ex-space-3); }
 .excerpts-root .ex-card { background: var(--ex-surface); border-radius: var(--ex-radius); padding: var(--ex-space-4); border: 1px solid transparent; min-width: 0; overflow-wrap: anywhere; }
-.excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
 .excerpts-root .ex-quote { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; color: var(--text-normal); letter-spacing: normal; }
 .excerpts-root .ex-note-heading { font-size: var(--font-ui-medium); margin: 0 0 8px; }
 .excerpts-root .ex-native-markdown { font-family: inherit; font-size: inherit; line-height: inherit; overflow-wrap: anywhere; }
@@ -71,7 +69,6 @@
 .excerpts-root .ex-group-title { font-size: var(--font-ui-small); font-weight: 600; margin: 0 0 6px; }
 .excerpts-root .ex-card-footer { margin-top: var(--ex-space-3); min-height: 32px; }
 .excerpts-root .ex-card-actions, .excerpts-root .ex-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: var(--font-ui-smaller); }
 .excerpts-root .ex-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); }
 .excerpts-root .ex-empty-title { color: var(--text-normal); font-weight: 600; }
 .excerpts-root .ex-empty-description { font-size: var(--font-ui-small); }

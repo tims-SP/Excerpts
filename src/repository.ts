@@ -27,8 +27,7 @@ export class EntryRepository {
     return {
       path: file.path, basename: file.basename,
       mtime: file.stat?.mtime ?? 0, ctime: file.stat?.ctime ?? 0,
-      size: file.stat?.size ?? 0, tags, inlineTags: [...inline],
-      favorite: cache?.frontmatter?.favorite === true
+      size: file.stat?.size ?? 0, tags, inlineTags: [...inline]
     };
   }
   private file(path: string): TFile {
@@ -65,12 +64,12 @@ export class EntryRepository {
     if (path) this.cache.delete(path);
     else this.cache.clear();
   }
-  async search(files: CardIndex[], query: string, batchSize: number,
+  async search(files: CardIndex[], query: string,
     shouldCancel: () => boolean, onProgress?: (done: number) => void): Promise<Set<string>> {
     const q = query.trim().toLocaleLowerCase();
     const matches = new Set<string>();
     if (!q) return matches;
-    const stride = Math.max(1, Math.min(80, batchSize));
+    const stride = 40;
     for (let offset = 0; offset < files.length; offset += stride) {
       if (shouldCancel()) return matches;
       const batch = files.slice(offset, offset + stride);
@@ -106,13 +105,6 @@ export class EntryRepository {
       }
     }
     throw new Error("无法生成唯一文件名");
-  }
-  async setFavorite(path: string, value: boolean): Promise<void> {
-    await this.app.fileManager.processFrontMatter(this.file(path), frontmatter => {
-      if (value) frontmatter.favorite = true;
-      else delete frontmatter.favorite;
-    });
-    this.invalidate(path);
   }
   async setTag(path: string, tag: string, add: boolean): Promise<void> {
     const file = this.file(path);

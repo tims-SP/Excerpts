@@ -3,14 +3,9 @@ export interface Workspace { rootFolder: string; recursive: boolean; homePath: s
 export interface PluginSettings {
   defaultHome: string;
   recursive: boolean;
-  autoRefresh: boolean;
-  checkMinutes: number;
-  batchSize: number;
-  defaultSort: "newest" | "oldest";
 }
 export const DEFAULT_SETTINGS: PluginSettings = {
-  defaultHome: "", recursive: true, autoRefresh: true, checkMinutes: 0,
-  batchSize: 40, defaultSort: "newest"
+  defaultHome: "", recursive: true
 };
 export interface CardIndex {
   path: string;
@@ -20,7 +15,6 @@ export interface CardIndex {
   size: number;
   tags: string[];
   inlineTags: string[];
-  favorite: boolean;
 }
 export interface MarkdownSection { name: string; markdown: string; }
 export interface ParsedMarkdown { title: string; body: string; sections: MarkdownSection[]; }
