@@ -31,6 +31,7 @@ async function main(){
   const vault={
     getAbstractFileByPath(p){return files.get(p)?.file||null;},
     getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},
+    getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},
     getMarkdownFiles(){return this.getFiles().filter(f=>f.extension==='md');},
     async createFolder(p){files.set(p,{file:new TFolder(p)});},
     async create(p,data){if(files.has(p))throw Error('exists');const file=new TFile(p);file.stat.size=data.length;files.set(p,{file,data});return file;},
@@ -59,10 +60,40 @@ async function main(){
   const parsed=await plugin.repo.read('资料/摘录/自然.md');
   assert.equal(parsed.title,'自然');assert.equal(parsed.sections[0].name,'批注');
   const created=await plugin.repo.create(ws,'新记录', ['哲学']);
-  assert.match(created.path,/摘录-\d{8}-\d{6}\.md/);
+  assert.equal(created.path,'资料/摘录/新记录.md');
   assert.match(files.get(created.path).data,/tags:\n  - "哲学"/);
   assert.match(files.get(created.path).data,/新记录/);
   assert.equal(files.get('资料/摘录/自然.md').data,'# 自然\n\n普通 Markdown\n\n## 批注\n\n我的想法');
+  // Same-text duplicates, case variants and parallel saves must create distinct files.
+  const same=await plugin.repo.create(ws,'新记录');
+  assert.equal(same.path,'资料/摘录/新记录-2.md');
+  await vault.create('资料/摘录/HELLO.md','existing');
+  const caseConflict=await plugin.repo.create(ws,'hello');
+  assert.equal(caseConflict.path,'资料/摘录/hello-2.md');
+  const many=await Promise.all([plugin.repo.create(ws,'并发摘录'),plugin.repo.create(ws,'并发摘录')]);
+  assert.deepEqual(many.map(x=>x.path).sort(),['资料/摘录/并发摘录-2.md','资料/摘录/并发摘录.md'].sort());
+  // Simulate an external writer winning the create race.
+  const normalCreate=vault.create;
+  let race=true;
+  vault.create=async function(path,data){
+    if(race && path==='资料/摘录/竞态.md'){
+      race=false;
+      await normalCreate.call(this,path,'created externally');
+      throw Error('File already exists');
+    }
+    return normalCreate.call(this,path,data);
+  };
+  const retried=await plugin.repo.create(ws,'竞态');
+  assert.equal(retried.path,'资料/摘录/竞态-2.md');
+  assert.equal(files.get('资料/摘录/竞态.md').data,'created externally');
+  vault.create=normalCreate;
+  // Propagate unrelated errors, do not silently retry them as conflicts.
+  vault.create=async function(path,data){
+    if(path==='资料/摘录/写入失败.md')throw Error('permission denied');
+    return normalCreate.call(this,path,data);
+  };
+  await assert.rejects(plugin.repo.create(ws,'写入失败'),/permission denied/);
+  vault.create=normalCreate;
   plugin.ribbon.action(); await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(opened,[home.path]);
   await plugin.rememberHome(home.path);
