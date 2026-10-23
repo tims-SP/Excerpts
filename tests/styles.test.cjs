@@ -13,3 +13,10 @@ test('mobile touch, collapsed filters and card layout are scoped',()=>{
   assert.match(css,/min-height: 44px/);
   assert.match(css,/\.excerpts-root \.ex-search-wrap\[hidden\]/);
 });
+
+test('card edit and tag components have scoped styles',()=>{
+  for(const name of ['.ex-entry-editor','.ex-editor-text','.ex-edit-actions','.ex-tag-editor','.ex-tag-custom','.ex-tag-option','.ex-group-body','.ex-warning'])
+    assert.ok(css.includes('.excerpts-root '+name),'missing '+name);
+  assert.ok(css.includes('.ex-card-footer[hidden]'));
+  assert.ok(css.includes('max-width: 720px'));
+});
