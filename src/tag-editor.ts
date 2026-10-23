@@ -96,7 +96,7 @@ export function createTagPicker(
     if (/[,，]/.test(input.value)) {
       const parts = input.value.split(/[,，]/);
       for (const part of parts.slice(0, -1)) add(part);
-      input.value = parts.at(-1) ?? "";
+      input.value = parts[parts.length - 1] ?? "";
     }
     render();
   });
