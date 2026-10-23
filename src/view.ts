@@ -25,14 +25,18 @@ function iconButton(icon: string, label: string, action: () => void, cls = ""): 
   return b;
 }
 function inputBox(placeholder: string, value = ""): HTMLInputElement {
-  const el = node("input", "ex-input"); el.type = "text"; el.placeholder = placeholder; el.value = value; return el;
+  const el = node("input", "ex-input"); el.type = "text"; el.placeholder = placeholder; el.setAttribute("aria-label", placeholder); el.value = value; return el;
 }
 function textarea(placeholder: string, value = "", cls = ""): HTMLTextAreaElement {
-  const el = node("textarea", `ex-textarea ${cls}`); el.placeholder = placeholder; el.value = value; el.rows = 3; return el;
+  const el = node("textarea", `ex-textarea ${cls}`); el.placeholder = placeholder; el.setAttribute("aria-label", placeholder); el.value = value; el.rows = 3; return el;
 }
 function dateLabel(value: string): string {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString("zh-CN", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : value;
+  if (!Number.isFinite(date.getTime())) return value;
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleString("zh-CN", {
+    ...(sameYear ? {} : { year: "numeric" as const }), month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+  });
 }
 function errorMessage(e: unknown): string { return e instanceof Error ? e.message : String(e); }
 function revision(entry: Entry): string {
@@ -116,7 +120,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     header.append(brand, actions); root.append(header);
     const form = node("div", "ex-composer");
     const quote = textarea("记录你想留下的文字……", "", "ex-compose-text");
-    quote.rows = 3;
+    quote.rows = 2;
+    quote.setAttribute("aria-label", "摘录正文");
+    // Focus expands the minimal composer; blur only contracts when no draft remains.
+    quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
+    quote.addEventListener("blur", () => {
+      if (!quote.value.trim() && !tags.value.trim()) form.classList.remove("ex-is-composing");
+    });
     this.captureInput = quote;
     const tags = inputBox("标签（用逗号分隔，可选）");
     tags.classList.add("ex-tags-input");
@@ -137,6 +147,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!isVisible) tags.focus();
     });
     tagsToggle.setAttribute("aria-expanded", "false");
+    const tagsId = "ex-tags-" + this.workspace.id.replace(/[^a-zA-Z0-9_-]/g, "");
+    tags.id = tagsId;
+    tagsToggle.setAttribute("aria-controls", tagsId);
+    tags.addEventListener("keydown", e => {
+      if (e.key === "Escape") { e.preventDefault(); tags.hidden = true; tagsToggle.setAttribute("aria-expanded", "false"); tagsToggle.focus(); }
+    });
     tags.hidden = true;
     captureOptions.append(tagsToggle, recovery);
     const saveButton = button("保存", () => void save(), "mod-cta ex-btn-primary");
@@ -154,6 +170,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         const parsedTags = tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean);
         await this.repo.create(this.workspace, text, [...new Set(parsedTags)]);
         quote.value = ""; tags.value = ""; tags.hidden = true;
+        form.classList.remove("ex-is-composing");
         tagsToggle.setAttribute("aria-expanded", "false");
         void this.resolveDraft("capture");
         await this.reload();
@@ -167,11 +184,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const toolbarTitle = node("div", "ex-toolbar-title");
     toolbarTitle.append(node("h3", "ex-list-heading", "最近收藏"));
     this.countEl = node("span", "ex-count", "0 条收藏");
+    this.countEl.setAttribute("role", "status");
+    this.countEl.setAttribute("aria-live", "polite");
     toolbarTitle.append(this.countEl);
     const toolbarActions = node("div", "ex-toolbar-actions");
     const searchWrap = node("div", "ex-search-wrap");
     const search = inputBox("搜索摘录、来源、变种或批注…");
     search.setAttribute("aria-label", "搜索摘录");
+    search.addEventListener("keydown", e => {
+      if (e.key === "Escape") { e.preventDefault(); search.value = ""; this.searchText = ""; searchWrap.hidden = true; searchToggle.setAttribute("aria-expanded", "false"); this.drawCards(); searchToggle.focus(); }
+    });
     search.addEventListener("input", () => { this.searchText = search.value.toLocaleLowerCase(); this.drawCards(); });
     const searchToggle = iconButton("search", "搜索", () => {
       const show = searchWrap.hidden;
@@ -181,6 +203,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else if (search.value) { search.value = ""; this.searchText = ""; this.drawCards(); }
     });
     searchToggle.setAttribute("aria-expanded", "false");
+    const searchId = "ex-search-" + this.workspace.id.replace(/[^a-zA-Z0-9_-]/g, "");
+    searchWrap.id = searchId;
+    searchToggle.setAttribute("aria-controls", searchId);
     searchWrap.hidden = true;
     toolbarActions.append(searchToggle, iconButton("shuffle", "随机回顾", () => this.recallRandom()), iconButton("refresh-cw", "刷新", () => void this.reload()));
     searchWrap.append(search);
@@ -299,45 +324,74 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private drawCards(): void {
     const wrap = this.listEl;
     if (!wrap) return;
+    // An Obsidian Vault event may redraw the feed while an icon has keyboard
+    // focus. Keep that control focused if it still exists after reconciliation.
+    const focused = wrap.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+    const focusedCardId = focused?.closest<HTMLElement>(".ex-card")?.dataset.entryId;
+    const focusedLabel = focused?.getAttribute("aria-label") || focused?.textContent?.trim();
     wrap.empty();
     const visible = this.visibleItems();
     if (this.countEl) this.countEl.textContent = this.items.length ? `${visible.length} / ${this.items.length}` : "";
     const tagBar = node("div", "ex-filter-tags");
     tagBar.setAttribute("aria-label", "按标签筛选");
     const all = button("全部", () => { this.tagFilter = ""; this.drawCards(); }, !this.tagFilter ? "ex-selected" : "ex-btn-quiet");
+    all.setAttribute("aria-pressed", this.tagFilter ? "false" : "true");
     tagBar.append(all);
     const tags = [...new Set(this.items.flatMap(x => x.tags))].sort((a,b) => a.localeCompare(b, "zh"));
-    for (const tag of tags.slice(0, 40)) tagBar.append(button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, this.tagFilter === tag ? "ex-selected" : "ex-btn-quiet"));
+    for (const tag of tags.slice(0, 40)) {
+      const option = button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, this.tagFilter === tag ? "ex-selected" : "ex-btn-quiet");
+      option.setAttribute("aria-pressed", this.tagFilter === tag ? "true" : "false");
+      tagBar.append(option);
+    }
     if (tags.length > 0) wrap.append(tagBar);
     if (!visible.length) { wrap.append(node("div", "ex-empty", this.items.length ? "没有找到匹配的摘录" : "还没有摘录，从上方添加第一条。")); return; }
     // Progressive page; avoids creating thousands of DOM cards on mobile.
     const shown = visible.slice(0, this.pageSize);
     for (const item of shown) wrap.append(this.card(item));
     if (shown.length < visible.length) wrap.append(button(`继续显示（剩余 ${visible.length - shown.length} 条）`, () => { this.pageSize += 40; this.drawCards(); }, "ex-loadmore"));
+    if (focused && focusedLabel) {
+      const scope: HTMLElement | undefined = focusedCardId ? Array.from(wrap.querySelectorAll<HTMLElement>(".ex-card")).find(el => el.dataset.entryId === focusedCardId) : wrap;
+      const buttons = scope ? Array.from(scope.querySelectorAll<HTMLButtonElement>("button")) : [];
+      const replacement = buttons.find(b => (b.getAttribute("aria-label") || b.textContent?.trim()) === focusedLabel);
+      replacement?.focus();
+    }
   }
   private pageSize = 40;
   private card(entry: Entry): HTMLElement {
     const card = node("article", "ex-card");
-    card.setAttribute("aria-label", "摘录卡片");
+    card.dataset.entryId = entry.id;
+    const headingId = `ex-entry-${entry.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    card.setAttribute("aria-labelledby", headingId);
     if (entry.id === this.recalledId) card.classList.add("ex-recalled");
     const top = node("div", "ex-card-top");
     if (entry.id === this.recalledId) top.append(node("span", "ex-recall-hint", "随机回顾"));
-    top.append(node("span", "ex-date", dateLabel(entry.created)));
+    const created = node("time", "ex-date", dateLabel(entry.created));
+    created.dateTime = entry.created;
+    top.append(created);
     const tools = node("div", "ex-card-actions");
     if (!entry.readOnly) {
       const favorite = iconButton(entry.favorite ? "bookmark-check" : "bookmark", entry.favorite ? "取消珍藏" : "珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), entry.favorite ? "ex-is-favorite" : "");
       favorite.setAttribute("aria-pressed", entry.favorite ? "true" : "false");
+      favorite.classList.add("ex-quick-action");
       tools.append(favorite);
-      tools.append(iconButton("pencil", "编辑", () => {
+      const editButton = iconButton("pencil", "编辑", () => {
         if (this.editing !== entry.id && !this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
         this.editing = this.editing === entry.id ? null : entry.id;
         this.drawCards();
-      }));
+      });
+      editButton.classList.add("ex-quick-action");
+      tools.append(editButton);
       if (this.recoverableDrafts.some(d => d.kind === "quote" && d.entryId === entry.id)) {
         tools.append(button("恢复草稿", () => this.restoreQuote(entry), "ex-btn-quiet"));
       }
       const more = iconButton("ellipsis", "更多摘录操作", () => {
         const menu = new Menu();
+        menu.addItem(item => item.setTitle(entry.favorite ? "取消珍藏" : "珍藏").onClick(() => void this.saveEdit(entry, x => ({ ...x, favorite: !x.favorite }))));
+        menu.addItem(item => item.setTitle("编辑摘录").onClick(() => {
+          if (!this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
+          this.editing = entry.id; this.drawCards();
+        }));
+        menu.addItem(item => item.setTitle("复制正文").onClick(() => void this.copyBody(entry.text)));
         menu.addItem(item => item.setTitle("移至回收站").onClick(() => this.confirmTrash(entry)));
         const rect = more.getBoundingClientRect();
         menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
@@ -346,9 +400,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     top.append(tools); card.append(top);
     if (this.editing === entry.id) this.renderQuoteEditor(card, entry);
-    else card.append(node("div", "ex-quote", entry.text));
+    else {
+      const quote = node("div", "ex-quote", entry.text);
+      quote.id = headingId;
+      card.append(quote);
+    }
     const chips = node("div", "ex-chips");
-    for (const tag of entry.tags) chips.append(button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, "ex-tag"));
+    for (const tag of entry.tags) {
+      const b = button(`#${tag}`, () => { this.tagFilter = tag; this.drawCards(); }, "ex-tag");
+      b.setAttribute("aria-label", `筛选标签：${tag}`);
+      chips.append(b);
+    }
     card.append(chips);
     if (entry.readOnly) card.append(node("div", "ex-warning", `文件结构存在问题，仅能阅读：${entry.problem || "未知错误"}`));
     const extras = node("div", "ex-extras");
@@ -380,6 +442,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (extras.childElementCount) card.append(extras);
     return card;
   }
+  private async copyBody(text: string): Promise<void> {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("当前环境未提供剪贴板写入权限");
+      await navigator.clipboard.writeText(text);
+      new Notice("已复制摘录正文");
+    } catch (e) { new Notice(`复制失败：${errorMessage(e)}`); }
+  }
   private renderQuoteEditor(card: HTMLElement, entry: Entry) {
     if (!this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
     const edit = node("div", "ex-edit-panel");
@@ -393,6 +462,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     };
     content.addEventListener("input", queueQuote);
     tags.addEventListener("input", queueQuote);
+    // Consistent quick-save shortcut in capture and detail editing.
+    const shortcutSave = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveEditButton.click(); }
+    };
+    content.addEventListener("keydown", shortcutSave);
+    tags.addEventListener("keydown", shortcutSave);
     const actions = node("div", "ex-actions");
     actions.append(button("取消", () => {
       this.quoteDrafts.delete(entry.id);
@@ -400,7 +475,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null; this.drawCards();
     }, "ex-btn-quiet"));
-    actions.append(button("保存修改", () => {
+    const saveEditButton = button("保存修改", () => {
       if (this.quoteBases.get(entry.id) !== revision(entry)) {
         new Notice("摘录在编辑期间已发生变化，请复制草稿并重新打开编辑器，拒绝覆盖");
         return;
@@ -413,7 +488,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null;
     });
-    }, "ex-btn-primary"));
+    }, "ex-btn-primary");
+    actions.append(saveEditButton);
     edit.append(content, tags, actions); card.append(edit);
   }
   private renderExtraGroup(target: HTMLElement, entry: Entry, kind: ExtraKind) {
@@ -429,9 +505,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     setIcon(disclosure, isOpen ? "chevron-up" : "chevron-down");
     line.prepend(disclosure);
     line.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    const panelId = `ex-extra-${entry.id}-${kind}`.replace(/[^a-zA-Z0-9_-]/g, "");
+    line.setAttribute("aria-controls", panelId);
     group.append(line);
     if (isOpen) {
       const body = node("div", "ex-group-body");
+      body.id = panelId;
       for (const extra of data) {
         const row = node("div", "ex-extra-item");
         row.append(node("div", "ex-extra-title", extra.title));
@@ -457,12 +536,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const keepDraft = () => this.extraDrafts.set(draftKey, { title: title.value, content: text.value });
     title.addEventListener("input", keepDraft);
     text.addEventListener("input", keepDraft);
+    const shortcutSave = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveExtraButton.click(); }
+    };
+    title.addEventListener("keydown", shortcutSave);
+    text.addEventListener("keydown", shortcutSave);
     const actions = node("div", "ex-actions");
     actions.append(button("取消", () => {
       this.extraDrafts.delete(draftKey); this.extraBases.delete(draftKey);
       this.editingExtra = null; this.drawCards();
     }, "ex-btn-quiet"));
-    actions.append(button("保存", () => {
+    const saveExtraButton = button("保存", () => {
       if (this.extraBases.get(draftKey) !== revision(entry)) {
         new Notice("附属条目在编辑期间已发生变化，请复制草稿后刷新，拒绝覆盖");
         return;
@@ -474,7 +558,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.extraDrafts.delete(draftKey); this.extraBases.delete(draftKey);
       this.editingExtra = null;
     });
-    }, "ex-btn-primary"));
+    }, "ex-btn-primary");
+    actions.append(saveExtraButton);
     if (original) {
       let confirm = false;
       const del = button("删除条目", () => {

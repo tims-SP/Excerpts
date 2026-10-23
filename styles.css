@@ -1,205 +1,126 @@
-/* Excerpts: native Obsidian appearance, flomo-inspired layout.
- * Every rule is scoped to this plugin's authorized collection view. */
+/* Excerpts: an Obsidian-native collection view. No selectors escape the plugin host. */
+.excerpts-native-host { overflow-y: auto; overscroll-behavior: contain; }
 .excerpts-root {
+  --ex-gap: var(--size-4-4, 16px);
+  --ex-inset: var(--size-4-4, 16px);
   color: var(--text-normal);
   font-family: var(--font-interface);
-  max-width: 800px;
-  margin: 0 auto;
-  padding: var(--size-4-3, 12px) var(--size-4-2, 8px) var(--size-4-12, 48px);
   container-type: inline-size;
+  max-width: 760px;
+  margin-inline: auto;
+  padding: var(--size-4-5, 20px) var(--size-4-3, 12px) var(--size-4-12, 48px);
 }
 .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { box-sizing: border-box; }
-.excerpts-root .ex-header,
-.excerpts-root .ex-card-top,
-.excerpts-root .ex-compose-actions,
-.excerpts-root .ex-toolbar,
-.excerpts-root .ex-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--size-4-2, 8px);
-}
-.excerpts-root .ex-header { padding: var(--size-4-2, 8px) 0 var(--size-4-5, 20px); }
-.excerpts-root .ex-title { margin: 0; padding: 0; font-family: var(--font-interface); font-size: var(--h2-size, 1.5em); font-weight: var(--h2-weight, 600); line-height: 1.3; }
+.excerpts-root [hidden] { display: none !important; }
+.excerpts-root .ex-header, .excerpts-root .ex-toolbar,
+.excerpts-root .ex-card-top, .excerpts-root .ex-compose-actions,
+.excerpts-root .ex-actions { display: flex; justify-content: space-between; align-items: center; gap: var(--size-4-2, 8px); }
+.excerpts-root .ex-header { padding: 0 0 var(--size-4-5, 20px); }
+.excerpts-root .ex-title { margin: 0; font-size: var(--h2-size, 1.5em); font-weight: var(--h2-weight, 600); line-height: 1.3; }
 .excerpts-root .ex-brand { min-width: 0; overflow-wrap: anywhere; }
-.excerpts-root .ex-actions { justify-content: flex-end; flex-wrap: wrap; }
-.excerpts-root button.ex-icon-button {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  flex: none;
-  min-width: 36px;
-  min-height: 36px;
-  padding: var(--size-4-2, 8px);
-  border: 0;
-  border-radius: var(--radius-s, 4px);
-  background: transparent;
-  color: var(--text-muted);
-  box-shadow: none;
-  cursor: pointer;
-}
+.excerpts-root .ex-actions { flex-wrap: wrap; justify-content: flex-end; }
+.excerpts-root .ex-header .ex-actions:empty { display: none; }
+.excerpts-root button.ex-icon-button { display: inline-flex; flex-shrink: 0; justify-content: center; align-items: center; min-width: 36px; min-height: 36px; padding: var(--size-4-2, 8px); border: 0; border-radius: var(--radius-m, 8px); background: transparent; color: var(--text-muted); box-shadow: none; cursor: pointer; }
 .excerpts-root button.ex-icon-button:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
 .excerpts-root button.ex-icon-button.ex-is-favorite { color: var(--text-accent); }
-.excerpts-root button.ex-icon-button:focus-visible,
-.excerpts-root button.ex-btn:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.excerpts-root button:focus-visible, .excerpts-root input:focus-visible,
+.excerpts-root textarea:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .excerpts-root button.ex-btn { font-family: var(--font-interface); cursor: pointer; min-height: 34px; }
-.excerpts-root button.ex-btn.ex-btn-quiet,
-.excerpts-root button.ex-btn.ex-add-extra,
-.excerpts-root button.ex-btn.ex-tag,
-.excerpts-root button.ex-btn.ex-group-trigger { color: var(--text-muted); background: transparent; border: 0; box-shadow: none; }
-.excerpts-root button.ex-btn.ex-btn-quiet:hover,
-.excerpts-root button.ex-btn.ex-add-extra:hover,
-.excerpts-root button.ex-btn.ex-group-trigger:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.excerpts-root button.ex-btn.ex-btn-quiet, .excerpts-root button.ex-btn.ex-add-extra,
+.excerpts-root button.ex-btn.ex-tag, .excerpts-root button.ex-btn.ex-group-trigger {
+  background: transparent; box-shadow: none; border: 0; color: var(--text-muted);
+}
+.excerpts-root button.ex-btn.ex-btn-quiet:hover, .excerpts-root button.ex-btn.ex-add-extra:hover,
+.excerpts-root button.ex-btn.ex-group-trigger:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
 .excerpts-root button.ex-btn.ex-btn-danger { color: var(--text-error); }
-.excerpts-root button.ex-btn[hidden] { display: none; }
-.excerpts-root .ex-composer {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-l, 12px);
-  background: var(--background-primary);
-  padding: var(--size-4-4, 16px);
-  margin-bottom: var(--size-4-8, 32px);
-}
+.excerpts-root .ex-input, .excerpts-root .ex-textarea { font-family: var(--font-interface); font-size: var(--font-ui-medium, 14px); color: var(--text-normal); width: 100%; min-width: 0; background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s, 4px); padding: var(--size-4-2, 8px) var(--size-4-3, 12px); box-shadow: none; }
+.excerpts-root .ex-input:focus, .excerpts-root .ex-textarea:focus { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
+.excerpts-root .ex-composer { background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-l, 12px); padding: var(--ex-inset); margin-bottom: var(--size-4-6, 24px); transition: border-color 140ms ease; }
 .excerpts-root .ex-composer:focus-within { border-color: var(--background-modifier-border-hover); }
-.excerpts-root .ex-section-label { font-size: var(--font-ui-small, 13px); color: var(--text-muted); margin-bottom: var(--size-4-2, 8px); }
-.excerpts-root .ex-input,
-.excerpts-root .ex-textarea {
-  font-family: var(--font-interface);
-  font-size: var(--font-ui-medium, 14px);
-  color: var(--text-normal);
-  width: 100%; min-width: 0;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s, 4px);
-  box-shadow: none;
-  padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-}
-.excerpts-root .ex-compose-text {
-  display: block;
-  min-height: 112px;
-  resize: vertical;
-  line-height: var(--line-height-normal, 1.6);
-  border: 0;
-  padding: var(--size-4-2, 8px) 0;
-  font-family: var(--font-text, var(--font-interface));
-  font-size: var(--font-text-size, 16px);
-}
-.excerpts-root .ex-compose-text:focus { box-shadow: none; outline: none; }
+.excerpts-root .ex-compose-text { display: block; min-height: 64px; max-height: 320px; resize: vertical; padding: var(--size-4-2, 8px) 0; border: 0; border-radius: 0; background: transparent; line-height: var(--line-height-normal, 1.6); font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); }
+.excerpts-root .ex-compose-text:focus { box-shadow: none; border-color: transparent; outline: none; }
 .excerpts-root .ex-compose-actions { padding-top: var(--size-4-2, 8px); }
-.excerpts-root .ex-tags-input { width: min(100%, 320px); max-width: 100%; }
-.excerpts-root .ex-toolbar { align-items: flex-end; gap: var(--size-4-4, 16px); padding: 0 0 var(--size-4-3, 12px); }
-.excerpts-root .ex-toolbar-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--size-4-2, 8px); min-width: 0; }
-.excerpts-root .ex-list-heading { font-size: var(--font-ui-medium, 14px); font-weight: 600; line-height: 1.5; margin: 0; }
+.excerpts-root .ex-capture-options { display: flex; align-items: center; gap: var(--size-4-1, 4px); min-width: 0; }
+.excerpts-root .ex-tags-input { width: 100%; margin: 0 0 var(--size-4-2, 8px); }
+.excerpts-root .ex-btn-primary { padding-inline: var(--size-4-4, 16px); flex: 0 0 auto; }
+.excerpts-root .ex-toolbar { margin: 0 0 var(--size-4-2, 8px); min-height: 44px; }
+.excerpts-root .ex-toolbar-title { display: flex; flex-wrap: wrap; gap: var(--size-4-2, 8px); align-items: baseline; min-width: 0; }
+.excerpts-root .ex-list-heading { margin: 0; font-size: var(--font-ui-medium, 14px); font-weight: 600; line-height: 1.5; }
 .excerpts-root .ex-count { color: var(--text-faint); font-size: var(--font-ui-smaller, 12px); white-space: nowrap; }
-.excerpts-root .ex-search-wrap { position: relative; width: min(100%, 330px); min-width: 0; }
-.excerpts-root .ex-search-icon { color: var(--text-faint); position: absolute; left: var(--size-4-3, 12px); top: 50%; transform: translateY(-50%); display: flex; pointer-events: none; }
-.excerpts-root .ex-search-icon svg { width: 15px; height: 15px; }
-.excerpts-root .ex-search-wrap input { padding-left: var(--size-4-9, 36px); }
-.excerpts-root .ex-filter-tags { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--size-4-1, 4px); padding: 0 0 var(--size-4-4, 16px); overflow-x: auto; scrollbar-width: thin; }
-.excerpts-root .ex-filter-tags .ex-btn {
-  color: var(--text-muted);
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-  border-radius: var(--radius-m, 8px);
-  padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
-  white-space: nowrap;
-}
-.excerpts-root .ex-filter-tags .ex-btn:hover { background: var(--background-modifier-hover); }
+.excerpts-root .ex-toolbar-actions { display: flex; align-items: center; gap: 0; }
+.excerpts-root .ex-search-wrap { width: 100%; margin-bottom: var(--size-4-3, 12px); }
+.excerpts-root .ex-filter-tags { display: flex; align-items: center; gap: var(--size-4-1, 4px); overflow-x: auto; padding-bottom: var(--size-4-3, 12px); scrollbar-width: thin; }
+.excerpts-root .ex-filter-tags .ex-btn { white-space: nowrap; border: none; border-radius: var(--radius-m, 8px); padding: var(--size-4-1, 4px) var(--size-4-3, 12px); color: var(--text-muted); background: transparent; box-shadow: none; }
 .excerpts-root .ex-filter-tags .ex-btn.ex-selected { color: var(--text-accent); background: var(--background-secondary); font-weight: 600; }
-.excerpts-root .ex-card-list { display: flex; flex-direction: column; gap: var(--size-4-4, 16px); }
-.excerpts-root .ex-card {
-  padding: var(--size-4-5, 20px) var(--size-4-6, 24px);
-  border-radius: var(--radius-l, 12px);
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  overflow-wrap: anywhere;
-}
-.excerpts-root .ex-card-top { align-items: flex-start; }
-.excerpts-root .ex-date { color: var(--text-faint); font-size: var(--font-ui-smaller, 12px); padding-top: var(--size-4-2, 8px); }
+.excerpts-root .ex-card-list { display: flex; flex-direction: column; gap: var(--ex-gap); }
+.excerpts-root .ex-card { min-width: 0; padding: var(--size-4-4, 16px) var(--size-4-5, 20px); border: 1px solid var(--background-modifier-border); background: var(--background-primary); border-radius: var(--radius-l, 12px); overflow-wrap: anywhere; }
+.excerpts-root .ex-card-top { align-items: center; }
+.excerpts-root .ex-date { color: var(--text-faint); font-size: var(--font-ui-smaller, 12px); font-variant-numeric: tabular-nums; }
 .excerpts-root .ex-card-actions { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
-.excerpts-root .ex-quote {
-  font-family: var(--font-text, var(--font-interface));
-  font-size: calc(var(--font-text-size, 16px) * 1.1);
-  line-height: 1.8;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  padding: var(--size-4-5, 20px) 0 var(--size-4-4, 16px);
-  color: var(--text-normal);
-}
+.excerpts-root .ex-quote { padding: var(--size-4-4, 16px) 0 var(--size-4-3, 12px); font-family: var(--font-text, var(--font-interface)); font-size: calc(var(--font-text-size, 16px) * 1.08); line-height: 1.85; color: var(--text-normal); white-space: pre-wrap; overflow-wrap: anywhere; }
 .excerpts-root .ex-chips { display: flex; flex-wrap: wrap; gap: var(--size-4-1, 4px); padding-bottom: var(--size-4-2, 8px); }
 .excerpts-root .ex-chips:empty { display: none; }
-.excerpts-root button.ex-tag { font-size: var(--font-ui-smaller, 12px); padding: var(--size-4-1, 4px) var(--size-4-2, 8px); color: var(--text-accent); }
+.excerpts-root button.ex-tag { padding: var(--size-4-1, 4px) var(--size-4-2, 8px); font-size: var(--font-ui-smaller, 12px); color: var(--text-accent); }
 .excerpts-root button.ex-tag:hover { background: var(--background-modifier-hover); }
-.excerpts-root .ex-extras { border-top: 1px solid var(--background-modifier-border); display: flex; flex-wrap: wrap; gap: var(--size-4-1, 4px) var(--size-4-2, 8px); padding-top: var(--size-4-2, 8px); margin-top: var(--size-4-1, 4px); }
+.excerpts-root .ex-extras { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-1, 4px); border-top: 1px solid var(--background-modifier-border); padding-top: var(--size-4-2, 8px); }
 .excerpts-root .ex-extra-group { min-width: 0; }
 .excerpts-root .ex-extra-group:has(.ex-group-body) { flex-basis: 100%; }
-.excerpts-root button.ex-group-trigger {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-4-1, 4px);
-  font-size: var(--font-ui-smaller, 12px);
-  padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
-  border-radius: var(--radius-s, 4px);
-  white-space: nowrap;
-}
+.excerpts-root button.ex-group-trigger { display: inline-flex; gap: var(--size-4-1, 4px); align-items: center; padding: var(--size-4-1, 4px) var(--size-4-2, 8px); font-size: var(--font-ui-smaller, 12px); border-radius: var(--radius-m, 8px); white-space: nowrap; }
 .excerpts-root .ex-disclosure-icon { display: inline-flex; width: 14px; height: 14px; }
 .excerpts-root .ex-disclosure-icon svg { width: 14px; height: 14px; }
-.excerpts-root .ex-group-body { padding: var(--size-4-2, 8px) 0 var(--size-4-2, 8px); }
+.excerpts-root .ex-group-body { padding: var(--size-4-2, 8px) 0; }
 .excerpts-root .ex-extra-item { border-left: 2px solid var(--background-modifier-border); padding: var(--size-4-2, 8px) var(--size-4-3, 12px); margin-bottom: var(--size-4-2, 8px); }
 .excerpts-root .ex-extra-title { font-size: var(--font-ui-small, 13px); font-weight: 600; }
-.excerpts-root .ex-extra-content { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-ui-small, 13px); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); padding: var(--size-4-1, 4px) 0; }
-.excerpts-root button.ex-add-extra { display: inline-flex; align-items: center; min-height: 34px; padding: var(--size-4-1, 4px) var(--size-4-2, 8px); font-size: var(--font-ui-smaller, 12px); color: var(--text-muted); }
-.excerpts-root .ex-edit-panel { background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m, 8px); display: flex; flex-direction: column; gap: var(--size-4-2, 8px); padding: var(--size-4-3, 12px); margin: var(--size-4-2, 8px) 0; }
-.excerpts-root .ex-edit-panel .ex-actions { justify-content: flex-end; flex-wrap: wrap; }
-.excerpts-root .ex-empty { padding: var(--size-4-12, 48px) var(--size-4-4, 16px); text-align: center; color: var(--text-muted); }
-.excerpts-root .ex-warning { color: var(--text-error); font-size: var(--font-ui-small, 13px); margin: var(--size-4-2, 8px) 0; }
-.excerpts-root .ex-loadmore { margin: var(--size-4-4, 16px) auto; }
+.excerpts-root .ex-extra-content { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-ui-small, 13px); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); padding-top: var(--size-4-1, 4px); }
+.excerpts-root button.ex-add-extra { padding: var(--size-4-1, 4px) var(--size-4-2, 8px); font-size: var(--font-ui-smaller, 12px); }
+.excerpts-root .ex-edit-panel { display: flex; flex-direction: column; gap: var(--size-4-2, 8px); padding: var(--size-4-3, 12px); margin: var(--size-4-2, 8px) 0; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m, 8px); background: var(--background-secondary); }
+.excerpts-root .ex-edit-panel .ex-actions { justify-content: flex-end; }
+.excerpts-root .ex-empty { padding: var(--size-4-8, 32px) var(--size-4-4, 16px); color: var(--text-muted); text-align: center; }
+.excerpts-root .ex-warning { color: var(--text-error); font-size: var(--font-ui-small, 13px); padding: var(--size-4-2, 8px) 0; }
+.excerpts-root .ex-loadmore { margin: var(--size-4-3, 12px) auto; }
 .excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
 .excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: var(--font-ui-smaller, 12px); }
 @container (max-width: 560px) {
   .excerpts-root { padding-inline: var(--size-4-1, 4px); }
+  .excerpts-root .ex-card { padding: var(--size-4-4, 16px); }
   .excerpts-root .ex-header { padding-bottom: var(--size-4-4, 16px); }
-  .excerpts-root .ex-composer, .excerpts-root .ex-card { padding: var(--size-4-4, 16px); }
-  .excerpts-root .ex-toolbar { align-items: stretch; flex-direction: column; }
-  .excerpts-root .ex-search-wrap { width: 100%; }
-  .excerpts-root .ex-compose-actions { flex-wrap: wrap; align-items: stretch; }
-  .excerpts-root .ex-compose-actions > * { flex: 1 1 160px; }
-  .excerpts-root .ex-card-top { flex-wrap: wrap; }
   .excerpts-root button.ex-icon-button { min-width: 44px; min-height: 44px; }
-  .excerpts-root button.ex-add-extra, .excerpts-root button.ex-group-trigger { min-height: 44px; }
+  .excerpts-root .ex-card-top { flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .excerpts-root { scroll-behavior: auto; }
+@media (prefers-reduced-motion: reduce) { .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition-duration: 0ms; animation-duration: 0ms; } }
+
+/* Round 2 — progressive input, no extra content-management chrome at rest. */
+.excerpts-root .ex-composer.ex-is-composing .ex-compose-text { min-height: 120px; }
+.excerpts-root .ex-capture-options button[aria-expanded="true"] { color: var(--text-accent); background: var(--background-modifier-hover); }
+.excerpts-root .ex-input::placeholder, .excerpts-root .ex-textarea::placeholder { color: var(--text-faint); opacity: 1; }
+
+/* Round 3 — reading-first cards; secondary actions stay available through the native menu. */
+.excerpts-root .ex-card .ex-quote { letter-spacing: normal; }
+.excerpts-root .ex-card-actions { gap: 0; }
+.excerpts-root .ex-card:has(.ex-chips:empty) .ex-quote { padding-bottom: var(--size-4-2, 8px); }
+.excerpts-root .ex-extras:not(:has(.ex-extra-group)) { border: none; padding-top: 0; }
+.excerpts-root .ex-extra-group:has(.ex-group-body) { width: 100%; }
+@container (max-width: 560px) {
+  .excerpts-root .ex-card-actions .ex-quick-action { display: none; }
+  .excerpts-root .ex-card-actions { margin-inline-start: auto; }
+  .excerpts-root .ex-quote { font-size: var(--font-text-size, 16px); line-height: 1.8; }
 }
 
-/* v0.2.0-beta.2 — flomo-like compact capture, host-native workspace layout. */
-.excerpts-native-host { overflow-y: auto; }
-.excerpts-native-host .excerpts-root { max-width: 760px; padding-top: var(--size-4-5, 20px); }
-.excerpts-root .ex-header { padding-bottom: var(--size-4-4, 16px); }
-.excerpts-root .ex-composer { padding: var(--size-4-3, 12px) var(--size-4-4, 16px); margin-bottom: var(--size-4-5, 20px); background: var(--background-secondary); }
-.excerpts-root .ex-compose-text {
-  min-height: 88px; max-height: 260px; background: transparent;
-  padding: var(--size-4-2, 8px) 0; resize: vertical;
-  font-size: var(--font-text-size, 16px);
+/* Round 4 — touch and keyboard affordances. Use the host focus palette. */
+@media (pointer: coarse) {
+  .excerpts-root button.ex-icon-button,
+  .excerpts-root button.ex-group-trigger,
+  .excerpts-root button.ex-add-extra,
+  .excerpts-root .ex-filter-tags button,
+  .excerpts-root button.ex-btn-primary { min-height: 44px; }
+  .excerpts-root button.ex-icon-button { min-width: 44px; }
+  .excerpts-root .ex-edit-panel button { min-height: 44px; }
 }
-.excerpts-root .ex-compose-actions { gap: var(--size-4-2, 8px); padding-top: var(--size-4-1, 4px); align-items: center; flex-wrap: nowrap; }
-.excerpts-root .ex-capture-options { display: flex; align-items: center; gap: var(--size-4-2, 8px); min-width: 0; }
-.excerpts-root .ex-tags-input { margin: 0 0 var(--size-4-2, 8px); max-width: 100%; background: var(--background-primary); }
-.excerpts-root .ex-tags-input[hidden], .excerpts-root .ex-search-wrap[hidden] { display: none; }
-.excerpts-root .ex-compose-actions > .ex-btn-primary { flex: none; min-width: 70px; width: auto; padding-inline: var(--size-4-4, 16px); border-radius: var(--radius-m, 8px); }
-.excerpts-root .ex-toolbar { align-items: center; justify-content: space-between; padding-bottom: var(--size-4-2, 8px); }
-.excerpts-root .ex-toolbar-actions { display: flex; align-items: center; gap: var(--size-4-1, 4px); }
-.excerpts-root .ex-search-wrap { width: 100%; margin: 0 0 var(--size-4-3, 12px); }
-.excerpts-root .ex-search-wrap .ex-input { width: 100%; }
-.excerpts-root .ex-filter-tags { padding-bottom: var(--size-4-3, 12px); }
-.excerpts-root .ex-empty { padding-block: var(--size-4-8, 32px); }
-@container (max-width: 560px) {
-  .excerpts-root .ex-toolbar { flex-direction: row; align-items: center; }
-  .excerpts-root .ex-compose-actions { flex-wrap: nowrap; align-items: center; }
-  .excerpts-root .ex-compose-actions > * { flex: 0 0 auto; }
-  .excerpts-root .ex-compose-actions .ex-capture-options { flex: 1 1 auto; }
-  .excerpts-root .ex-composer { padding: var(--size-4-3, 12px); }
-  .excerpts-root .ex-compose-text { min-height: 80px; }
-  .excerpts-root .ex-search-wrap { width: 100%; }
-}
+.excerpts-root .ex-btn:disabled, .excerpts-root .ex-icon-button:disabled { opacity: 0.55; cursor: wait; }
+
+/* Round 5 — subtle polish; theme remains authoritative. */
+.excerpts-root .ex-card-actions .ex-icon-button svg,
+.excerpts-root .ex-toolbar-actions .ex-icon-button svg { width: 18px; height: 18px; }
+.excerpts-root .ex-date { line-height: 1.45; }
+.excerpts-root .ex-card .ex-extra-item:last-child { margin-bottom: 0; }
+.excerpts-root .ex-filter-tags button[aria-pressed="true"] { color: var(--text-accent); }

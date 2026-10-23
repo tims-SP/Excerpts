@@ -489,7 +489,7 @@ test('capture is compact, optional fields and search are hidden until requested'
   try {
     const quote = f.container.querySelector('.ex-compose-text');
     assert.equal(quote.placeholder, '记录你想留下的文字……');
-    assert.equal(quote.rows, 3);
+    assert.equal(quote.rows, 2);
     const tags = f.container.querySelector('.ex-tags-input');
     assert.equal(tags.hidden, true);
     click(f.container, '添加标签');
@@ -500,5 +500,88 @@ test('capture is compact, optional fields and search are hidden until requested'
     assert.equal(search.hidden, false);
     assert.equal(f.container.querySelector('.ex-filter-tags'), null, 'no redundant All tag on empty collection');
     assert.ok(f.container.querySelector('.ex-compose-actions .ex-btn-primary'));
+  } finally { await f.close(); }
+});
+
+
+test('composer focus and Escape close optional inputs with accessible focus', async () => {
+  const f = await fixture();
+  try {
+    const quote = f.container.querySelector('.ex-compose-text');
+    quote.dispatchEvent(new window.Event('focus'));
+    assert.ok(f.container.querySelector('.ex-composer').classList.contains('ex-is-composing'));
+    const tagsToggle = click(f.container, '添加标签');
+    const tags = f.container.querySelector('.ex-tags-input');
+    assert.equal(tagsToggle.getAttribute('aria-expanded'), 'true');
+    assert.equal(tagsToggle.getAttribute('aria-controls'), tags.id);
+    tags.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(tags.hidden, true);
+    const searchToggle = click(f.container, '搜索');
+    const input = f.container.querySelector('.ex-search-wrap input');
+    assert.equal(searchToggle.getAttribute('aria-controls'), input.parentElement.id);
+    input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(input.parentElement.hidden, true);
+    assert.equal(searchToggle.getAttribute('aria-expanded'), 'false');
+  } finally { await f.close(); }
+});
+
+test('keyboard focus survives a feed refresh when the original control still exists', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.create(f.workspace, '一条可以阅读的摘录');
+    await f.renderer.reload();
+    const more = f.container.querySelector('button[aria-label="更多摘录操作"]');
+    more.focus();
+    assert.equal(document.activeElement, more);
+    await f.renderer.reload();
+    assert.equal(document.activeElement?.getAttribute('aria-label'), '更多摘录操作');
+    assert.ok(f.container.querySelector('.ex-count[role="status"][aria-live="polite"]'));
+  } finally { await f.close(); }
+});
+
+test('Ctrl+Enter saves an existing quote editor without disturbing unrelated notes', async () => {
+  const f = await fixture();
+  try {
+    const entry = await f.repo.create(f.workspace, '初始文字');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    const editor = f.container.querySelector('.ex-edit-panel textarea');
+    type(editor, '调整后的摘录');
+    editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true }));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal((await f.repo.list(f.workspace))[0].text, '调整后的摘录');
+    assert.equal(f.files.get(entry.path).data.includes('调整后的摘录'), true);
+  } finally { await f.close(); }
+});
+
+test('card menu offers editing, favorite toggle, copy and safe archive', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.create(f.workspace, '需要复制的原文');
+    await f.renderer.reload();
+    click(f.container, '更多摘录操作');
+    assert.deepEqual(Menu.last.items.map(x => x.title), ['珍藏', '编辑摘录', '复制正文', '移至回收站']);
+    assert.equal(f.container.querySelector('time.ex-date').hasAttribute('datetime'), true);
+    const tag = f.container.querySelector('.ex-filter-tags button');
+    assert.equal(tag, null, 'empty tag filter is not rendered');
+  } finally { await f.close(); }
+});
+
+test('Ctrl+Enter in supplementary editor saves the text and leaves the quote intact', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.create(f.workspace, '不会被修改的主摘录');
+    await f.renderer.reload();
+    click(f.container, '添加内容');
+    Menu.last.items.find(x => x.title === '变种').action();
+    const edit = f.container.querySelector('.ex-extra-group .ex-edit-panel');
+    type(edit.querySelector('input'), '译文差异');
+    type(edit.querySelector('textarea'), '翻译后的不同版本');
+    edit.querySelector('textarea').dispatchEvent(new window.KeyboardEvent('keydown', {key:'Enter',metaKey:true,bubbles:true,cancelable:true}));
+    await new Promise(resolve => setImmediate(resolve));
+    const saved = (await f.repo.list(f.workspace))[0];
+    assert.equal(saved.text, '不会被修改的主摘录');
+    assert.equal(saved.extras[0].title, '译文差异');
+    assert.equal(saved.extras[0].content, '翻译后的不同版本');
   } finally { await f.close(); }
 });

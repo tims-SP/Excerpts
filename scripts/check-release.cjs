@@ -1,0 +1,17 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const project = path.resolve(__dirname, '..');
+const read = f => fs.readFileSync(path.join(project, f), 'utf8');
+const manifest = JSON.parse(read('manifest.json'));
+const pkg = JSON.parse(read('package.json'));
+const versions = JSON.parse(read('versions.json'));
+const ci = read('.github/workflows/build.yml');
+const css = read('styles.css');
+assert.equal(manifest.version, pkg.version, 'package and manifest versions differ');
+assert.equal(versions[manifest.version], manifest.minAppVersion, 'versions.json is not synchronized');
+assert.match(ci, /excerpts-\$\{VERSION\}\.zip/, 'CI packaging is not versioned by manifest');
+assert.match(ci, /dist\/excerpts-\*\.zip/, 'CI artifact list must include the versioned zip');
+assert.match(css, /^\.excerpts-root\s*\{/m, 'Expected scoped root styles');
+assert.equal(/(?:^|\n)\s*(?:body|html|\.workspace|\.markdown-preview-view)\s*\{/m.test(css), false, 'Unscoped rules would alter the host application');
+console.log('Release and CSS isolation checks passed for ' + manifest.version);
