@@ -23,3 +23,7 @@ Legacy Entry/Extra compatibility, automatic migration, private attachment manage
 ## Release acceptance
 
 Run unit, TypeScript, smoke, UI and release checks in CI. Before stable release, perform genuine desktop/iOS/Android Obsidian acceptance and 1k/10k-note performance tests.
+
+## Homepage navigation (beta.8)
+
+A ribbon bookmark entry and command open the Excerpts native homepage. It lists the configured collections and opens their card views. Collection card views include an explicit Home action. Neither navigation method creates any special Markdown homepage file.

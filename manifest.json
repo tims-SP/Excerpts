@@ -1,7 +1,7 @@
 {
   "id": "excerpts",
   "name": "摘录 Excerpts",
-  "version": "0.2.0-beta.7",
+  "version": "0.2.0-beta.8",
   "minAppVersion": "1.5.0",
   "description": "Native Markdown cards for any Vault folder, with headings, tags and file-based editing.",
   "author": "Excerpts Contributors",

@@ -84,6 +84,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     heading.append(el("h2", "ex-title", this.workspace.name));
     head.append(heading);
     const actions = el("div", "ex-header-actions");
+    actions.append(iconButton("house", "返回摘录首页", () => void this.plugin.openHome().catch(notice)));
     actions.append(iconButton("refresh-cw", "刷新 Markdown 文件", () => this.requestRefresh(true)));
     actions.append(button("新建 Markdown", () => void this.plugin.newMarkdown(this.workspace).catch(notice), "ex-btn-primary"));
     head.append(actions);

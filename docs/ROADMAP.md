@@ -24,3 +24,7 @@ GitHub Actions verify: parser/unit tests, TypeScript build, smoke, UI simulation
 3. Improve full-document reference definition handling across independently rendered H2 sections.
 4. Perform manual accessibility and touch navigation QA.
 5. Review optional section selection persistence and tag Frontmatter concurrency.
+
+## beta.8 navigation correction
+
+Restore one-click homepage access through the Obsidian ribbon, the command palette and back navigation from a collection view. The homepage is native UI rather than a dedicated Markdown note.

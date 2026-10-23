@@ -23,6 +23,7 @@ class ItemView {constructor(){this.contentEl=document.createElement('div');} asy
 class Plugin {
   async loadData(){return null;} async saveData(){}
   registerView(kind,factory){this.viewFactory=factory;} addSettingTab(){} addCommand(){} registerEvent(){}
+  addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}
 }
 class PluginSettingTab {constructor(){}}
 class Setting {}
@@ -56,14 +57,29 @@ test('native Markdown cards show arbitrary H2 sections and independent tags',asy
     on(){return {};}
   };
   const plugin=new Excerpts();
+  const leaf={lastState:null,async setViewState(state){this.lastState=state;},async openFile(){}};
   plugin.app={
     vault,
     metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}},
     fileManager:{async processFrontMatter(f,fn){const fm={tags:['哲学']};fn(fm);}},
-    workspace:{getLeaf(){return {async openFile(){},async setViewState(){}};},async revealLeaf(){}}
+    workspace:{getLeaf(){return leaf;},async revealLeaf(){}}
   };
   await plugin.onload();
   const workspace=await plugin.createWorkspace('测试收藏集','摘录');
+  assert.equal(plugin.ribbon.title,'打开摘录首页');
+  plugin.ribbon.action(); await wait();
+  assert.equal(leaf.lastState.type,'excerpts-collection');
+  assert.equal(leaf.lastState.state.workspaceId,'');
+  const homepage=plugin.viewFactory({});
+  document.body.append(homepage.contentEl);
+  await homepage.setState({workspaceId:''},{});
+  assert.equal(homepage.getDisplayText(),'摘录首页');
+  const collectionButton=homepage.contentEl.querySelector('button.ex-home-item');
+  assert.ok(collectionButton);
+  assert.match(collectionButton.textContent,/测试收藏集/);
+  collectionButton.click(); await wait();
+  assert.equal(leaf.lastState.state.workspaceId,workspace.id);
+  await homepage.onClose(); homepage.contentEl.remove();
   const pane=plugin.viewFactory({});
   document.body.append(pane.contentEl);
   await pane.setState({workspaceId:workspace.id},{});
@@ -79,5 +95,8 @@ test('native Markdown cards show arbitrary H2 sections and independent tags',asy
   assert.equal(pane.contentEl.querySelectorAll('.ex-group').length,1);
   assert.ok([...pane.contentEl.querySelectorAll('.ex-tag')].some(b=>b.textContent.includes('#哲学')));
   assert.ok(pane.contentEl.querySelector('.ex-edit-file'));
+  const back=pane.contentEl.querySelector('button[aria-label="返回摘录首页"]');
+  assert.ok(back); back.click(); await wait();
+  assert.equal(leaf.lastState.state.workspaceId,'');
   await pane.onClose();pane.contentEl.remove();
 });

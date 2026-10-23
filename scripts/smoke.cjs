@@ -19,6 +19,7 @@ class Plugin {
   async loadData() {return null;} async saveData(s) {this.saved=s;}
   registerView(k,fn) {this.viewType=k;this.factory=fn;}
   addSettingTab(){} addCommand(){} registerEvent(){}
+  addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}
 }
 class PluginSettingTab { constructor(app,plugin) {this.app=app;this.plugin=plugin;} }
 class Setting {}
@@ -51,7 +52,10 @@ async function main(){
   };
   const plugin=new Excerpts();plugin.app=app;await plugin.onload();
   assert.equal(plugin.viewType,'excerpts-collection');
+  assert.equal(plugin.ribbon.title,'打开摘录首页');
   const ws=await plugin.createWorkspace('文学','资料/摘录');
+  plugin.ribbon.action();
+  await new Promise(resolve=>setImmediate(resolve));
   assert.ok(files.has('资料/摘录'));
   assert.ok(!files.has('资料/摘录/首页.md'));
   assert.ok(!files.has('资料/摘录/Cards'));

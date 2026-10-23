@@ -20,6 +20,12 @@ export default class ExcerptsPlugin extends Plugin {
     this.repo = new EntryRepository(this.app);
     this.registerView(EXCERPTS_COLLECTION_VIEW, leaf => new ExcerptsCollectionView(leaf, this, this.repo));
     this.addSettingTab(new ExcerptsSettingTab(this.app, this));
+    this.addRibbonIcon("bookmark", "打开摘录首页", () => {
+      void this.openHome().catch(error => new Notice(error instanceof Error ? error.message : String(error)));
+    });
+    this.addCommand({ id: "open-home", name: "打开摘录首页", callback: () => {
+      void this.openHome().catch(error => new Notice(error instanceof Error ? error.message : String(error)));
+    }});
     this.addCommand({ id: "open-collection", name: "打开摘录收藏集", callback: () => {
       const first = this.settings.workspaces[0];
       if (first) void this.openWorkspace(first);
@@ -98,6 +104,12 @@ export default class ExcerptsPlugin extends Plugin {
     ws.rootFolder = rootFolder;
     await this.saveSettings();
     this.refreshViews(true);
+  }
+  /** Homepage navigation is a native pane, not a special Markdown file. */
+  async openHome(): Promise<void> {
+    const leaf = this.app.workspace.getLeaf(false);
+    await leaf.setViewState({ type: EXCERPTS_COLLECTION_VIEW, state: { workspaceId: "" }, active: true });
+    await this.app.workspace.revealLeaf(leaf);
   }
   async openWorkspace(ws: Workspace): Promise<void> {
     const leaf = this.app.workspace.getLeaf(false);
