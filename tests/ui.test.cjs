@@ -72,7 +72,7 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
 });
 test('quick composer saves normal Markdown with native tags and restores continuous writing',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
-  const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';
+  const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'添加标签');assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
   const choice=[...root.querySelectorAll('.ex-capture-tags .ex-tag-option')].find(x=>x.textContent.includes('#哲学'));
   assert.ok(choice);choice.click();
@@ -174,7 +174,7 @@ test('quick tags toggle without comma parsing and persist only the selected chip
   input.value='灵感';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,1);
-  root.querySelector('.ex-compose-text').value='一段新摘录';
+  root.querySelector('.ex-compose-text').value='一段新摘录';root.querySelector('.ex-compose-text').dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
   const entry=t.files.get('摘录/一段新摘录.md');
@@ -254,4 +254,19 @@ test('standalone leading Markdown media receives wider card treatment only witho
   const titled=await fixture();
   assert.equal(titled.pane.contentEl.querySelector('.ex-card').classList.contains('ex-media-first'),false);
   await titled.close();
+});
+
+test('empty capture is disabled and an unsaved draft survives reopening the home view',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const composer=root.querySelector('.ex-compose-text');
+  const save=[...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存');
+  assert.equal(save.disabled,true);
+  composer.value='重新打开后仍然存在的摘录';
+  composer.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(save.disabled,false);
+  await t.pane.onUnloadFile(t.home);
+  await t.pane.openFile(t.home);
+  await wait();
+  assert.equal(t.pane.contentEl.querySelector('.ex-compose-text').value,'重新打开后仍然存在的摘录');
+  await t.close();
 });
