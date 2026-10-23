@@ -13,6 +13,7 @@ declare module "obsidian" {
     createFolder(path: string): Promise<TFolder>;
     create(path: string, content: string): Promise<TFile>;
     cachedRead(file: TFile): Promise<string>;
+    process(file: TFile, updater: (current: string) => string): Promise<string>;
     on(event: string, callback: (...args: any[]) => void): any;
   }
   export interface CachedMetadata {
