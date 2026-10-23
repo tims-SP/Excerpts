@@ -1,6 +1,25 @@
 import { App, TAbstractFile, TFile, TFolder } from "obsidian";
-import { Entry, Workspace, makeId, workspacePaths, belongsTo } from "./model";
+import { Entry, Workspace, makeId, workspacePaths, belongsTo, joinPath } from "./model";
 import { parseEntry, patchEntry, serializeEntry } from "./codec";
+
+/**
+ * An in-session undo token. The original Markdown stays in the workspace's
+ * recoverable archive; this token never stores content in plugin settings.
+ */
+export interface TrashedEntry {
+  id: string;
+  collectionId: string;
+  originalPath: string;
+  recyclePath: string;
+  raw: string;
+}
+
+function snapshot(value: Entry): string {
+  return JSON.stringify([
+    value.id, value.collectionId, value.created, value.updated,
+    value.favorite, value.tags, value.text, value.extras
+  ]);
+}
 
 export class EntryRepository {
   constructor(private readonly app: App) {}
@@ -54,10 +73,6 @@ export class EntryRepository {
       }
       // UI editors can outlive an external Git/Sync or Obsidian edit. Never apply
       // a stale form over a newer record, even if the YAML updated time was unchanged.
-      const snapshot = (value: Entry) => JSON.stringify([
-        value.id, value.collectionId, value.created, value.updated,
-        value.favorite, value.tags, value.text, value.extras
-      ]);
       if (snapshot(current) !== snapshot(entry)) {
         throw new Error("摘录已被其他操作修改，请刷新后重试，未覆盖文件");
       }
@@ -69,6 +84,62 @@ export class EntryRepository {
     });
     if (!saved) throw new Error("保存没有完成");
     return saved;
+  }
+
+  /**
+   * Archive (never Vault.delete) only a current, editable entry in the
+   * nominated collection. Markdown bytes are unchanged by Vault.rename.
+   */
+  async trash(ws: Workspace, entry: Entry): Promise<TrashedEntry> {
+    const p = workspacePaths(ws);
+    if (!entry.path || !belongsTo(entry.path, p.cards) || entry.collectionId !== ws.id || entry.readOnly) {
+      throw new Error("摘录不属于当前收藏集，拒绝移动");
+    }
+    const file = this.app.vault.getAbstractFileByPath(entry.path);
+    if (!(file instanceof TFile)) throw new Error("摘录文件已被移动或删除");
+    const raw = await this.app.vault.read(file);
+    const current = parseEntry(raw);
+    if (!current || current.readOnly || snapshot(current) !== snapshot(entry)) {
+      throw new Error("摘录已被修改或结构异常，请刷新后再试");
+    }
+    const archive = joinPath(p.root, "Excerpts-Recycle");
+    if (archive === p.cards || belongsTo(archive, p.cards) || belongsTo(p.cards, archive)) {
+      throw new Error("回收目录与摘录目录重叠，拒绝移动");
+    }
+    await this.ensureFolder(archive);
+    const recyclePath = joinPath(archive, `${entry.id}-${makeId("trash")}.md`);
+    if (this.app.vault.getAbstractFileByPath(recyclePath)) throw new Error("回收目标已存在，拒绝覆盖");
+    await this.app.vault.rename(file, recyclePath);
+    return { id: entry.id, collectionId: entry.collectionId, originalPath: entry.path, recyclePath, raw };
+  }
+
+  /**
+   * Restore a single untouched archive item without replacing any existing
+   * file. If another app modifies the archive, manual recovery stays possible.
+   */
+  async restore(ws: Workspace, receipt: TrashedEntry): Promise<void> {
+    const p = workspacePaths(ws);
+    const archive = joinPath(p.root, "Excerpts-Recycle");
+    if (receipt.collectionId !== ws.id ||
+        !belongsTo(receipt.originalPath, p.cards) ||
+        !belongsTo(receipt.recyclePath, archive)) {
+      throw new Error("恢复目标不属于当前收藏集");
+    }
+    if (this.app.vault.getAbstractFileByPath(receipt.originalPath)) {
+      throw new Error("原路径已有文件，拒绝覆盖，请手动恢复");
+    }
+    const file = this.app.vault.getAbstractFileByPath(receipt.recyclePath);
+    if (!(file instanceof TFile)) throw new Error("回收文件不存在，请检查收藏集回收目录");
+    const raw = await this.app.vault.read(file);
+    const current = parseEntry(raw);
+    if (raw !== receipt.raw || !current || current.id !== receipt.id ||
+        current.collectionId !== ws.id) {
+      throw new Error("回收文件已发生变化，拒绝自动移动，请手动恢复");
+    }
+    // The original parent may have been removed. Recreating an empty folder
+    // cannot overwrite existing notes.
+    await this.ensureFolder(receipt.originalPath.slice(0, receipt.originalPath.lastIndexOf("/")));
+    await this.app.vault.rename(file, receipt.originalPath);
   }
 
   isInWorkspace(file: TAbstractFile, ws: Workspace): boolean {
