@@ -10,7 +10,7 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
     if (end > 0) start = end + 1;
   }
   let title = "";
-  let sectionName = "";
+  let sectionName: string | null = null;
   let fenceChar = "";
   let fenceLength = 0;
   const bodyParts: string[] = [];
@@ -18,13 +18,8 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
   let current: string[] = [];
   const append = () => {
     const markdown = current.join("\n").trim();
-    if (!markdown) { current = []; return; }
-    if (!sectionName || sectionName === "正文") bodyParts.push(markdown);
-    else {
-      const existing = sections.find(section => section.name === sectionName);
-      if (existing) existing.markdown += "\n\n" + markdown;
-      else sections.push({ name: sectionName, markdown });
-    }
+    if (sectionName === null) { if (markdown) bodyParts.push(markdown); }
+    else sections.push({ name: sectionName, markdown });
     current = [];
   };
   for (let i = start; i < lines.length; i++) {
@@ -40,7 +35,7 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
     if (!fenceChar) {
       const heading = line.match(/^ {0,3}(#{1,2})[ \t]+(.+?)[ \t]*#*[ \t]*$/);
       if (heading) {
-        if (heading[1] === "#" && !title && !sectionName && !current.join("").trim()) {
+        if (heading[1] === "#" && !title && sectionName === null && !current.join("").trim()) {
           title = heading[2].trim();
           continue;
         }
@@ -55,10 +50,5 @@ export function parseMarkdown(raw: string): ParsedMarkdown {
   }
   append();
   const body = bodyParts.join("\n\n").trim();
-  // Section-only documents still produce a visible card.
-  if (!body && sections.length) {
-    const first = sections.shift()!;
-    return { title, body: first.markdown, sections };
-  }
   return { title, body, sections };
 }
