@@ -52,6 +52,15 @@ export class EntryRepository {
       if (!current || current.id !== entry.id || current.collectionId !== entry.collectionId || current.readOnly) {
         throw new Error("文件已损坏或被替换，拒绝覆盖");
       }
+      // UI editors can outlive an external Git/Sync or Obsidian edit. Never apply
+      // a stale form over a newer record, even if the YAML updated time was unchanged.
+      const snapshot = (value: Entry) => JSON.stringify([
+        value.id, value.collectionId, value.created, value.updated,
+        value.favorite, value.tags, value.text, value.extras
+      ]);
+      if (snapshot(current) !== snapshot(entry)) {
+        throw new Error("摘录已被其他操作修改，请刷新后重试，未覆盖文件");
+      }
       const next = change(current);
       if (next.id !== current.id || next.collectionId !== current.collectionId) throw new Error("不能修改摘录身份标识");
       next.updated = new Date().toISOString();
