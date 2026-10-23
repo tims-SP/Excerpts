@@ -1,6 +1,6 @@
-import { MarkdownRenderChild, Notice, Menu } from "obsidian";
+import { MarkdownRenderChild, Notice, Menu, Modal } from "obsidian";
 import type ExcerptsPlugin from "./main";
-import { EntryRepository } from "./repository";
+import { EntryRepository, TrashedEntry } from "./repository";
 import { Entry, Extra, ExtraKind, EXTRA_KINDS, EXTRA_LABELS, Workspace, makeId } from "./model";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
@@ -33,6 +33,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private expanded = new Set<string>();
   private editing: string | null = null;
   private editingExtra: string | null = null;
+  private lastTrash: TrashedEntry | null = null;
+  private undoButton: HTMLButtonElement | null = null;
+  private deletionInFlight = false;
   private quoteDrafts = new Map<string, { text: string; tags: string }>();
   private extraDrafts = new Map<string, { title: string; content: string }>();
   private listEl: HTMLElement | null = null;
@@ -66,6 +69,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const brand = node("div", "ex-brand");
     brand.append(node("div", "ex-eyebrow", "EXCERPTS / COLLECTION"), node("h2", "ex-title", this.workspace.name));
     const actions = node("div", "ex-actions");
+    const undoButton = button("撤销删除", () => void this.undoTrash(), "ex-btn-quiet");
+    undoButton.hidden = true;
+    this.undoButton = undoButton;
+    actions.append(undoButton);
     actions.append(button("随机回顾", () => this.recallRandom(), "ex-btn-quiet"));
     actions.append(button("刷新", () => void this.reload(), "ex-btn-quiet"));
     header.append(brand, actions); root.append(header);
@@ -155,6 +162,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!entry.readOnly) {
       tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
       tools.append(button("编辑", () => { this.editing = this.editing === entry.id ? null : entry.id; this.drawCards(); }, "ex-btn-quiet"));
+      const more = button("更多", () => {
+        const menu = new Menu();
+        menu.addItem(item => item.setTitle("移至回收站").onClick(() => this.confirmTrash(entry)));
+        const rect = more.getBoundingClientRect();
+        menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
+      }, "ex-btn-quiet");
+      more.setAttribute("aria-label", "更多摘录操作");
+      tools.append(more);
     }
     top.append(tools); card.append(top);
     if (this.editing === entry.id) this.renderQuoteEditor(card, entry);
@@ -260,6 +275,52 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     pane.append(title, text, actions); target.append(pane);
   }
+  private confirmTrash(entry: Entry): void {
+    if (entry.readOnly || this.deletionInFlight) return;
+    const modal = new Modal(this.plugin.app);
+    modal.contentEl.empty();
+    modal.contentEl.append(node("h3", "", "将摘录移至回收站？"));
+    modal.contentEl.append(node("p", "", "Markdown 文件将完整移至当前收藏集的 Excerpts-Recycle 文件夹，不会永久删除。可在此页面撤销最近一次操作。"));
+    modal.contentEl.append(node("p", "ex-trash-preview", entry.text.slice(0, 180)));
+    const actions = node("div", "ex-actions");
+    const confirm = button("移至回收站", () => void run(), "ex-btn-danger");
+    const cancel = button("取消", () => modal.close(), "ex-btn-quiet");
+    actions.append(cancel, confirm);
+    modal.contentEl.append(actions);
+    const run = async () => {
+      if (this.deletionInFlight) return;
+      this.deletionInFlight = true;
+      confirm.disabled = true; cancel.disabled = true;
+      try {
+        this.lastTrash = await this.repo.trash(this.workspace, entry);
+        if (this.undoButton) this.undoButton.hidden = false;
+        this.quoteDrafts.delete(entry.id);
+        for (const key of this.extraDrafts.keys()) {
+          if (key.startsWith(entry.id + ":")) this.extraDrafts.delete(key);
+        }
+        if (this.editing === entry.id) this.editing = null;
+        modal.close();
+        await this.reload();
+        new Notice("摘录已移至收藏集回收目录，可撤销删除");
+      } catch(e) { new Notice(`移动失败：${errorMessage(e)}`); }
+      finally { this.deletionInFlight = false; confirm.disabled = false; cancel.disabled = false; }
+    };
+    modal.open();
+  }
+  private async undoTrash(): Promise<void> {
+    const receipt = this.lastTrash;
+    if (!receipt || !this.undoButton || this.undoButton.disabled) return;
+    this.undoButton.disabled = true;
+    try {
+      await this.repo.restore(this.workspace, receipt);
+      this.lastTrash = null;
+      this.undoButton.hidden = true;
+      await this.reload();
+      new Notice("摘录已恢复原路径");
+    } catch(e) { new Notice(`恢复失败：${errorMessage(e)}`); }
+    finally { if (this.undoButton) this.undoButton.disabled = false; }
+  }
+
   private async saveEdit(entry: Entry, change: (previous: Entry) => Entry, onSuccess?: () => void): Promise<void> {
     if (entry.readOnly) { new Notice("文件结构有误，已禁止写入"); return; }
     try { await this.repo.update(entry, change); onSuccess?.(); await this.reload(); }
