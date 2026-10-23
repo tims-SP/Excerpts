@@ -59,7 +59,7 @@
 .excerpts-root button.ex-tag { color: var(--text-muted); background: var(--background-primary); font-size: var(--font-ui-smaller, 12px); padding: 5px 10px; border-radius: 999px; }
 .excerpts-root button.ex-add-tag { color: var(--text-muted); padding: 5px 10px; border-radius: 999px; }
 .excerpts-root .ex-tag-editor { display: flex; flex: 0 0 100%; flex-direction: column; gap: var(--ex-space-2); min-width: 0; padding: var(--ex-space-2) 0 0; }
-.excerpts-root .ex-tag-custom { flex: 0 0 auto; width: 100%; height: 44px; min-height: 44px; align-self: stretch; }
+.excerpts-root .ex-tag-custom { flex: 0 1 auto; width: 100%; height: 44px; min-height: 44px; align-self: stretch; }
 .excerpts-root .ex-extras { display: flex; flex-direction: column; gap: var(--ex-space-2); margin-top: var(--ex-space-2); }
 .excerpts-root .ex-extras:empty { display: none; }
 .excerpts-root .ex-group-summary { display: flex; flex-wrap: wrap; gap: 4px; }
