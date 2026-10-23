@@ -106,3 +106,33 @@ test('H2 groups, filtering and editing without redundant card actions',async()=>
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   await t.close();
 });
+
+test('inline edit cancellation preserves original and conflict keeps draft',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'编辑摘录');await wait();
+  let editor=root.querySelector('.ex-editor-text');
+  editor.value='discard';editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-edit-actions button')].find(x=>x.textContent==='取消').click();
+  await wait();
+  assert.doesNotMatch(t.files.get(t.md.path).data,/discard/);
+  clickByLabel(root,'编辑摘录');await wait();
+  editor=root.querySelector('.ex-editor-text');editor.value='overwrite';
+  editor.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  t.files.get(t.md.path).data='externally edited';
+  [...root.querySelectorAll('.ex-edit-actions button')].find(x=>x.textContent==='保存').click();
+  await wait();
+  assert.equal(t.files.get(t.md.path).data,'externally edited');
+  assert.equal(root.querySelector('.ex-editor-text').value,'overwrite');
+  await t.close();
+});
+test('tag changes preserve expanded selection panel',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  root.querySelector('.ex-add-tag').click();
+  const input=root.querySelector('.ex-tag-custom');
+  input.value='札记';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+  await wait();
+  assert.equal(root.querySelector('.ex-tag-editor').hidden,false);
+  assert.equal(root.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
+  await t.close();
+});
