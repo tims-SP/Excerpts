@@ -384,8 +384,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         editingCard.querySelector<HTMLElement>(".ex-editor-text") :
         editingCard.querySelector<HTMLElement>(".ex-tags-input");
       target?.focus();
-      if (this.editor.focus === "body" && this.editor.caret && target instanceof HTMLTextAreaElement)
-        target.setSelectionRange(this.editor.caret[0], this.editor.caret[1]);
+      if (this.editor.focus === "body" && this.editor.caret && target?.tagName === "TEXTAREA")
+        (target as HTMLTextAreaElement).setSelectionRange(this.editor.caret[0], this.editor.caret[1]);
       this.editor.focus = undefined;
     }
   }
