@@ -15,10 +15,11 @@ export interface PluginSettings {
   schemaVersion: number;
   workspaces: Workspace[];
   collapseExtras: boolean;
+  autoOpenHome: boolean;
   defaultSort: "newest" | "oldest";
 }
 export const DEFAULT_SETTINGS: PluginSettings = {
-  schemaVersion: 1, workspaces: [], collapseExtras: true, defaultSort: "newest"
+  schemaVersion: 1, workspaces: [], collapseExtras: true, autoOpenHome: true, defaultSort: "newest"
 };
 export interface Extra {
   id: string;

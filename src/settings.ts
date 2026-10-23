@@ -24,6 +24,12 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     if (!this.plugin.settings.workspaces.length) c.createEl("p", { text: "尚未创建收藏集。" });
     for (const ws of this.plugin.settings.workspaces) this.addWorkspaceSettings(c, ws);
     c.createEl("h3", { text: "展示偏好" });
+    new Setting(c).setName("打开首页时进入摘录视图")
+      .setDesc("默认启用。关闭后可以直接编辑收藏集首页的原始 Markdown，设置页的‘打开首页’仍会进入独立视图。")
+      .addToggle(t => t.setValue(this.plugin.settings.autoOpenHome).onChange(async (v: boolean) => {
+        this.plugin.settings.autoOpenHome = v;
+        await this.plugin.saveSettings();
+      }));
     new Setting(c).setName("默认折叠附属内容").addToggle(t => t.setValue(this.plugin.settings.collapseExtras).onChange(async (v: boolean) => { this.plugin.settings.collapseExtras = v; await this.plugin.saveSettings(); }));
     new Setting(c).setName("默认排序").addDropdown(d => d.addOptions({ newest: "最新优先", oldest: "最早优先" }).setValue(this.plugin.settings.defaultSort).onChange(async (v: string) => {
       this.plugin.settings.defaultSort = v === "oldest" ? "oldest" : "newest";

@@ -20,7 +20,7 @@ jobs:
         run: |
           mkdir -p dist/excerpts
           cp main.js manifest.json styles.css dist/excerpts/
-          cd dist && zip -r excerpts-0.2.0-beta.1.zip excerpts
+          cd dist && zip -r excerpts-0.2.0-beta.2.zip excerpts
       - name: Package source snapshot for isolated rebuilds
         run: |
           tar -czf dist/excerpts-source-snapshot.tar.gz \
@@ -43,7 +43,7 @@ jobs:
         with:
           name: excerpts-obsidian-plugin
           path: |
-            dist/excerpts-0.2.0-beta.1.zip
+            dist/excerpts-0.2.0-beta.2.zip
             dist/excerpts/main.js
             dist/excerpts/manifest.json
             dist/excerpts/styles.css
