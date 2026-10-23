@@ -1,30 +1,13 @@
-# Excerpts — development status after breaking beta.7
+# Excerpts development roadmap
 
-## Implemented in beta.7
+## beta.9 — Direct .excerpts file homepage
 
-- Markdown folder discovery without required file schema
-- H1 and H2 extraction with code-fence protection
-- Standard Frontmatter and inline tag retrieval
-- Obsidian MarkdownRenderer in cards with lazy loading
-- Section selection in each card
-- Tag capsule filtering and standard Frontmatter tag editing
-- Native note editor entry point and new blank note
-- Manual / event-driven refresh and optional scheduled validation
-- Bounded cached Markdown reads, cancellable batched search
-- Removal of obsolete private draft and attachment workflow
+- Registered `.excerpts` as a native Obsidian FileView entrypoint.
+- The directory containing `首页.excerpts` is the only indexing scope.
+- Restored beta.6's inline composer, recent feed, collapsed search and tag filtering, random recall and content-first card layout.
+- Markdown file storage and native rendering retained; card sections come from arbitrary Markdown `##` headings.
+- No legacy collections, collection IDs, migration, mandatory frontmatter, private attachments or navigation homepage.
 
-## Validation
+## Acceptance remaining
 
-GitHub Actions verify: parser/unit tests, TypeScript build, smoke, UI simulation, CSS and release invariants.
-
-## Before stable release
-
-1. Test media embeds, note links and source-path rendering in actual Obsidian on Windows/macOS/Linux and iOS/Android.
-2. Stress-test 1k/10k Markdown notes and complex rich media notes on low-memory devices.
-3. Improve full-document reference definition handling across independently rendered H2 sections.
-4. Perform manual accessibility and touch navigation QA.
-5. Review optional section selection persistence and tag Frontmatter concurrency.
-
-## beta.8 navigation correction
-
-Restore one-click homepage access through the Obsidian ribbon, the command palette and back navigation from a collection view. The homepage is native UI rather than a dedicated Markdown note.
+Real Obsidian desktop / Android / iOS QA; 1k/10k note stress checks; complex cross-section Markdown references and embeds.

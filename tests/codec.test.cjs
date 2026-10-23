@@ -33,12 +33,11 @@ test('heading-free files show raw Markdown body without conversions', () => {
   assert.equal(doc.body,source);
   assert.deepEqual(doc.sections,[]);
 });
-test('scope accepts nested Markdown and excludes old draft/recycle paths', () => {
-  const ws={rootFolder:'资料/摘录',recursive:true};
+test('scope indexes ordinary Markdown within the homepage parent directory', () => {
+  const ws={rootFolder:'资料/摘录',homePath:'资料/摘录/首页.excerpts',recursive:true};
   assert.ok(isExcerptPath('资料/摘录/普通.md',ws));
   assert.ok(isExcerptPath('资料/摘录/子目录/普通.md',ws));
-  assert.ok(!isExcerptPath('资料/摘录/Excerpts-Drafts/abc.md',ws));
-  assert.ok(!isExcerptPath('资料/摘录/Excerpts-Recycle/abc.md',ws));
+  assert.ok(!isExcerptPath('资料/摘录/首页.excerpts',ws));
   assert.ok(!isExcerptPath('资料/摘录/图片.png',ws));
   assert.ok(!isExcerptPath('资料/摘录夹/普通.md',ws));
   assert.ok(!isExcerptPath('资料/摘录/子目录/普通.md',{...ws,recursive:false}));

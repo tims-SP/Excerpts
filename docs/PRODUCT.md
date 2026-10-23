@@ -1,29 +1,22 @@
-# Excerpts — product spec (Markdown-first beta.7)
+# Excerpts — product specification (beta.9)
 
-Excerpts is a local-first Obsidian card view of ordinary Markdown files in one or more selected Vault folders.
+Excerpts is an Obsidian Markdown card stream for collecting and rereading passages, ideas, dialogue and quotations.
 
-## Essential experience
+The user creates or opens a real `首页.excerpts` file in any desired Vault folder. That file is an entrypoint, not a document to be parsed as a card. Opening the file in Obsidian directly shows the original flomo-inspired capture-and-reading homepage, with no “My Excerpts” collection, separate listing page or mandatory metadata.
 
-- Directly use an existing folder; .md files copied in are discovered with no imports or special metadata.
-- One note equals one card, with optional H1 title and default body.
-- Arbitrary `##` headings supply optional named sections (来源、变种、批注 are examples, not built-in schemas).
-- Obsidian native Markdown rendering displays text, embeds, images, video, tables and links.
-- Tags stay independent from sections and use native Obsidian metadata. Capsules support filtering and click-to-expand recommendations.
-- A single Edit Markdown control opens the underlying .md file. New Markdown creates an empty note for native editing.
-- No specialized attachment folder, editor forms or custom content database.
+## Homepage experience
 
-## Refresh and scale
+1. Minimal title “摘录”.
+2. Compact, focus-expandable quick capture field, optional tag pill suggestions and a Save button. Saving creates a plain `.md` in the homepage directory.
+3. “最近收藏” toolbar: count, collapsed search icon, random recall icon and `Menu` for tag filtering and refresh.
+4. Single-column content-first card feed. Ordinary Markdown is rendered using Obsidian's Markdown renderer; H1 is optional; arbitrary H2 sections appear as collapsed supplementary groups.
+5. Card tags remain independent from H2 sections. Capsule tags allow filtering; expanded editor offers suggestions and custom tags.
+6. Date and lightweight controls follow card content. Editing opens the actual source note in the native Markdown editor.
 
-Default event-driven updates; explicit manual refresh; configurable periodic check and batch size. Metadata-first listing, on-demand card hydration, at most four active reads, capped LRU memory and cancellable full-text search.
+## Storage
 
-## Non-goals
+Each `.md` is a card; frontmatter is optional, tags and favorite use standard Obsidian metadata. Images, video, audio and other attachments use Markdown embeds and normal vault resource paths. No custom collection metadata, private attachment store or schema markers.
 
-Legacy Entry/Extra compatibility, automatic migration, private attachment management, remote sync, semantic search and custom full Markdown editing surfaces.
+## Development constraints
 
-## Release acceptance
-
-Run unit, TypeScript, smoke, UI and release checks in CI. Before stable release, perform genuine desktop/iOS/Android Obsidian acceptance and 1k/10k-note performance tests.
-
-## Homepage navigation (beta.8)
-
-A ribbon bookmark entry and command open the Excerpts native homepage. It lists the configured collections and opens their card views. Collection card views include an explicit Home action. Neither navigation method creates any special Markdown homepage file.
+This is a deliberately breaking development release. No migration or legacy compatibility. Full client QA on Windows/macOS and Android/iOS, large-vault pressure tests and complex Markdown embed/reference checks remain mandatory before stable release.

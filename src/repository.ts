@@ -1,5 +1,5 @@
 import { App, TFile, TFolder, getAllTags } from "obsidian";
-import { CardIndex, ParsedMarkdown, Workspace, belongsTo, isExcerptPath, validateRelativePath } from "./model";
+import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath, validateRelativePath } from "./model";
 import { parseMarkdown } from "./codec";
 
 export class EntryRepository {
@@ -94,12 +94,16 @@ export class EntryRepository {
     }
     return matches;
   }
-  async create(ws: Workspace): Promise<TFile> {
-    await this.ensureFolder(ws.rootFolder);
+  async create(ws: Workspace, markdown = "", tags: string[] = []): Promise<TFile> {
+    if (ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
     const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T","-");
     for (let i = 0; i < 1000; i++) {
-      const path = ws.rootFolder + "/摘录-" + stamp + (i ? "-" + i : "") + ".md";
-      if (!this.app.vault.getAbstractFileByPath(path)) return this.app.vault.create(path, "");
+      const path = (ws.rootFolder === "/" ? "" : ws.rootFolder + "/") + "摘录-" + stamp + (i ? "-" + i : "") + ".md";
+      if (!this.app.vault.getAbstractFileByPath(path)) {
+        const cleanTags = [...new Set(tags.map(t => t.replace(/^#/, "").trim()).filter(Boolean))];
+        const yaml = cleanTags.length ? "---\ntags:\n" + cleanTags.map(tag => "  - " + JSON.stringify(tag)).join("\n") + "\n---\n\n" : "";
+        return this.app.vault.create(path, yaml + markdown.trim() + "\n");
+      }
     }
     throw new Error("无法生成唯一文件名");
   }

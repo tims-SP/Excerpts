@@ -7,96 +7,89 @@ global.window=dom.window;global.document=dom.window.document;
 global.HTMLElement=dom.window.HTMLElement;
 HTMLElement.prototype.empty=function(){this.replaceChildren();};
 HTMLElement.prototype.addClass=function(name){this.classList.add(name);};
-HTMLElement.prototype.createDiv=function(){const d=document.createElement('div');this.append(d);return d;};
-HTMLElement.prototype.createEl=function(tag,options){const d=document.createElement(tag);d.textContent=options?.text||'';this.append(d);return d;};
+HTMLElement.prototype.createDiv=function(){const el=document.createElement('div');this.append(el);return el;};
 class TAbstractFile {constructor(path){this.path=path;}}
-class TFile extends TAbstractFile {constructor(path){super(path);this.basename=path.split('/').pop().replace(/\.md$/,'');this.stat={mtime:200,ctime:100,size:123};}}
+class TFile extends TAbstractFile {constructor(path){super(path);const leaf=path.split('/').pop();this.basename=leaf.replace(/\.[^.]+$/,'');this.extension=leaf.split('.').pop();this.stat={mtime:200,ctime:100,size:128};this.parent={path:path.split('/').slice(0,-1).join('/') || '/'};}}
 class TFolder extends TAbstractFile{}
-class MarkdownRenderChild {
-  constructor(el){this.containerEl=el;this.children=[];}
-  addChild(child){this.children.push(child);}
-  removeChild(child){this.children=this.children.filter(x=>x!==child);}
-  load(){this.onload?.();}
-  unload(){this.onunload?.();}
-}
-class ItemView {constructor(){this.contentEl=document.createElement('div');} async setState(){}}
-class Plugin {
-  async loadData(){return null;} async saveData(){}
-  registerView(kind,factory){this.viewFactory=factory;} addSettingTab(){} addCommand(){} registerEvent(){}
-  addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}
-}
+class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}load(){this.onload?.();}unload(){this.onunload?.();}}
+class FileView {constructor(){this.contentEl=document.createElement('div');this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
+class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(){}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
 class PluginSettingTab {constructor(){}}
 class Setting {}
-class Notice {constructor(text){Notice.last=text;}}
+class Notice {constructor(message){Notice.last=message;}}
+class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}showAtPosition(){Menu.last=this;}}
 const renders=[];
-const mocks={
- TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,Plugin,PluginSettingTab,Setting,Notice,
- getAllTags(cache){return [...(cache.tags||[]).map(t=>t.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)];},
- setIcon(el,name){el.setAttribute('data-icon',name);},
- MarkdownRenderer:{async render(app,text,container,path){
-   renders.push({text,path});container.append(document.createTextNode(text));
- }}
+const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,FileView,Plugin,PluginSettingTab,Setting,Notice,Menu,
+  setIcon(el,name){el.setAttribute('data-icon',name);},
+  getAllTags(cache){return [...(cache.tags||[]).map(t=>t.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)];},
+  MarkdownRenderer:{async render(app,content,target,path){renders.push({content,path});target.append(document.createTextNode(content));}}
 };
-const previous=Module._load;
-Module._load=function(request,parent,isMain){if(request==='obsidian')return mocks;return previous.apply(this,arguments);};
-const Excerpts=require('../main.js');
-Module._load=previous;
-const wait=()=>new Promise(resolve=>setTimeout(resolve,50));
+const old=Module._load;Module._load=function(request,parent,isMain){if(request==='obsidian')return mocks;return old.apply(this,arguments);};
+const Excerpts=require('../main.js');Module._load=old;
+const wait=()=>new Promise(resolve=>setTimeout(resolve,70));
+function clickByLabel(container,label){const el=container.querySelector(`button[aria-label="${label}"]`);assert.ok(el,'Missing button: '+label);el.click();return el;}
 
-test('native Markdown cards show arbitrary H2 sections and independent tags',async()=>{
+async function fixture(){
   const files=new Map();
-  const file=new TFile('摘录/测试.md');
-  files.set('摘录',{file:new TFolder('摘录')});
-  files.set(file.path,{file,data:'# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记'});
-  const vault={
-    getAbstractFileByPath(p){return files.get(p)?.file||null;},
-    getMarkdownFiles(){return [file];},
-    async cachedRead(f){return files.get(f.path).data;},
-    async createFolder(p){files.set(p,{file:new TFolder(p)});},
-    async create(p,body){const f=new TFile(p);files.set(p,{file:f,data:body});return f;},
-    on(){return {};}
-  };
+  const dir=new TFolder('摘录'); files.set('摘录',{file:dir});
+  const home=new TFile('摘录/首页.excerpts'); files.set(home.path,{file:home,data:''});
+  const md=new TFile('摘录/测试.md'); files.set(md.path,{file:md,data:'# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记'});
+  const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
+    async cachedRead(file){return files.get(file.path).data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
-  const leaf={lastState:null,async setViewState(state){this.lastState=state;},async openFile(){}};
-  plugin.app={
-    vault,
-    metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}},
-    fileManager:{async processFrontMatter(f,fn){const fm={tags:['哲学']};fn(fm);}},
-    workspace:{getLeaf(){return leaf;},async revealLeaf(){}}
-  };
+  const leaf={lastFile:null,async openFile(file){this.lastFile=file;},async setViewState(){}};
+  plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}}
+    ,fileManager:{async processFrontMatter(f,fn){fn({tags:['哲学']});}},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
   await plugin.onload();
-  const workspace=await plugin.createWorkspace('测试收藏集','摘录');
-  assert.equal(plugin.ribbon.title,'打开摘录首页');
-  plugin.ribbon.action(); await wait();
-  assert.equal(leaf.lastState.type,'excerpts-collection');
-  assert.equal(leaf.lastState.state.workspaceId,'');
-  const homepage=plugin.viewFactory({});
-  document.body.append(homepage.contentEl);
-  await homepage.setState({workspaceId:''},{});
-  assert.equal(homepage.getDisplayText(),'摘录首页');
-  const collectionButton=homepage.contentEl.querySelector('button.ex-home-item');
-  assert.ok(collectionButton);
-  assert.match(collectionButton.textContent,/测试收藏集/);
-  collectionButton.click(); await wait();
-  assert.equal(leaf.lastState.state.workspaceId,workspace.id);
-  await homepage.onClose(); homepage.contentEl.remove();
-  const pane=plugin.viewFactory({});
-  document.body.append(pane.contentEl);
-  await pane.setState({workspaceId:workspace.id},{});
+  const pane=plugin.factory({});document.body.append(pane.contentEl);
+  await pane.openFile(home);await wait();
+  return {files,plugin,pane,leaf,md,home,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
+}
+
+test('opening a .excerpts file displays beta.6-style direct feed without a selector page',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  assert.equal(t.plugin.extensions.type,'excerpts-home-file');
+  assert.equal(t.pane.getDisplayText(),'首页');
+  assert.ok(root.querySelector('.ex-composer .ex-compose-text'));
+  assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近收藏'));
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.ok(root.querySelector('.ex-note-heading').textContent.includes('测试标题'));
+  assert.ok(renders.some(r=>r.content.includes('![[图片.png]]') && r.path===t.md.path));
+  assert.ok(!root.textContent.includes('我的摘录'));
+  assert.ok(!root.querySelector('.ex-home-list'));
+  clickByLabel(root,'搜索');assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
+  clickByLabel(root,'搜索');assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
+  await t.close();
+});
+test('quick composer saves normal Markdown with native tags and restores continuous writing',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';
+  clickByLabel(root,'添加标签');assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
+  root.querySelector('.ex-tags-input').value='哲学, 札记';
+  [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
-  assert.equal(pane.contentEl.querySelector('.ex-card-title').textContent,'测试标题');
-  assert.ok(renders.some(r=>r.text.includes('![[图片.png]]')&&r.path==='摘录/测试.md'));
-  assert.equal(pane.contentEl.querySelectorAll('.ex-group').length,0);
-  const select=[...pane.contentEl.querySelectorAll('button')].find(b=>b.textContent.includes('选择章节'));
-  assert.ok(select);select.click();
-  const source=[...pane.contentEl.querySelectorAll('.ex-section-option')].find(b=>b.textContent.includes('来源'));
-  source.click();await wait();
-  assert.ok(renders.some(r=>r.text==='《某书》'));
-  assert.equal(pane.contentEl.querySelectorAll('.ex-group').length,1);
-  assert.ok([...pane.contentEl.querySelectorAll('.ex-tag')].some(b=>b.textContent.includes('#哲学')));
-  assert.ok(pane.contentEl.querySelector('.ex-edit-file'));
-  const back=pane.contentEl.querySelector('button[aria-label="返回摘录首页"]');
-  assert.ok(back); back.click(); await wait();
-  assert.equal(leaf.lastState.state.workspaceId,'');
-  await pane.onClose();pane.contentEl.remove();
+  const entries=[...t.files].filter(([path])=>path.includes('摘录-')&&path.endsWith('.md'));
+  assert.equal(entries.length,1);
+  assert.match(entries[0][1].data,/直接写入普通 Markdown/);
+  assert.match(entries[0][1].data,/  - "哲学"/);
+  assert.equal(textarea.value,'');
+  await t.close();
+});
+test('source groups, tag filter, random recall and edit use native components',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const source=[...root.querySelectorAll('.ex-group-trigger')].find(x=>x.textContent==='来源');
+  assert.ok(source);source.click();await wait();
+  assert.ok(renders.some(r=>r.content==='《某书》'));
+  assert.equal(root.querySelectorAll('.ex-group-body').length,1);
+  assert.ok(root.querySelector('.ex-chips button.ex-tag').textContent.includes('#哲学'));
+  clickByLabel(root,'随机回顾');await wait();
+  assert.ok(root.querySelector('.ex-recalled'));
+  clickByLabel(root,'编辑 Markdown');await wait();
+  assert.equal(t.leaf.lastFile.path,t.md.path);
+  clickByLabel(root,'列表选项');
+  const toggle=Menu.last.items.find(i=>i.title==='标签筛选');assert.ok(toggle);toggle.handler();
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,false);
+  await t.close();
 });

@@ -1,77 +1,73 @@
-/* Build smoke: normal Markdown files become cards, no private schema or home file. */
+/* Integration smoke without real Obsidian: file extension, scope, no private collection. */
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 const path = require('node:path');
 class TAbstractFile { constructor(p) { this.path=p; } }
 class TFile extends TAbstractFile {
-  constructor(p) { super(p); this.basename=p.split('/').pop().replace(/\.md$/i,''); this.stat={mtime:100,ctime:50,size:0}; }
+  constructor(p) { super(p); const name=p.split('/').pop(); this.basename=name.replace(/\.[^.]+$/,''); this.extension=name.split('.').pop(); this.stat={mtime:100,ctime:50,size:0}; this.parent={path:p.split('/').slice(0,-1).join('/') || '/'}; }
 }
 class TFolder extends TAbstractFile {}
-class MarkdownRenderChild {
-  constructor(el) { this.containerEl=el; }
-  load() { this.onload?.(); }
-  unload() { this.onunload?.(); }
-  addChild() {}
-  removeChild() {}
-}
-class ItemView { constructor(leaf) { this.leaf=leaf; this.contentEl={empty(){},addClass(){},createEl(){},createDiv(){return {}}}; } async setState(state) {this.state=state;} }
+class FileView { constructor(leaf) { this.leaf=leaf; this.contentEl={empty(){},addClass(){},createDiv(){return {}}}; } }
+class MarkdownRenderChild { constructor(el) { this.containerEl=el; } load(){this.onload?.();} unload(){this.onunload?.();} addChild(){} removeChild(){} }
 class Plugin {
-  async loadData() {return null;} async saveData(s) {this.saved=s;}
-  registerView(k,fn) {this.viewType=k;this.factory=fn;}
-  addSettingTab(){} addCommand(){} registerEvent(){}
+  async loadData(){return null;} async saveData(settings){this.saved=settings;}
+  registerView(type,factory){this.viewType=type;this.viewFactory=factory;}
+  registerExtensions(exts,type){this.extensions={exts,type};}
+  addSettingTab(){} addCommand(command){(this.commands??=[]).push(command);} registerEvent(){}
   addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}
 }
-class PluginSettingTab { constructor(app,plugin) {this.app=app;this.plugin=plugin;} }
+class PluginSettingTab { constructor(app,plugin){this.app=app;this.plugin=plugin;} }
 class Setting {}
-class Notice {constructor(message) {Notice.last=message;} }
-const mocks={
-  TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,Plugin,PluginSettingTab,Setting,Notice,
-  MarkdownRenderer:{render:async()=>{}},setIcon(){},
-  getAllTags(cache) { return [...(cache.tags||[]).map(t=>t.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)]; }
+class Notice { constructor(text){Notice.last=text;} }
+const mocks={TAbstractFile,TFile,TFolder,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice,
+  MarkdownRenderer:{async render(){}},setIcon(){},Menu:class {},
+  getAllTags(cache){return [...(cache.tags||[]).map(x=>x.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)];}
 };
-const original=Module._load;
-Module._load=function(request,parent,isMain){if(request==='obsidian')return mocks;return original.apply(this,arguments);};
-const Excerpts=require(path.resolve(__dirname,'../main.js'));
-Module._load=original;
+const old=Module._load;
+Module._load=function(request,parent,isMain){if(request==='obsidian')return mocks;return old.apply(this,arguments);};
+const Excerpts=require(path.resolve(__dirname,'../main.js')); Module._load=old;
 async function main(){
-  const files=new Map(), events=new Map();
+  const files=new Map(), events=new Map(), opened=[];
   const vault={
     getAbstractFileByPath(p){return files.get(p)?.file||null;},
-    getMarkdownFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},
+    getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},
+    getMarkdownFiles(){return this.getFiles().filter(f=>f.extension==='md');},
     async createFolder(p){files.set(p,{file:new TFolder(p)});},
-    async create(p,data){const file=new TFile(p);file.stat.size=data.length;files.set(p,{file,data});return file;},
+    async create(p,data){if(files.has(p))throw Error('exists');const file=new TFile(p);file.stat.size=data.length;files.set(p,{file,data});return file;},
     async cachedRead(f){return files.get(f.path).data;},
-    async read(f){return files.get(f.path).data;},
     on(type,handler){events.set(type,handler);return {};}
   };
-  const app={
-    vault,
-    metadataCache:{ getFileCache(){return {frontmatter:{tags:['文学']},tags:[]};},on(){return {};}},
-    fileManager:{async processFrontMatter(file,fn){const yaml={tags:['文学']};fn(yaml);}},
-    workspace:{getLeaf(){return {async setViewState(){},async openFile(){}};},async revealLeaf(){}}
-  };
-  const plugin=new Excerpts();plugin.app=app;await plugin.onload();
-  assert.equal(plugin.viewType,'excerpts-collection');
+  const leaf={async openFile(file){opened.push(file.path);},async setViewState() {}};
+  const plugin=new Excerpts();
+  plugin.app={vault,metadataCache:{getFileCache(){return {frontmatter:{tags:['文学']},tags:[]};},on(){return {};}}
+    ,fileManager:{async processFrontMatter(file,change){change({tags:[]});}}
+    ,workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
+  await plugin.onload();
+  assert.deepEqual(plugin.extensions,{exts:['excerpts'],type:'excerpts-home-file'});
   assert.equal(plugin.ribbon.title,'打开摘录首页');
-  const ws=await plugin.createWorkspace('文学','资料/摘录');
-  plugin.ribbon.action();
-  await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(files.has('资料/摘录'));
-  assert.ok(!files.has('资料/摘录/首页.md'));
+  assert.ok(plugin.commands.some(c=>c.id==='open-home'));
+  assert.equal(plugin.settings.defaultHome,'');
+  const home=await plugin.createHome('资料/摘录');
+  assert.equal(home.path,'资料/摘录/首页.excerpts');
+  assert.equal((await plugin.createHome('资料/摘录')).path,home.path);
   assert.ok(!files.has('资料/摘录/Cards'));
+  assert.ok(!files.has('资料/摘录/首页.md'));
+  const ws=plugin.workspaceForHome(home);
   await vault.create('资料/摘录/自然.md','# 自然\n\n普通 Markdown\n\n## 批注\n\n我的想法');
-  await vault.create('资料/摘录/子目录.md','# 子目录');
-  const cards=plugin.repo.list(ws);
-  assert.equal(cards.length,2);
-  assert.deepEqual(cards[0].tags,['文学']);
+  await vault.create('资料/摘录/子目录.md','普通摘录');
+  assert.equal(plugin.repo.list(ws).length,2);
   const parsed=await plugin.repo.read('资料/摘录/自然.md');
-  assert.equal(parsed.title,'自然');
-  assert.equal(parsed.sections[0].name,'批注');
-  await plugin.repo.setFavorite('资料/摘录/自然.md',true);
-  await plugin.repo.setTag('资料/摘录/自然.md','哲学',true);
-  const newFile=await plugin.repo.create(ws);
-  assert.match(newFile.path,/摘录-\d{8}-\d{6}\.md/);
+  assert.equal(parsed.title,'自然');assert.equal(parsed.sections[0].name,'批注');
+  const created=await plugin.repo.create(ws,'新记录', ['哲学']);
+  assert.match(created.path,/摘录-\d{8}-\d{6}\.md/);
+  assert.match(files.get(created.path).data,/tags:\n  - "哲学"/);
+  assert.match(files.get(created.path).data,/新记录/);
   assert.equal(files.get('资料/摘录/自然.md').data,'# 自然\n\n普通 Markdown\n\n## 批注\n\n我的想法');
-  console.log('Markdown-first smoke passed');
+  plugin.ribbon.action(); await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(opened,[home.path]);
+  await plugin.rememberHome(home.path);
+  assert.equal(plugin.settings.defaultHome,home.path);
+  assert.deepEqual(plugin.getHomeFiles().map(x=>x.path),[home.path]);
+  console.log('Markdown-first homepage smoke passed');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
