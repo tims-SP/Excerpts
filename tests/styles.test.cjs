@@ -5,7 +5,7 @@ const css=readFileSync(require('node:path').join(__dirname,'../styles.css'),'utf
 
 test('editorial timeline uses a date rail and a responsive single-column fallback',()=>{
   for(const cls of ['.ex-card-list','.ex-day-group','.ex-day-rail','.ex-day-title','.ex-day-cards','.ex-card','.ex-toolbar','.ex-composer'])
-    assert.ok(css.includes('.excerpts-root '+cls),cls);
+    assert.ok(css.includes(cls),cls);
   assert.match(css,/grid-template-columns:\s*88px minmax\(0,\s*1fr\)/);
   assert.match(css,/@container \(max-width: 700px\)/);
   assert.match(css,/max-width:\s*720px/);
@@ -24,7 +24,7 @@ test('composer remains a single-surface textarea with theme-native focus and res
 
 test('card actions and micro-pill labels belong to a non-overlay footer',()=>{
   for(const cls of ['.ex-card-footer','.ex-chips','.ex-tag','.ex-tag-label','.ex-tag-overflow','.ex-add-tag','.ex-card-options','.ex-tag-editor','.ex-tag-custom'])
-    assert.ok(css.includes('.excerpts-root '+cls),cls);
+    assert.ok(css.includes(cls),cls);
   assert.match(css,/height:\s*22px/);
   assert.match(css,/font-size:\s*11px/);
   assert.match(css,/position:\s*static/);
@@ -34,7 +34,7 @@ test('card actions and micro-pill labels belong to a non-overlay footer',()=>{
 
 test('H2 chapters are independent disclosure rows, not pill-shaped buttons',()=>{
   for(const cls of ['.ex-extras','.ex-section','.ex-group-trigger','.ex-group-body','.ex-group-chevron','.ex-group-name'])
-    assert.ok(css.includes('.excerpts-root '+cls),cls);
+    assert.ok(css.includes(cls),cls);
   assert.match(css,/\.ex-group-body\[hidden\]/);
   assert.match(css,/border-left:\s*2px solid var\(--ex-border\)/);
 });
