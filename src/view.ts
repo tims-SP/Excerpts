@@ -356,8 +356,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     actions.append(iconButton("pencil", "编辑摘录", () => void this.startEdit(item, card).catch(notify)));
     const more = iconButton("ellipsis", "更多摘录操作", () => {
       const menu = new Menu();
-      menu.addItem(entry => entry.setTitle("打开原始 Markdown").onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
-      menu.addItem(entry => entry.setTitle("编辑 Markdown 添加章节").onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
+      menu.addItem(entry => entry.setTitle("打开原始 Markdown（添加章节）")
+        .onClick(() => void this.plugin.openMarkdown(item.path).catch(notify)));
       menu.addItem(entry => entry.setTitle("复制正文").onClick(() => {
         void this.repo.read(item.path).then(parsed => {
           if (!navigator.clipboard?.writeText) throw new Error("当前环境不支持剪贴板");
@@ -451,9 +451,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       card.querySelector<HTMLTextAreaElement>(".ex-editor-text")?.focus();
       return;
     }
-    if (this.editor && this.editorDirty()) {
-      new Notice("请先保存或取消当前摘录的修改");
-      return;
+    if (this.editor) {
+      if (this.editorDirty()) {
+        new Notice("请先保存或取消当前摘录的修改");
+        return;
+      }
+      const previous = this.items.find(value => value.path === this.editor!.path);
+      const previousCard = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+        .find(value => value.dataset.path === this.editor!.path);
+      if (previous && previousCard) this.finishEdit(previous, previousCard);
+      else this.editor = null;
     }
     const raw = await this.repo.readSource(item.path);
     if (this.disposed || !card.isConnected) return;
@@ -561,8 +568,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (session.caret) textArea.setSelectionRange(session.caret[0], session.caret[1]);
     } else if (session.focus === "tags") {
       picker.setExpanded(true);
-      session.focus = undefined;
     }
+    session.focus = undefined;
   }
   private async toggleFavorite(item: CardIndex): Promise<void> {
     await this.repo.setFavorite(item.path, !item.favorite);
