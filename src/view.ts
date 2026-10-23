@@ -312,7 +312,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else this.enqueue(() => this.hydrate(item, card, token));
     }
     if (focusedTag) {
-      const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")].find(el => el.dataset.path === focusedTag);
+      const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")).find(el => el.dataset.path === focusedTag);
       card?.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
     }
     if (visible.length > this.pageSize) this.listEl.append(button(
@@ -474,7 +474,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.tagInputs.delete(item.path);
     this.showSuggestions();
     this.renderTagsFilter();
-    const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+    const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
       .find(el => el.dataset.path === item.path);
     const mount = card?.querySelector<HTMLElement>(".ex-chips");
     if (mount) {
