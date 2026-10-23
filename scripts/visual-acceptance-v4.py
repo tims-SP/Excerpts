@@ -93,6 +93,7 @@ with sync_playwright() as p:
         editor.wait_for(state="visible")
         area = editor.locator(".ex-editor-text")
         assert area.bounding_box()["height"] <= 270, label
+        assert area.evaluate("(e) => e.scrollTop") <= 1, (label, "editor must open at first Markdown line")
         assert editor.locator(".ex-editor-label").count() == 0, label
         assert editor.locator(".ex-tag-picker").is_hidden(), label
         snapshot("editor")
