@@ -76,7 +76,7 @@ export default class ExcerptsPlugin extends Plugin {
     if (!(home instanceof TFile)) throw new Error("新路径没有有效首页，请通过 Obsidian 文件管理器移动整个工作区文件夹");
     const source = await this.app.vault.cachedRead(home);
     // Require a real excerpts codeblock, not a coincidental string in a note.
-    const bindings = [...source.matchAll(/```excerpts[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n```/g)];
+    const bindings = [...source.matchAll(/```excerpts[ \t]*\r?\n([\s\S]*?)\r?\n```/g)];
     if (!bindings.some(match => match[1].trim() === `workspace: ${ws.id}`)) {
       throw new Error("目标首页未绑定当前工作区 ID");
     }
