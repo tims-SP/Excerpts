@@ -22,7 +22,7 @@ test('card edit and tag components have scoped styles',()=>{
 });
 
 test('regression: expanded tag input never inherits vertical 100-percent flex basis',()=>{
-  assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+0\s+auto;/);
+  assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+1\s+auto;/);
   assert.match(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*height:\s*44px;/);
   assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom\s*\{[^}]*flex:\s*0\s+0\s+100%/);
   assert.match(css,/\.excerpts-root \.ex-card\.ex-card-no-tags > \.ex-chips\s*\{[^}]*display:\s*none/);
