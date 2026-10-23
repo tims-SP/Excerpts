@@ -16,7 +16,10 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True,
         executable_path=executable or None,
         args=["--no-sandbox"] if executable else [])
-    cases = [(320, "light", False), (390, "light", False), (390, "dark", False),
+    cases = [(240, "light", False), (240, "dark", False),
+             (280, "light", False), (280, "dark", False),
+             (320, "light", False), (320, "dark", False),
+             (390, "light", False), (390, "dark", False),
              (768, "light", False), (768, "dark", False), (1280, "light", False),
              (1280, "dark", False), (1280, "warm", True)]
     for width, mode, split in cases:
@@ -86,6 +89,47 @@ with sync_playwright() as p:
         assert card.locator(".ex-group-title").count() == 0, label
         card.locator(".ex-group-trigger").nth(1).click()
         assert card.locator(".ex-group-body").count() == 2, label
+        def assert_card_bounds(stage):
+            return page.evaluate("""() => {
+                const card = document.querySelector('.ex-card[data-path="摘录/文学.md"]');
+                const bounds = selector => { const r=card.querySelector(selector)?.getBoundingClientRect();
+                  return r ? {left:r.left,right:r.right,top:r.top,bottom:r.bottom} : null; };
+                const outer=card.getBoundingClientRect();
+                const reading= !card.classList.contains('ex-is-editing');
+                const a=reading ? bounds('.ex-card-actions') : bounds('.ex-edit-actions');
+                const body=reading ? bounds('.ex-quote') : bounds('.ex-editor-text');
+                const last=reading ? bounds('.ex-extras') : bounds('.ex-tag-picker-control');
+                const footer= reading ? bounds('.ex-card-footer') : bounds('.ex-edit-actions');
+                const pencil=reading ? bounds('button[aria-label="编辑摘录"]') : null;
+                const controls = [...card.querySelectorAll(reading ? '.ex-card-actions button' : '.ex-edit-actions button')]
+                  .map(el => { const r=el.getBoundingClientRect();
+                    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}; });
+                return {reading,outer:{left:outer.left,right:outer.right,top:outer.top,bottom:outer.bottom},a,body,last,footer,pencil,controls,
+                  position:getComputedStyle(card.querySelector(reading ? '.ex-card-footer' : '.ex-edit-actions')).position};
+            }""")
+        def verify_no_overlap(stage):
+            r = assert_card_bounds(stage)
+            assert r["position"] == "static", (label, stage, "action bar must not be sticky", r)
+            assert r["footer"]["top"] >= r["body"]["bottom"] - 1, (label, stage, "actions cover text", r)
+            assert r["footer"]["top"] >= r["last"]["bottom"] - 1, (label, stage, "actions cover last section", r)
+            assert r["a"]["right"] <= r["outer"]["right"] - 8, (label, stage, "actions overflow card", r)
+            assert r["a"]["left"] >= r["outer"]["left"] + 8, (label, stage, "actions start outside card", r)
+            assert r["footer"]["bottom"] <= r["outer"]["bottom"] - 7, (label, stage, "footer below card", r)
+            for control in r["controls"]:
+                assert control["top"] >= r["body"]["bottom"] - 1, (label, stage, "button covers body", r)
+                assert control["left"] >= r["outer"]["left"] + 7, (label, stage, "button left overflow", r)
+                assert control["right"] <= r["outer"]["right"] - 7, (label, stage, "button right overflow", r)
+            return len(r["controls"]) + 6
+        checks += verify_no_overlap("h2-expanded")
+        card.locator('.ex-quote').evaluate("""element => {
+          const media=document.createElement('div');media.className='qa-stress';
+          media.innerText='长篇中文摘录：这些正文不可被编辑按钮覆盖。'.repeat(80);
+          const img=document.createElement('div');img.className='qa-media';
+          img.style.cssText='width:100%;height:120px;background:var(--background-modifier-hover)';
+          media.append(img);element.append(media);
+        }""")
+        checks += verify_no_overlap("long-text-and-media")
+        card.locator('.qa-stress').evaluate('e => e.remove()')
         snapshot("h2")
         checks += 3
         card.locator('button[aria-label="编辑摘录"]').click()
@@ -100,6 +144,10 @@ with sync_playwright() as p:
         checks += 3
         editor.locator(".ex-tag-add").click()
         assert editor.locator(".ex-tag-picker").is_visible(), label
+        checks += verify_no_overlap("inline-editor")
+        area.fill("长 Markdown 编辑。" * 150)
+        area.evaluate("el => el.scrollTop = el.scrollHeight")
+        checks += verify_no_overlap("long-inline-editor-scrolled")
         snapshot("editor-tags")
         checks += 1
         page.evaluate("window.__qaEditor = document.querySelector('.ex-editor-text')")
