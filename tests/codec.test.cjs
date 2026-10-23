@@ -115,3 +115,27 @@ test('non-round-trippable quote whitespace is read-only',()=>{
     assert.throws(()=>patchEntry(raw,parsed,parsed));
   }
 });
+
+test('a tagless entry accepts new extras without duplicating YAML tags', () => {
+  const entry = { ...example(), tags: [], extras: [] };
+  const raw = serializeEntry(entry);
+  const current = parseEntry(raw);
+  const next = { ...current, extras: [{ id: 'x_new', kind: 'source', title: '出处', content: '第一章' }] };
+  const saved = patchEntry(raw, current, next);
+  assert.equal((saved.match(/^tags:/gm) || []).length, 1);
+  assert.equal(parseEntry(saved).readOnly, undefined);
+  assert.deepEqual(parseEntry(saved).extras, next.extras);
+  const edited = patchEntry(saved, parseEntry(saved), { ...parseEntry(saved), tags: ['新标签'] });
+  assert.equal((edited.match(/^tags:/gm) || []).length, 1);
+  assert.deepEqual(parseEntry(edited).tags, ['新标签']);
+  assert.deepEqual(parseEntry(edited).extras, next.extras);
+});
+test('tag updates preserve custom YAML following an empty tag key', () => {
+  const entry = { ...example(), tags: [], extras: [] };
+  const raw = serializeEntry(entry).replace('tags:\n---', 'tags:\ncustom_after: "keep"\n---');
+  const current = parseEntry(raw);
+  const saved = patchEntry(raw, current, { ...current, tags: ['A'] });
+  assert.match(saved, /^custom_after: "keep"$/m);
+  assert.equal((saved.match(/^tags:/gm) || []).length, 1);
+  assert.deepEqual(parseEntry(saved).tags, ['A']);
+});
