@@ -389,6 +389,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.redrawCard(item, mount.closest<HTMLElement>(".ex-card")!);
       }, "ex-group-trigger" + (active ? " ex-selected" : ""));
       chip.setAttribute("aria-expanded", String(active));
+      chip.setAttribute("aria-label", (active ? "收起" : "展开") + "分组：" + section.name);
+      const chevron = node("span", "ex-group-chevron");
+      setIcon(chevron, active ? "chevron-down" : "chevron-right");
+      chip.prepend(chevron);
       summary.append(chip);
     });
     mount.append(summary);
