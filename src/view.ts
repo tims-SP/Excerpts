@@ -28,6 +28,7 @@ function errorMessage(e: unknown): string { return e instanceof Error ? e.messag
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: Entry[] = [];
   private searchText = "";
+  private recalledId: string | null = null;
   private tagFilter = "";
   private expanded = new Set<string>();
   private editing: string | null = null;
@@ -65,6 +66,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const brand = node("div", "ex-brand");
     brand.append(node("div", "ex-eyebrow", "EXCERPTS / COLLECTION"), node("h2", "ex-title", this.workspace.name));
     const actions = node("div", "ex-actions");
+    actions.append(button("随机回顾", () => this.recallRandom(), "ex-btn-quiet"));
     actions.append(button("刷新", () => void this.reload(), "ex-btn-quiet"));
     header.append(brand, actions); root.append(header);
     const form = node("div", "ex-composer");
@@ -92,6 +94,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toolbar.append(search, this.countEl); root.append(toolbar);
     this.listEl = node("div", "ex-card-list"); root.append(this.listEl);
   }
+  private recallRandom(): void {
+    const visible = this.visibleItems();
+    if (!visible.length) { new Notice("当前筛选下没有可以回顾的摘录"); return; }
+    const alternatives = visible.filter(item => item.id !== this.recalledId);
+    const pool = alternatives.length ? alternatives : visible;
+    this.recalledId = pool[Math.floor(Math.random() * pool.length)].id;
+    this.drawCards();
+    this.listEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   private visibleItems(): Entry[] {
     const q = this.searchText;
     const items = this.items.filter(item => {
@@ -100,7 +111,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       return [item.text, ...item.tags, ...item.extras.flatMap(x => [x.title, x.content])].join("\n").toLocaleLowerCase().includes(q);
     });
     const direction = this.plugin.settings.defaultSort === "oldest" ? 1 : -1;
-    return items.sort((a,b) => direction * a.created.localeCompare(b.created));
+    items.sort((a,b) => direction * a.created.localeCompare(b.created));
+    const recalled = items.findIndex(item => item.id === this.recalledId);
+    if (recalled > 0) items.unshift(items.splice(recalled, 1)[0]);
+    return items;
   }
   private drawCards(): void {
     const wrap = this.listEl;
@@ -123,7 +137,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private pageSize = 40;
   private card(entry: Entry): HTMLElement {
     const card = node("article", "ex-card");
+    if (entry.id === this.recalledId) card.classList.add("ex-recalled");
     const top = node("div", "ex-card-top");
+    if (entry.id === this.recalledId) top.append(node("span", "ex-recall-hint", "随机回顾"));
     top.append(node("span", "ex-date", dateLabel(entry.created)));
     const tools = node("div", "ex-card-actions");
     tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
