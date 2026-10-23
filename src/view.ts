@@ -414,6 +414,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.redrawCard(item, mount.closest<HTMLElement>(".ex-card")!);
       }, "ex-group-trigger" + (active ? " ex-selected" : ""));
       chip.setAttribute("aria-expanded", String(active));
+      const chevron = node("span", "ex-chevron");
+      setIcon(chevron, active ? "chevron-down" : "chevron-right");
+      chip.prepend(chevron);
       summary.append(chip);
     }
     mount.append(summary);
