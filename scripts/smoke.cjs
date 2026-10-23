@@ -55,6 +55,13 @@ async function test(){
   const loaded=(await repo.list(ws))[0];
   assert.equal(loaded.extras[0].content,'《测试》');
   assert.equal(loaded.tags[0],'诗歌');
+  // Simulate an external edit that leaves the YAML timestamp unchanged.
+  const externalRaw=files.get(item.path).data.replace('《测试》','《外部修订》');
+  const previousRaw=files.get(item.path).data;
+  files.get(item.path).data=externalRaw;
+  await assert.rejects(()=>repo.update(saved,prev=>({...prev,favorite:false})),/刷新/);
+  assert.equal(files.get(item.path).data,externalRaw);
+  files.get(item.path).data=previousRaw;
   // Editing must not rewrite a damaged record, even when the cached Entry is valid.
   const goodRaw=files.get(item.path).data;
   const damagedRaw=goodRaw.replace('<!-- excerpts:extras:end -->','');
