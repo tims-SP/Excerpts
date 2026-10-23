@@ -1,5 +1,15 @@
 # Excerpts development roadmap
 
+## beta.10 — v3 component alignment
+
+- Preserve the `.excerpts` FileView and normal Markdown notes.
+- Render all H2 occurrences as individual lightweight collapsible groups.
+- Restore in-card Markdown editing and a shared on-demand capsule tag picker.
+- Write Markdown text and YAML tag properties in one conflict-checked Vault.process call.
+- Refresh the mocked FileView screenshot/layout harness and regression coverage.
+- Remaining: real Obsidian desktop/mobile and complex-reference verification.
+
+
 ## beta.9 — Direct .excerpts file homepage
 
 - Registered `.excerpts` as a native Obsidian FileView entrypoint.
