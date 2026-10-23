@@ -4,6 +4,7 @@ export function normalizeTags(tags: Iterable<string>): string[] {
 }
 export interface TagPicker {
   element: HTMLElement;
+  triggerSlot: HTMLElement;
   input: HTMLInputElement;
   getTags(): string[];
   setTags(tags: string[]): void;
@@ -20,6 +21,8 @@ export function createTagPicker(
   let composing = false;
   const element = document.createElement("div");
   element.className = "ex-tag-picker-control";
+  const triggerSlot = document.createElement("div");
+  triggerSlot.className = "ex-tag-trigger-slot";
   const pills = document.createElement("div");
   pills.className = "ex-tag-pills";
   const picker = document.createElement("div");
@@ -31,6 +34,9 @@ export function createTagPicker(
   input.placeholder = "搜索或新建标签…";
   input.setAttribute("aria-label", "搜索或新建标签");
   input.autocomplete = "off";
+  const feedback = document.createElement("span");
+  feedback.className = "ex-tag-feedback";
+  feedback.setAttribute("role", "status");
   const list = document.createElement("div");
   list.className = "ex-tag-suggestions";
   const done = document.createElement("button");
@@ -47,7 +53,12 @@ export function createTagPicker(
   };
   const add = (raw: string) => {
     const value = raw.trim().replace(/^#/, "");
-    if (!value || disabled || /\s/.test(value)) return;
+    if (!value || disabled) return;
+    if (/\s/.test(value)) {
+      feedback.textContent = "标签不能包含空格";
+      input.focus(); return;
+    }
+    feedback.textContent = "";
     if (!selected.includes(value)) { selected.push(value); changed(); }
     input.value = ""; render(); input.focus();
   };
@@ -66,6 +77,7 @@ export function createTagPicker(
     }
     list.replaceChildren();
     const q = input.value.trim().replace(/^#/, "").toLocaleLowerCase();
+    feedback.textContent = /\s/.test(q) ? "标签不能包含空格" : "";
     const counts = new Map<string, number>();
     for (const tag of available()) counts.set(tag, (counts.get(tag) || 0) + 1);
     const matches = [...counts].filter(([tag]) =>
@@ -75,12 +87,12 @@ export function createTagPicker(
     for (const [tag] of matches) list.append(makeButton("#" + tag, "添加已有标签：" + tag,
       () => add(tag), "ex-tag-suggestion"));
     const candidate = input.value.trim().replace(/^#/, "");
-    if (candidate && !counts.has(candidate) && !selected.includes(candidate))
+    if (candidate && !/\s/.test(candidate) && !counts.has(candidate) && !selected.includes(candidate))
       list.append(makeButton("新建标签「" + candidate + "」", "新建标签：" + candidate,
         () => add(candidate), "ex-tag-create"));
   };
   const setExpanded = (open: boolean) => {
-    if (!open) { input.value = ""; render(); }
+    if (!open) { input.value = ""; feedback.textContent = ""; render(); }
     picker.hidden = !open;
     onExpanded?.(open);
     if (open) { render(); input.focus(); }
@@ -110,11 +122,11 @@ export function createTagPicker(
     }
   });
   done.addEventListener("click", () => { setExpanded(false); closedFocus?.()?.focus(); });
-  picker.append(input, list, done);
-  element.append(pills, picker);
+  picker.append(input, feedback, list, done);
+  element.append(pills, triggerSlot, picker);
   render();
   return {
-    element, input,
+    element, triggerSlot, input,
     getTags: () => [...selected],
     setTags: tags => { selected = normalizeTags(tags); render(); },
     setExpanded, isExpanded: () => !picker.hidden,
