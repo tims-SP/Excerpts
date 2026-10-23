@@ -22,7 +22,7 @@ export interface CardIndex {
   inlineTags: string[];
   favorite: boolean;
 }
-export interface MarkdownSection { name: string; markdown: string; }
+export interface MarkdownSection { id: string; name: string; markdown: string; }
 export interface ParsedMarkdown { title: string; body: string; sections: MarkdownSection[]; }
 export function validateRelativePath(input: string): string {
   const path = input.trim().replace(/\\/g, "/").replace(/\/+$/, "");
