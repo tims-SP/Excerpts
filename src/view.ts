@@ -24,9 +24,21 @@ function iconButton(icon: string, label: string, click: () => void, cls = ""): H
   return result;
 }
 function notify(error: unknown): void { new Notice(error instanceof Error ? error.message : String(error)); }
-function dateLabel(timestamp: number): string {
+function dayKey(timestamp: number): string {
   const date = new Date(timestamp || Date.now());
-  return date.toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" });
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0")].join("-");
+}
+function dayLabel(timestamp: number): { title: string; subtitle: string } {
+  const date = new Date(timestamp || Date.now());
+  const today = new Date();
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(today) - midnight(date)) / 86400000);
+  const title = days === 0 ? "今天" : days === 1 ? "昨天" :
+    date.getFullYear() === today.getFullYear() ?
+      date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" }) :
+      date.toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" });
+  return { title, subtitle: date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) };
 }
 
 /** Minimal Markdown-based excerpt homepage. */
@@ -53,19 +65,30 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reading = 0;
   private markdownChildren = new Map<string, MarkdownRenderChild[]>();
   private sectionsShown = new Map<string, Set<number>>();
+  private expandedBodies = new Set<string>();
+  private expandedTagRows = new Set<string>();
+  private tagResizeObserver: ResizeObserver | null = null;
   private openTagEditors = new Set<string>();
   private tagInputs = new Map<string, string>();
   private pendingTags = new Set<string>();
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
     private repo: EntryRepository) { super(container); }
-  onload(): void { this.build(); void this.reload(); }
+  onload(): void {
+    this.build();
+    if (typeof ResizeObserver !== "undefined") {
+      this.tagResizeObserver = new ResizeObserver(() => this.reflowVisibleTags());
+      this.tagResizeObserver.observe(this.containerEl);
+    }
+    void this.reload();
+  }
   onunload(): void {
     this.disposed = true;
     this.refreshToken++; this.renderToken++; this.searchToken++;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
+    this.tagResizeObserver?.disconnect();
     this.unmountMarkdown();
     this.queue = [];
   }
@@ -322,12 +345,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private drawCards(): void {
     const token = ++this.renderToken;
-    this.observer?.disconnect(); this.observer = null;
+    this.observer?.disconnect();
+    this.observer = null;
     this.queue = [];
     this.unmountMarkdown();
-    const activeTagInput = document.activeElement as HTMLElement | null;
-    const focusedTag = activeTagInput?.classList.contains("ex-tag-custom")
-      ? activeTagInput.closest<HTMLElement>(".ex-card")?.dataset.path : undefined;
     this.listEl.replaceChildren();
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
@@ -336,7 +357,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
       empty.append(node("p", "ex-empty-description", this.items.length ?
         "试试其他关键词，或清除筛选条件。" : "写下喜欢的句子，未来的某一天再读到它。"));
-      this.listEl.append(empty); return;
+      this.listEl.append(empty);
+      return;
     }
     if (typeof IntersectionObserver !== "undefined") {
       this.observer = new IntersectionObserver(entries => {
@@ -344,24 +366,42 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           if (!entry.isIntersecting) continue;
           this.observer?.unobserve(entry.target);
           const card = entry.target as HTMLElement;
-          const item = visible.find(candidate => candidate.path === card.dataset.path);
+          const item = this.items.find(candidate => candidate.path === card.dataset.path);
           if (item) this.enqueue(() => this.hydrate(item, card, token));
         }
       }, { rootMargin: "350px 0px" });
     }
-    for (const item of visible.slice(0, this.pageSize)) {
+    this.appendPage(visible, 0, Math.min(this.pageSize, visible.length), token);
+  }
+  private appendPage(visible: CardIndex[], start: number, end: number, token: number): void {
+    if (this.disposed || token !== this.renderToken) return;
+    this.listEl.querySelector(".ex-loadmore")?.remove();
+    let group = this.listEl.lastElementChild as HTMLElement | null;
+    for (const item of visible.slice(start, end)) {
+      const key = dayKey(item.ctime);
+      if (!group || group.dataset.day !== key) {
+        group = node("section", "ex-day-group");
+        group.dataset.day = key;
+        const label = dayLabel(item.ctime);
+        const rail = node("header", "ex-day-rail");
+        rail.append(node("h4", "ex-day-title", label.title), node("span", "ex-day-subtitle", label.subtitle));
+        const cards = node("div", "ex-day-cards");
+        group.append(rail, cards);
+        this.listEl.append(group);
+      }
       const card = this.createCard(item);
-      this.listEl.append(card);
+      group.querySelector(".ex-day-cards")!.append(card);
       if (this.observer) this.observer.observe(card);
       else this.enqueue(() => this.hydrate(item, card, token));
     }
-    if (focusedTag) {
-      const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")).find(el => el.dataset.path === focusedTag);
-      card?.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
+    this.reflowVisibleTags();
+    if (end < visible.length) {
+      const load = button("加载更多 · 剩余 " + (visible.length - end) + " 条", () => {
+        this.pageSize = end + 40;
+        this.appendPage(visible, end, Math.min(end + 40, visible.length), token);
+      }, "ex-loadmore");
+      this.listEl.append(load);
     }
-    if (visible.length > this.pageSize) this.listEl.append(button(
-      "继续显示（剩余 " + (visible.length - this.pageSize) + " 条）",
-      () => { this.pageSize += 40; this.drawCards(); }, "ex-loadmore"));
   }
   private enqueue(task: () => Promise<void>): void { this.queue.push(task); this.pump(); }
   private pump(): void {
@@ -376,31 +416,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private createCard(item: CardIndex): HTMLElement {
     const card = node("article", "ex-card");
     card.dataset.path = item.path;
-    card.append(node("div", "ex-quote ex-markdown", ""));
+    card.append(node("div", "ex-quote ex-markdown"));
+    card.append(node("div", "ex-extras"));
+    const editor = node("div", "ex-tag-editor");
+    editor.hidden = true;
+    card.append(editor);
+    const footer = node("div", "ex-card-footer");
     const tags = node("div", "ex-chips");
-    this.renderTags(tags, item, this.openTagEditors.has(item.path));
-    card.append(tags);
-    const groups = node("div", "ex-extras");
-    card.append(groups);
-    const footer = node("div", "ex-card-top ex-card-footer");
-    const info = node("div", "ex-card-meta");
-    const date = node("time", "ex-date", dateLabel(item.ctime));
-    date.dateTime = new Date(item.ctime).toISOString();
-    info.append(date);
-    footer.append(info);
+    footer.append(tags);
     const actions = node("div", "ex-card-actions");
-    const footerTag = button("＋ 标签", () => {
-      tags.querySelector<HTMLButtonElement>(".ex-add-tag")?.click();
-    }, "ex-footer-tag");
-    footerTag.setAttribute("aria-label", "添加标签");
-    actions.append(footerTag);
     const options = iconButton("ellipsis", "卡片选项", () =>
       void this.showCardMenu(item, options).catch(notify), "ex-card-options");
     options.setAttribute("aria-haspopup", "menu");
     actions.append(options);
     footer.append(actions);
     card.append(footer);
-    card.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
+    this.renderTags(tags, item, this.openTagEditors.has(item.path));
     return card;
   }
   private async showCardMenu(item: CardIndex, anchor: HTMLButtonElement): Promise<void> {
@@ -436,10 +467,26 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
     body.replaceChildren();
-    // Keep the original H1 unobtrusive. The basename is never forced above the quote.
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
-    if (parsed.body) this.renderMarkdown(body, parsed.body, item.path);
-    if (!parsed.body && !parsed.title && !parsed.sections.length) body.append(node("span", "ex-empty-card", "（空白摘录）"));
+    const content = node("div", "ex-content-viewport");
+    const plain = !/(?:!\[|\[\[|\[[^\]]+\]\(|^\s*(?:>|[-*+]\s|\d+\.\s|#{1,6}\s|`{3}|~{3}|\|)|<\w+)/m.test(parsed.body);
+    const eligible = plain && parsed.body.length > 280;
+    if (eligible && !this.expandedBodies.has(item.path)) content.classList.add("ex-content-clamped");
+    body.append(content);
+    if (parsed.body) this.renderMarkdown(content, parsed.body, item.path);
+    if (!parsed.body && !parsed.title && !parsed.sections.length)
+      body.append(node("span", "ex-empty-card", "（空白摘录）"));
+    if (eligible) {
+      const expand = button(this.expandedBodies.has(item.path) ? "收起正文" : "展开全文", () => {
+        const expanded = content.classList.toggle("ex-content-clamped");
+        if (expanded) this.expandedBodies.delete(item.path);
+        else this.expandedBodies.add(item.path);
+        expand.textContent = expanded ? "展开全文" : "收起正文";
+        expand.setAttribute("aria-expanded", String(!expanded));
+      }, "ex-expand-body");
+      expand.setAttribute("aria-expanded", String(!content.classList.contains("ex-content-clamped")));
+      body.append(expand);
+    }
     this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
   }
   private renderMarkdown(container: HTMLElement, markdown: string, path: string): void {
@@ -456,38 +503,35 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     mount.replaceChildren();
     if (!parsed.sections.length) return;
-    const selected = this.sectionsShown.get(item.path) ?? new Set<number>();
-    const summary = node("div", "ex-group-summary");
+    const shown = this.sectionsShown.get(item.path) ?? new Set<number>();
     parsed.sections.forEach((section, index) => {
-      const active = selected.has(index);
-      const chip = button(section.name, () => {
-        if (selected.has(index)) selected.delete(index); else selected.add(index);
-        this.sectionsShown.set(item.path, selected);
-        this.redrawCard(item, mount.closest<HTMLElement>(".ex-card")!);
-      }, "ex-group-trigger" + (active ? " ex-selected" : ""));
-      chip.setAttribute("aria-expanded", String(active));
-      chip.setAttribute("aria-label", (active ? "收起" : "展开") + "分组：" + section.name);
+      const wrapper = node("section", "ex-section");
+      const expanded = shown.has(index);
+      const trigger = button("", () => {
+        const opened = region.hidden;
+        region.hidden = !opened;
+        trigger.setAttribute("aria-expanded", String(opened));
+        trigger.querySelector(".ex-group-chevron")?.replaceChildren();
+        setIcon(trigger.querySelector(".ex-group-chevron") as HTMLElement, opened ? "chevron-down" : "chevron-right");
+        if (opened) {
+          shown.add(index);
+          if (!region.childElementCount && section.markdown) this.renderMarkdown(region, section.markdown, item.path);
+        } else shown.delete(index);
+        this.sectionsShown.set(item.path, shown);
+      }, "ex-group-trigger");
+      trigger.setAttribute("aria-expanded", String(expanded));
+      trigger.setAttribute("aria-label", (expanded ? "收起" : "展开") + "分组：" + section.name);
       const chevron = node("span", "ex-group-chevron");
-      setIcon(chevron, active ? "chevron-down" : "chevron-right");
-      chip.prepend(chevron);
-      summary.append(chip);
-    });
-    mount.append(summary);
-    parsed.sections.forEach((section, index) => {
-      if (!selected.has(index)) return;
-      const region = node("section", "ex-group-body");
-      region.append(node("h4", "ex-group-title", section.name));
-      if (section.markdown) this.renderMarkdown(region, section.markdown, item.path);
-      mount.append(region);
+      setIcon(chevron, expanded ? "chevron-down" : "chevron-right");
+      trigger.append(chevron, node("span", "ex-group-name", section.name));
+      const region = node("div", "ex-group-body");
+      region.hidden = !expanded;
+      if (expanded && section.markdown) this.renderMarkdown(region, section.markdown, item.path);
+      wrapper.append(trigger, region);
+      mount.append(wrapper);
     });
   }
-  private redrawCard(item: CardIndex, card: HTMLElement): void {
-    this.unmountMarkdown(item.path);
-    void this.repo.read(item.path).then(parsed => {
-      if (this.disposed || !card.isConnected) return;
-      this.renderContent(card, item, parsed);
-    }).catch(notify);
-  }
+
   /** Identical search/select/create semantics for quick capture and card tags. */
   private paintTagChoices(input: HTMLInputElement, mount: HTMLElement,
     selected: ReadonlySet<string>, toggle: (tag: string, add: boolean) => void): void {
@@ -512,61 +556,114 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();
+    const card = mount.closest<HTMLElement>(".ex-card");
+    const editor = card?.querySelector<HTMLElement>(".ex-tag-editor");
     mount.classList.toggle("ex-tags-empty", !item.tags.length);
+    mount.classList.toggle("ex-tags-editing", editorOpen);
     for (const tag of item.tags) {
       const pill = button("#" + tag + (editorOpen ? " ×" : ""), () => {
-        if (editorOpen) {
-          void this.changeTag(item, tag, false).catch(notify);
-        } else {
+        if (editorOpen) void this.changeTag(item, tag, false).catch(notify);
+        else {
           this.tagFilter = this.tagFilter === tag ? "" : tag;
+          this.pageSize = 40;
           this.renderTagsFilter(); this.drawCards();
         }
-      }, "ex-tag" + (editorOpen ? " ex-tag-remove" : ""));
+      }, "ex-tag");
       pill.setAttribute("aria-label", (editorOpen ? "移除标签：" : "筛选标签：") + tag);
       pill.setAttribute("aria-pressed", String(!editorOpen && this.tagFilter === tag));
+      if (!editorOpen && this.tagFilter === tag) pill.classList.add("ex-selected");
       mount.append(pill);
     }
-    const editor = node("div", "ex-tag-editor");
-    editor.hidden = !editorOpen;
+    if (!editorOpen && !this.expandedTagRows.has(item.path)) {
+      const remaining = node("button", "ex-btn ex-tag-overflow");
+      remaining.type = "button";
+      remaining.hidden = true;
+      remaining.addEventListener("click", () => {
+        this.expandedTagRows.add(item.path);
+        this.renderTags(mount, item, false);
+      });
+      mount.append(remaining);
+    }
+    const toggle = button(item.tags.length ? "+" : "＋ 标签", () => {
+      const opened = !this.openTagEditors.has(item.path);
+      if (opened) this.openTagEditors.add(item.path);
+      else this.openTagEditors.delete(item.path);
+      this.renderTags(mount, item, opened);
+      if (opened) editor?.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
+      else toggle.focus();
+    }, "ex-add-tag");
+    toggle.setAttribute("aria-label", "添加标签");
+    toggle.setAttribute("aria-expanded", String(editorOpen));
+    mount.append(toggle);
+    if (editor) this.renderTagEditor(editor, item, editorOpen);
+    if (!editorOpen) this.scheduleTagReflow(mount);
+  }
+  private renderTagEditor(editor: HTMLElement, item: CardIndex, open: boolean): void {
+    editor.replaceChildren();
+    editor.hidden = !open;
+    if (!open) return;
     const input = node("input", "ex-tag-custom");
     input.type = "search";
     input.placeholder = "搜索或创建标签";
     input.value = this.tagInputs.get(item.path) ?? "";
     input.setAttribute("aria-label", "查找或创建标签");
-    const optionRow = node("div", "ex-tag-suggestions");
-    const paintOptions = () => this.paintTagChoices(input, optionRow, new Set(item.tags),
-      (tag, add) => { void this.changeTag(item, tag, add).catch(notify); });
-    input.addEventListener("input", () => {
-      this.tagInputs.set(item.path, input.value);
-      paintOptions();
-    });
+    const options = node("div", "ex-tag-suggestions");
+    const repaint = () => this.paintTagChoices(input, options, new Set(item.tags),
+      (tag, add) => void this.changeTag(item, tag, add).catch(notify));
+    input.addEventListener("input", () => { this.tagInputs.set(item.path, input.value); repaint(); });
     input.addEventListener("keydown", event => {
       if (event.key === "Escape") {
-        event.preventDefault(); toggle.click();
+        event.preventDefault();
+        this.openTagEditors.delete(item.path);
+        const mount = editor.closest(".ex-card")?.querySelector<HTMLElement>(".ex-chips");
+        if (mount) { this.renderTags(mount, item, false); mount.querySelector<HTMLButtonElement>(".ex-add-tag")?.focus(); }
       } else if (event.key === "Enter" && !event.isComposing) {
         event.preventDefault();
-        const value = input.value.trim().replace(/^#/, "");
-        if (value && !item.tags.includes(value))
-          void this.changeTag(item, value, true).catch(notify);
+        const name = input.value.trim().replace(/^#/, "");
+        if (name && !item.tags.includes(name)) void this.changeTag(item, name, true).catch(notify);
       }
     });
-    editor.append(input, optionRow);
-    const toggle = button("＋ 标签", () => {
-      const opened = editor.hidden;
-      if (opened) this.openTagEditors.add(item.path);
-      else this.openTagEditors.delete(item.path);
-      const card = mount.closest<HTMLElement>(".ex-card");
-      const noTags = !item.tags.length && !opened;
-      card?.classList.toggle("ex-card-no-tags", noTags);
-      // Rebuild pills so they switch between filter and remove behavior immediately.
-      this.renderTags(mount, item, opened);
-      if (opened) mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
-      else if (noTags) card?.querySelector<HTMLButtonElement>(".ex-footer-tag")?.focus();
-    }, "ex-add-tag");
-    toggle.setAttribute("aria-expanded", String(editorOpen));
-    mount.append(toggle, editor);
-    paintOptions();
+    editor.append(input, options);
+    repaint();
   }
+  private scheduleTagReflow(mount: HTMLElement): void {
+    const work = () => { if (!this.disposed && mount.isConnected) this.reflowTagRow(mount); };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(work);
+    else setTimeout(work, 0);
+  }
+  private reflowVisibleTags(): void {
+    for (const row of this.listEl.querySelectorAll<HTMLElement>(".ex-chips")) this.reflowTagRow(row);
+  }
+  private reflowTagRow(mount: HTMLElement): void {
+    if (mount.classList.contains("ex-tags-editing")) return;
+    const card = mount.closest<HTMLElement>(".ex-card");
+    if (!card || this.expandedTagRows.has(card.dataset.path ?? "")) return;
+    const pills = [...mount.querySelectorAll<HTMLButtonElement>(".ex-tag")];
+    const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
+    const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
+    if (!overflow || !add || !mount.clientWidth) return;
+    pills.forEach(pill => { pill.hidden = false; });
+    overflow.hidden = true;
+    const width = mount.clientWidth;
+    const gap = 5;
+    const addWidth = add.getBoundingClientRect().width;
+    let used = addWidth;
+    let count = 0;
+    for (let i = 0; i < pills.length; i++) {
+      const pillWidth = Math.min(pills[i].getBoundingClientRect().width, width);
+      const reserve = i < pills.length - 1 ? 38 : 0;
+      if (used + gap + pillWidth + (reserve ? gap + reserve : 0) > width) break;
+      used += gap + pillWidth;
+      count++;
+    }
+    for (let i = count; i < pills.length; i++) pills[i].hidden = true;
+    if (count < pills.length) {
+      overflow.textContent = "+" + (pills.length - count);
+      overflow.setAttribute("aria-label", "展开剩余 " + (pills.length - count) + " 个标签");
+      overflow.hidden = false;
+    }
+  }
+
   private async changeTag(item: CardIndex, tag: string, add: boolean): Promise<void> {
     const value = tag.trim().replace(/^#/, "");
     if (this.pendingTags.has(item.path)) return;
@@ -583,9 +680,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const mount = card?.querySelector<HTMLElement>(".ex-chips");
       if (mount) {
         this.renderTags(mount, item, this.openTagEditors.has(item.path));
-        card?.classList.toggle("ex-card-no-tags", !item.tags.length && !this.openTagEditors.has(item.path));
         if (this.openTagEditors.has(item.path))
-          mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
+          card?.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
       }
     } finally {
       this.pendingTags.delete(item.path);
