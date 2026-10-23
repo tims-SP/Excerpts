@@ -11,8 +11,8 @@ test('regular Markdown needs no dedicated schema or frontmatter', () => {
 });
 test('arbitrary H2 groups, repeated groups and explicit body', () => {
   const doc = parseMarkdown('开头\n\n## 想法\n\nA\n\n## 正文\n\n补充正文\n\n## 想法\n\nB');
-  assert.equal(doc.body,'开头\n\n补充正文');
-  assert.deepEqual(doc.sections,[{name:'想法',markdown:'A\n\nB'}]);
+  assert.equal(doc.body,'开头');
+  assert.deepEqual(doc.sections,[{name:'想法',markdown:'A'},{name:'正文',markdown:'补充正文'},{name:'想法',markdown:'B'}]);
 });
 test('code fences and nested headings are never treated as H2 boundaries', () => {
   const source = '# 标题\n\n'+'~~~md\n## 假标题\n~~~\n\n## 来源\n\n### 第三章\n内容';
@@ -21,11 +21,15 @@ test('code fences and nested headings are never treated as H2 boundaries', () =>
   assert.equal(doc.sections[0].name,'来源');
   assert.match(doc.sections[0].markdown,/### 第三章/);
 });
-test('frontmatter is omitted from display; section-only Markdown still has a body', () => {
+test('frontmatter omitted and first H2 preserved for section-only Markdown', () => {
   const doc = parseMarkdown('---\ntags:\n  - 思考\n---\n\n## 来源\n\n书名\n\n## 批注\n\n说明');
   assert.equal(doc.title,'');
-  assert.equal(doc.body,'书名');
-  assert.equal(doc.sections[0].name,'批注');
+  assert.equal(doc.body,'');
+  assert.deepEqual(doc.sections,[{name:'来源',markdown:'书名'},{name:'批注',markdown:'说明'}]);
+});
+test('duplicated and empty H2 sections stay distinct', () => {
+  const result=parseMarkdown('## 来源\n\n## 来源\n\n后半部分');
+  assert.deepEqual(result.sections,[{name:'来源',markdown:''},{name:'来源',markdown:'后半部分'}]);
 });
 test('heading-free files show raw Markdown body without conversions', () => {
   const source = '> 引用\n\n![[图片.png]]\n\n- [x] 完成';
