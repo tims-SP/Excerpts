@@ -143,10 +143,17 @@
 
 /* Reading surfaces: no floating action over the Markdown content. */
 .excerpts-root .ex-card {
-  min-width: 0; padding: var(--ex-space-5); position: relative;
+  --ex-card-pad: var(--ex-space-5);
+  min-width: 0; padding: var(--ex-card-pad); position: relative;
   overflow-wrap: anywhere; border: 1px solid var(--ex-border);
   background: var(--ex-card-surface); border-radius: var(--ex-radius);
   box-shadow: 0 1px 2px rgba(0,0,0,.025);
+}
+.excerpts-root .ex-card.ex-media-first .ex-content-viewport > .ex-native-markdown > :first-child {
+  margin-inline: calc(-1 * var(--ex-card-pad));
+}
+.excerpts-root .ex-card.ex-media-first .ex-content-viewport > .ex-native-markdown > :first-child :is(img,video) {
+  display: block; max-width: 100%; border-radius: var(--radius-m, 8px);
 }
 .excerpts-root .ex-quote {
   min-width: 0; color: var(--text-normal);
@@ -267,7 +274,7 @@
   .excerpts-root .ex-day-group { grid-template-columns: minmax(0, 1fr); gap: var(--ex-space-2); }
   .excerpts-root .ex-day-rail { padding: 0 2px; flex-direction: row; align-items: baseline; gap: var(--ex-space-2); }
   .excerpts-root .ex-day-cards { width: 100%; max-width: none; }
-  .excerpts-root .ex-card { padding: var(--ex-space-4); }
+  .excerpts-root .ex-card { --ex-card-pad: var(--ex-space-4); }
   .excerpts-root button.ex-loadmore { margin-left: 50%; }
 }
 @container (max-width: 400px) {
