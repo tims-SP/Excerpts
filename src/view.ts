@@ -357,7 +357,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.quoteDrafts.delete(entry.id);
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null;
-    }, "ex-btn-primary"));
+    }), "ex-btn-primary"));
     edit.append(content, tags, actions); card.append(edit);
   }
   private renderExtraGroup(target: HTMLElement, entry: Entry, kind: ExtraKind) {
