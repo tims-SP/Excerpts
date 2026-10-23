@@ -40,3 +40,18 @@ test('tag editor input does not use 100 percent flex basis in column layout',()=
   assert.match(css,/\.excerpts-root \.ex-tag-custom \{ flex: 0 1 auto; width: 100%;/);
   assert.doesNotMatch(css,/\.excerpts-root \.ex-tag-custom \{ flex: 0 0 100%; \}/);
 });
+
+test('single-surface textarea removes rounded inner frames and relies on CSS max-height',()=>{
+  assert.match(css,/\.ex-composer textarea\.ex-compose-text/);
+  assert.match(css,/border-radius:\s*0\s*!important/);
+  assert.match(css,/background-image:\s*none\s*!important/);
+  assert.match(css,/appearance:\s*none/);
+  assert.match(css,/min-height:\s*3\.3em/);
+  assert.match(css,/max-height:\s*min\(42vh,\s*340px\)/);
+  assert.doesNotMatch(css,/single-surface composer: suppress native textarea chrome across themes/);
+});
+test('tag chips and pickers have responsive gaps and no hidden selected row',()=>{
+  assert.match(css,/\.ex-capture-selected\[hidden\]/);
+  assert.match(css,/\.ex-capture-options\s*\{[^}]*flex-wrap:\s*wrap/);
+  assert.match(css,/\.ex-capture-tags\s*\{[^}]*flex-direction:\s*column/);
+});
