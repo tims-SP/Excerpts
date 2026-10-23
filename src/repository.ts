@@ -3,6 +3,8 @@ import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath, validateRelativePa
 import { parseMarkdown } from "./codec";
 import { excerptFileStem, fitFileStem } from "./naming";
 
+const filenameKey = (path: string): string => path.normalize("NFC").toLocaleLowerCase("en-US");
+
 export class EntryRepository {
   private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
   private reservedPaths = new Set<string>();
@@ -99,7 +101,7 @@ export class EntryRepository {
     if (ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
     const base = excerptFileStem(markdown);
     const prefix = ws.rootFolder === "/" ? "" : ws.rootFolder + "/";
-    const occupied = new Set(this.app.vault.getAllLoadedFiles().map(file => file.path.toLocaleLowerCase("en-US")));
+    const occupied = new Set(this.app.vault.getAllLoadedFiles().map(file => filenameKey(file.path)));
     const cleanTags = [...new Set(tags.map(t => t.replace(/^#/, "").trim()).filter(Boolean))];
     const yaml = cleanTags.length ? "---\ntags:\n" + cleanTags.map(tag => "  - " + JSON.stringify(tag)).join("\n") + "\n---\n\n" : "";
     const content = yaml + markdown.trim() + "\n";
@@ -111,7 +113,7 @@ export class EntryRepository {
         "-" + Date.now().toString(36) + "-" + (i - 10000);
       const filename = fitFileStem(base, 30 - Array.from(suffix).length) + suffix + ".md";
       const path = prefix + filename;
-      const key = path.toLocaleLowerCase("en-US");
+      const key = filenameKey(path);
       if (occupied.has(key) || this.reservedPaths.has(key) || this.app.vault.getAbstractFileByPath(path)) continue;
       this.reservedPaths.add(key);
       try {
@@ -119,8 +121,11 @@ export class EntryRepository {
       } catch (error) {
         // Retry only when another writer really created the path, not on unrelated IO errors.
         const conflict = this.app.vault.getAllLoadedFiles()
-          .some(file => file.path.toLocaleLowerCase("en-US") === key);
-        if (!conflict && !this.app.vault.getAbstractFileByPath(path)) throw error;
+          .some(file => filenameKey(file.path) === key);
+        const alreadyExists = error instanceof Error &&
+          (/\b(?:EEXIST|already exists|file exists)\b/i.test(error.message) ||
+            (error as Error & { code?: string }).code === "EEXIST");
+        if (!conflict && !this.app.vault.getAbstractFileByPath(path) && !alreadyExists) throw error;
         occupied.add(key);
       } finally {
         this.reservedPaths.delete(key);
