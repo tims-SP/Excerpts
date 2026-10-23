@@ -629,3 +629,76 @@ test('list actions use one native overflow menu instead of permanent refresh and
     assert.equal(f.renderer.filterOpen, true);
   } finally { await f.close(); }
 });
+
+test('source editor draft survives renderer teardown and can be restored', async () => {
+  const f = await fixture();
+  let next = null;
+  const another = document.createElement('div');
+  try {
+    await f.repo.create(f.workspace, '摘录正文'); await f.renderer.reload();
+    click(f.container, '添加内容');
+    Menu.last.items.find(i => i.title === '来源').action();
+    const editor = f.container.querySelector('.ex-extra-editor');
+    type(editor.querySelector('input'), '《第二版来源》');
+    type(editor.querySelector('textarea'), '页码：第九页');
+    await new Promise(resolve => setTimeout(resolve, 500));
+    f.renderer.onunload();
+    document.body.append(another);
+    f.plugin.processor('workspace: ' + f.workspace.id, another, {
+      sourcePath: '隔离/摘录/首页.md', addChild(child) { next = child; }
+    });
+    assert.ok(next);
+    next.onload();
+    await next.reload();
+    await next.loadDrafts();
+    click(another, '添加内容');
+    Menu.last.items.find(i => i.title === '来源').action();
+    click(another, '恢复上次编辑');
+    const restored = another.querySelector('.ex-extra-editor');
+    assert.equal(restored.querySelector('input').value, '《第二版来源》');
+    assert.equal(restored.querySelector('textarea').value, '页码：第九页');
+    const entries = await f.repo.list(f.workspace);
+    assert.equal(entries[0].extras.length, 0, 'Recovery must not modify the original entry without save');
+  } finally {
+    next?.onunload(); another.remove(); await f.close();
+  }
+});
+
+test('IME composition does not submit entry or extra editors', async () => {
+  const f = await fixture();
+  try {
+    const entry = await f.repo.create(f.workspace, '原文');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    const edit = f.container.querySelector('.ex-entry-editor textarea');
+    type(edit, '新正文');
+    edit.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true }));
+    await new Promise(r => setImmediate(r));
+    assert.equal((await f.repo.list(f.workspace))[0].text, '原文');
+    click(f.container, '取消');
+    click(f.container, '添加内容');
+    Menu.last.items.find(i => i.title === '变种').action();
+    const extra = f.container.querySelector('.ex-extra-editor textarea');
+    type(extra, '变种草稿');
+    extra.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, isComposing: true, bubbles: true }));
+    await new Promise(r => setImmediate(r));
+    assert.equal((await f.repo.list(f.workspace))[0].extras.length, 0);
+  } finally { await f.close(); }
+});
+
+test('editing field retains focus and caret through list refresh', async () => {
+  const f = await fixture();
+  try {
+    await f.repo.create(f.workspace, '初始文本');
+    await f.renderer.reload();
+    click(f.container, '编辑');
+    const textarea = f.container.querySelector('.ex-entry-editor textarea');
+    type(textarea, '中英文 mixed text');
+    textarea.focus(); textarea.setSelectionRange(3, 8);
+    await f.renderer.reload();
+    const restored = f.container.querySelector('.ex-entry-editor textarea');
+    assert.equal(document.activeElement, restored);
+    assert.equal(restored.selectionStart, 3);
+    assert.equal(restored.selectionEnd, 8);
+  } finally { await f.close(); }
+});

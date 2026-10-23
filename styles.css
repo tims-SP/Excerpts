@@ -154,3 +154,36 @@
   .excerpts-root .ex-composer, .excerpts-root .ex-card { border-color: CanvasText; }
   .excerpts-root button:focus-visible { outline: 2px solid Highlight; }
 }
+
+/* Editor design: native input components, editorial layout and no nested dashboard cards. */
+.excerpts-root .ex-editor-heading { color: var(--text-muted); font-size: var(--font-ui-small, 13px); font-weight: 600; letter-spacing: 0; }
+.excerpts-root .ex-entry-editor { background: transparent; border: 0; border-radius: 0; margin: 0; padding: 0; }
+.excerpts-root .ex-extra-editor { background: var(--background-primary); border-color: var(--background-modifier-border); }
+.excerpts-root .ex-edit-panel .ex-actions { padding-top: var(--ex-space-2); }
+
+.excerpts-root .ex-entry-editor .ex-editor-text { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.75; border: 0; border-radius: 0; background: transparent; padding: var(--ex-space-2) 0; resize: none; }
+.excerpts-root .ex-entry-editor .ex-editor-text:focus { border: 0; box-shadow: none; outline: 2px solid var(--interactive-accent); outline-offset: 3px; border-radius: var(--radius-s, 4px); }
+
+.excerpts-root .ex-extra-editor .ex-editor-text { font-family: var(--font-text, var(--font-interface)); font-size: var(--font-text-size, 16px); line-height: 1.65; resize: none; }
+.excerpts-root .ex-extra-editor .ex-input { font-size: var(--font-ui-medium, 14px); }
+/* Mobile WebView: readable controls without iOS text-field auto-zoom. */
+@media (pointer: coarse) {
+  .excerpts-root .ex-edit-panel input,
+  .excerpts-root .ex-edit-panel textarea,
+  .excerpts-root .ex-tags-input { font-size: max(16px, var(--font-text-size, 16px)); }
+  .excerpts-root .ex-edit-panel { scroll-margin-block-end: 140px; }
+  .excerpts-root .ex-edit-panel .ex-actions { position: sticky; bottom: env(safe-area-inset-bottom, 0px); z-index: 1; background: var(--background-primary); padding: var(--ex-space-2) 0; }
+}
+/* Final editor visual rhythm: writing first, actions second. */
+.excerpts-root .ex-edit-panel { gap: var(--ex-space-3); }
+.excerpts-root .ex-entry-editor .ex-input { background: var(--background-secondary); border-color: transparent; }
+.excerpts-root .ex-entry-editor .ex-input:focus { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
+.excerpts-root .ex-extra-item .ex-extra-editor { margin-top: var(--ex-space-3); border: 0; background: var(--background-secondary); }
+.excerpts-root .ex-edit-panel .ex-btn-primary { min-height: 38px; }
+.excerpts-root .ex-edit-panel .ex-actions { gap: var(--ex-space-2); flex-wrap: wrap; }
+.excerpts-root .ex-edit-panel .ex-editor-text { overflow-wrap: anywhere; max-width: 100%; }
+@media (pointer: coarse) {
+  .excerpts-root .ex-edit-panel .ex-btn-primary,
+  .excerpts-root .ex-edit-panel .ex-btn-quiet,
+  .excerpts-root .ex-edit-panel .ex-btn-danger { min-height: 44px; }
+}

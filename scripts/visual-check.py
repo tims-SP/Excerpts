@@ -45,4 +45,20 @@ with sync_playwright() as p:
             page.screenshot(path=str(root/'artifacts'/f'excerpts-v11-{mode}-{width}.png'),full_page=True)
             print(mode,width,metrics)
             page.close()
+    # Capture real editor components rather than illustrative designs.
+    for mode,width in [('dark',390),('light',390),('light',1280)]:
+        page=browser.new_page(viewport={'width':width,'height':900},device_scale_factor=1)
+        page.set_content(html,wait_until='domcontentloaded')
+        page.wait_for_function('window.__ready === true || window.__error',timeout=12000)
+        if mode=='dark': page.evaluate("document.documentElement.classList.add('theme-dark')")
+        page.locator('.ex-card').first.locator('button[aria-label="更多摘录操作"]').click()
+        page.evaluate("window.__menu.items.find(item=>item.title==='编辑摘录').fn()")
+        editor=page.locator('.ex-entry-editor')
+        assert editor.count()==1, 'Native entry editor missing'
+        assert editor.locator('textarea.ex-editor-text').count()==1
+        assert editor.locator('textarea.ex-editor-text').evaluate('(el)=>getComputedStyle(el).fontSize')
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.screenshot(path=str(root/'artifacts'/f'excerpts-editor-{mode}-{width}.png'),full_page=True)
+        print('editor',mode,width,'entry height',editor.bounding_box()['height'])
+        page.close()
     browser.close()

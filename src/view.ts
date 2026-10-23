@@ -3,6 +3,7 @@ import type ExcerptsPlugin from "./main";
 import { EntryRepository, TrashedEntry } from "./repository";
 import { Entry, Extra, ExtraKind, EXTRA_KINDS, EXTRA_LABELS, Workspace, makeId } from "./model";
 import { DraftRepository, SavedDraft } from "./drafts";
+type PendingDraft = Omit<SavedDraft, "id" | "collectionId" | "created" | "updated">;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
@@ -30,6 +31,19 @@ function inputBox(placeholder: string, value = ""): HTMLInputElement {
 function textarea(placeholder: string, value = "", cls = ""): HTMLTextAreaElement {
   const el = node("textarea", `ex-textarea ${cls}`); el.placeholder = placeholder; el.setAttribute("aria-label", placeholder); el.value = value; el.rows = 3; return el;
 }
+/** Auto-sizing textarea shared by quick capture and both editors. */
+function autoGrow(field: HTMLTextAreaElement, min = 48, max = 340): () => void {
+  const fit = () => {
+    field.style.height = "auto";
+    const desired = field.scrollHeight || min;
+    field.style.height = Math.max(min, Math.min(max, desired)) + "px";
+    field.style.overflowY = desired > max ? "auto" : "hidden";
+  };
+  field.addEventListener("input", fit);
+  fit();
+  return fit;
+}
+
 function dateLabel(value: string): string {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
@@ -66,7 +80,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private savedDrafts = new Map<string, SavedDraft>();
   private recoverableDrafts: SavedDraft[] = [];
   private draftTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private draftPending = new Map<string, { kind: "capture" | "quote"; entryId: string; base: string; text: string; tags: string }>();
+  private draftPending = new Map<string, PendingDraft>();
   private draftQueues = new Map<string, Promise<void>>();
   private captureRecoveryButton: HTMLButtonElement | null = null;
   private captureInput: HTMLTextAreaElement | null = null;
@@ -128,13 +142,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.setAttribute("aria-label", "摘录正文");
     quote.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
     // One line when empty; grow with actual writing, never a huge empty form.
-    const fitComposer = () => {
-      quote.style.height = "auto";
-      quote.style.height = Math.max(48, Math.min(340, quote.scrollHeight || 48)) + "px";
-      quote.style.overflowY = quote.scrollHeight > 340 ? "auto" : "hidden";
-    };
-    quote.addEventListener("input", fitComposer);
-    fitComposer();
+    const fitComposer = autoGrow(quote);
     // Focus expands the minimal composer; blur only contracts when no draft remains.
     quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
     quote.addEventListener("blur", () => {
@@ -172,7 +180,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     composeActions.append(captureOptions, saveButton);
     form.append(quote, tags, composeActions); root.append(form);
     let resumeTyping = false;
-    quote.addEventListener("keydown", e => { if (!e.isComposing && (e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); resumeTyping = true; void save(); } });
+    quote.addEventListener("keydown", e => { if (!e.isComposing && e.keyCode !== 229 && (e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); resumeTyping = true; void save(); } });
     let saving = false;
     const save = async () => {
       if (saving) return;
@@ -238,7 +246,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.append(toolbar, searchWrap);
     this.listEl = node("div", "ex-card-list"); root.append(this.listEl);
   }
-  private queueDraft(key: string, value: { kind: "capture" | "quote"; entryId: string; base: string; text: string; tags: string }): void {
+  private queueDraft(key: string, value: PendingDraft): void {
     this.draftPending.set(key, value);
     const previous = this.draftTimers.get(key);
     if (previous) clearTimeout(previous);
@@ -251,7 +259,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const previous = this.draftQueues.get(key) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
       const old = this.savedDrafts.get(key);
-      if (old) this.savedDrafts.set(key, await this.draftRepo.update(this.workspace, old, { text: value.text, tags: value.tags }));
+      if (old) this.savedDrafts.set(key, await this.draftRepo.update(this.workspace, old, { text: value.text, tags: value.tags, title: value.title }));
       else this.savedDrafts.set(key, await this.draftRepo.create(this.workspace, value));
     });
     this.draftQueues.set(key, next);
@@ -356,6 +364,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const focused = wrap.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
     const focusedCardId = focused?.closest<HTMLElement>(".ex-card")?.dataset.entryId;
     const focusedLabel = focused?.getAttribute("aria-label") || focused?.textContent?.trim();
+    const editingField = focused?.matches("input,textarea") ? focused as HTMLInputElement | HTMLTextAreaElement : null;
+    const editingPanel = editingField?.closest(".ex-entry-editor") ? ".ex-entry-editor" : editingField?.closest(".ex-extra-editor") ? ".ex-extra-editor" : "";
+    const editingSelector = editingField ? editingField.tagName.toLowerCase() : "";
+    const editingStart = editingField?.selectionStart;
+    const editingEnd = editingField?.selectionEnd;
+    const editingScroll = editingField?.scrollTop || 0;
     wrap.empty();
     const visible = this.visibleItems();
     if (this.countEl) this.countEl.textContent = this.items.length ? `${visible.length} / ${this.items.length}` : "";
@@ -402,7 +416,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const shown = visible.slice(0, this.pageSize);
     for (const item of shown) wrap.append(this.card(item));
     if (shown.length < visible.length) wrap.append(button(`继续显示（剩余 ${visible.length - shown.length} 条）`, () => { this.pageSize += 40; this.drawCards(); }, "ex-loadmore"));
-    if (focused && focusedLabel) {
+    if (focusedCardId && editingField && editingPanel && editingSelector) {
+      const scope = Array.from(wrap.querySelectorAll<HTMLElement>(".ex-card")).find(el => el.dataset.entryId === focusedCardId);
+      const restored = scope?.querySelector<HTMLInputElement | HTMLTextAreaElement>(`${editingPanel} ${editingSelector}`);
+      if (restored) {
+        restored.focus();
+        if (typeof editingStart === "number" && typeof editingEnd === "number") restored.setSelectionRange(editingStart, editingEnd);
+        restored.scrollTop = editingScroll;
+      }
+    } else if (focused && focusedLabel) {
       const scope: HTMLElement | undefined = focusedCardId ? Array.from(wrap.querySelectorAll<HTMLElement>(".ex-card")).find(el => el.dataset.entryId === focusedCardId) : wrap;
       const buttons = scope ? Array.from(scope.querySelectorAll<HTMLButtonElement>("button")) : [];
       const replacement = buttons.find(b => (b.getAttribute("aria-label") || b.textContent?.trim()) === focusedLabel);
@@ -519,9 +541,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private renderQuoteEditor(card: HTMLElement, entry: Entry) {
     if (!this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
-    const edit = node("div", "ex-edit-panel");
+    const edit = node("div", "ex-edit-panel ex-entry-editor");
+    edit.setAttribute("role", "group"); edit.setAttribute("aria-label", "编辑摘录");
+    edit.append(node("div", "ex-editor-heading", "编辑摘录"));
     const draft = this.quoteDrafts.get(entry.id) || { text: entry.text, tags: entry.tags.join(", ") };
-    const content = textarea("摘录正文", draft.text); content.rows = 5;
+    const content = textarea("摘录正文", draft.text, "ex-editor-text"); content.rows = 3;
+    autoGrow(content, 88, 520);
+    content.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
     const tags = inputBox("标签（逗号分隔）", draft.tags);
     const keepDraft = () => this.quoteDrafts.set(entry.id, { text: content.value, tags: tags.value });
     const queueQuote = () => {
@@ -532,7 +558,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     tags.addEventListener("input", queueQuote);
     // Consistent quick-save shortcut in capture and detail editing.
     const shortcutSave = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveEditButton.click(); }
+      if (!e.isComposing && e.keyCode !== 229 && (e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveEditButton.click(); }
     };
     content.addEventListener("keydown", shortcutSave);
     tags.addEventListener("keydown", shortcutSave);
@@ -543,19 +569,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null; this.drawCards();
     }, "ex-btn-quiet"));
-    const saveEditButton = button("保存修改", () => {
+    const saveEditButton = button("保存修改", async () => {
+      if (saveEditButton.disabled) return;
       if (this.quoteBases.get(entry.id) !== revision(entry)) {
         new Notice("摘录在编辑期间已发生变化，请复制草稿并重新打开编辑器，拒绝覆盖");
         return;
       }
-      void this.saveEdit(entry, previous => ({
+      saveEditButton.disabled = true;
+      try { await this.saveEdit(entry, previous => ({
       ...previous, text: content.value.trim(), tags: [...new Set(tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean))]
     }), () => {
       this.quoteDrafts.delete(entry.id);
       this.quoteBases.delete(entry.id);
       void this.resolveDraft("quote:" + entry.id);
       this.editing = null;
-    });
+    }); } finally { saveEditButton.disabled = false; }
     }, "ex-btn-primary");
     actions.append(saveEditButton);
     edit.append(content, tags, actions); card.append(edit);
@@ -595,37 +623,55 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     target.append(group);
   }
   private extraEditor(target: HTMLElement, entry: Entry, kind: ExtraKind, original?: Extra) {
-    const pane = node("div", "ex-edit-panel");
+    const pane = node("div", "ex-edit-panel ex-extra-editor");
+    pane.setAttribute("role", "group"); pane.setAttribute("aria-label", original ? `编辑${EXTRA_LABELS[kind]}` : `添加${EXTRA_LABELS[kind]}`);
+    pane.dataset.kind = kind;
+    pane.append(node("div", "ex-editor-heading", original ? `编辑${EXTRA_LABELS[kind]}` : `添加${EXTRA_LABELS[kind]}`));
     const draftKey = `${entry.id}:${original?.id || "new:" + kind}`;
     if (!this.extraBases.has(draftKey)) this.extraBases.set(draftKey, revision(entry));
     const draft = this.extraDrafts.get(draftKey) || { title: original?.title || "", content: original?.content || "" };
-    const title = inputBox("标题，例如：原始出处 / 精简版", draft.title);
-    const text = textarea("补充内容（支持存储 Markdown 文本）", draft.content); text.rows = 4;
-    const keepDraft = () => this.extraDrafts.set(draftKey, { title: title.value, content: text.value });
+    const placeholder = kind === "source" ? "作品、作者或原始出处" : kind === "variant" ? "译本、异文或个人改写" : "附属内容标题";
+    const title = inputBox(placeholder, draft.title);
+    const bodyPrompt = kind === "source" ? "来源说明、章节、页码或链接…" : kind === "variant" ? "记录另一种表达，注意与原文区分…" : "记录补充内容（支持 Markdown）…";
+    const text = textarea(bodyPrompt, draft.content, "ex-editor-text"); text.rows = 3;
+    autoGrow(text, 72, 440);
+    text.setAttribute("aria-label", `${EXTRA_LABELS[kind]}内容`);
+    text.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
+    const keepDraft = () => {
+      this.extraDrafts.set(draftKey, { title: title.value, content: text.value });
+      this.queueDraft("extra:" + draftKey, {
+        kind: "extra", entryId: entry.id, base: revision(entry), extraKey: draftKey,
+        title: title.value, text: text.value, tags: ""
+      });
+    };
     title.addEventListener("input", keepDraft);
     text.addEventListener("input", keepDraft);
     const shortcutSave = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveExtraButton.click(); }
+      if (!e.isComposing && e.keyCode !== 229 && (e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); saveExtraButton.click(); }
     };
     title.addEventListener("keydown", shortcutSave);
     text.addEventListener("keydown", shortcutSave);
     const actions = node("div", "ex-actions");
     actions.append(button("取消", () => {
       this.extraDrafts.delete(draftKey); this.extraBases.delete(draftKey);
+      void this.resolveDraft("extra:" + draftKey);
       this.editingExtra = null; this.drawCards();
     }, "ex-btn-quiet"));
-    const saveExtraButton = button("保存", () => {
+    const saveExtraButton = button("保存", async () => {
+      if (saveExtraButton.disabled) return;
       if (this.extraBases.get(draftKey) !== revision(entry)) {
         new Notice("附属条目在编辑期间已发生变化，请复制草稿后刷新，拒绝覆盖");
         return;
       }
-      void this.saveEdit(entry, previous => ({
+      saveExtraButton.disabled = true;
+      try { await this.saveEdit(entry, previous => ({
       ...previous, extras: original ? previous.extras.map(x => x.id === original.id ? { ...x, title: title.value.trim(), content: text.value } : x)
         : [...previous.extras, { id: makeId("x"), kind, title: title.value.trim() || EXTRA_LABELS[kind], content: text.value }]
     }), () => {
       this.extraDrafts.delete(draftKey); this.extraBases.delete(draftKey);
+      void this.resolveDraft("extra:" + draftKey);
       this.editingExtra = null;
-    });
+    }); } finally { saveExtraButton.disabled = false; }
     }, "ex-btn-primary");
     actions.append(saveExtraButton);
     if (original) {
@@ -640,10 +686,33 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           if (this.undoExtraButton) this.undoExtraButton.hidden = false;
           this.extraDrafts.delete(draftKey);
           this.extraBases.delete(draftKey);
+          void this.resolveDraft("extra:" + draftKey);
           this.editingExtra = null;
         });
       }, "ex-btn-danger");
       actions.append(del);
+    }
+    const stored = this.recoverableDrafts.find(d => d.kind === "extra" && d.entryId === entry.id && d.extraKey === draftKey);
+    if (stored) {
+      const restore = button("恢复上次编辑", () => {
+        if (stored.base !== revision(entry)) {
+          const dialog = new Modal(this.plugin.app);
+          dialog.contentEl.append(node("p", "", "原条目已更改，不能直接覆盖。以下草稿只供复制："));
+          const readOnly = textarea("历史草稿", stored.text);
+          readOnly.readOnly = true;
+          dialog.contentEl.append(readOnly);
+          dialog.open();
+          return;
+        }
+        if (this.extraDrafts.has(draftKey)) { new Notice("当前已有未保存的内容，拒绝覆盖"); return; }
+        title.value = stored.title || "";
+        text.value = stored.text;
+        text.dispatchEvent(new (text.ownerDocument.defaultView?.Event || Event)("input", { bubbles: true }));
+        this.savedDrafts.set("extra:" + draftKey, stored);
+        restore.remove();
+        text.focus();
+      }, "ex-btn-quiet");
+      pane.append(restore);
     }
     pane.append(title, text, actions); target.append(pane);
   }

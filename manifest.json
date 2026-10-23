@@ -1,7 +1,7 @@
 {
   "id": "excerpts",
   "name": "摘录 Excerpts",
-  "version": "0.2.0-beta.4",
+  "version": "0.2.0-beta.5",
   "minAppVersion": "1.5.0",
   "description": "Folder-scoped collections of favorite passages, with sources, variants, notes and local Markdown storage.",
   "author": "Excerpts Contributors",
