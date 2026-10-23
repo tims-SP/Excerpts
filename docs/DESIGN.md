@@ -1,4 +1,4 @@
-# Excerpts · 当前设计规范 (beta.10)
+# Excerpts · 当前设计规范 (beta.11)
 
 **定位：Obsidian 原生视觉与行为 × flomo 式轻量记录 × Apple HIG 的内容优先、渐进披露原则。**
 
