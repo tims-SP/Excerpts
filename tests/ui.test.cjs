@@ -321,9 +321,11 @@ test('v4 searching an unrelated note keeps the dirty editor mounted and focused'
     area.focus();
     clickByLabel(root,'搜索');
     const search=root.querySelector('.ex-search');
+    search.focus();
     search.value='完全没有匹配的搜索短语';
     search.dispatchEvent(new window.Event('input',{bubbles:true}));
     await new Promise(resolve=>setTimeout(resolve,550));
+    assert.equal(document.activeElement,search,'search must keep keyboard focus');
     const actual=root.querySelector('.ex-editor-text');
     assert.equal(actual,area,'must not rebuild active textarea');
     assert.equal(actual.value,'保留我的未保存内容');
