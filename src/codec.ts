@@ -183,10 +183,15 @@ export function patchEntry(raw: string, current: Entry, updated: Entry): string 
     if (reg.test(head)) head = head.replace(reg, `${key}: ${value}`);
     else head += `\n${key}: ${value}`;
   }
-  const tags = `tags:\n${updated.tags.map(t => `  - ${yamlScalar(t)}`).join("\n")}`;
-  const existingTag = /^tags:\s*\n(?:[ \t]+-.*(?:\r?\n|$))*/m;
-  if (existingTag.test(head)) head = head.replace(existingTag, `${tags}\n`);
-  else head += `\n${tags}`;
+  // Replace exactly the top-level tags key and its list items, including a bare
+  // `tags:` at EOF. Regexes using \s* may eat newlines or append a second key.
+  const lines = head.split("\n");
+  const start = lines.findIndex(line => /^tags:[ \t]*$/.test(line));
+  if (start < 0) throw new Error("标签字段格式不安全，已拒绝写入");
+  let end = start + 1;
+  while (end < lines.length && /^[ \t]+- /.test(lines[end])) end++;
+  lines.splice(start, end - start, "tags:", ...updated.tags.map(t => `  - ${yamlScalar(t)}`));
+  head = lines.join("\n");
   const normalized = raw.replace(/\r\n?/g, "\n");
   const body = normalized.slice(normalized.indexOf("\n---\n", 4) + "\n---\n".length);
   const index = body.indexOf(EXTRA_START);
