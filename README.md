@@ -2,7 +2,7 @@
 
 Obsidian 本地优先的 Markdown 摘录卡片插件。
 
-## beta.11 — Apple HIG × flomo 组件视觉与草稿可靠性
+## beta.12 — 修复卡片正文与操作按钮重叠
 
 - **首页.excerpts** 是真正的 Obsidian 文件入口，点击文件可直接打开摘录首页（通过 FileView 和 `registerExtensions`）。
 - 目录作用域由该文件所在的文件夹决定；不再存在“我的摘录”收藏集名称、ID 或中间选择页面。
