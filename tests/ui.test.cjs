@@ -29,7 +29,7 @@ const Excerpts=require('../main.js');Module._load=old;
 const wait=()=>new Promise(resolve=>setTimeout(resolve,70));
 function clickByLabel(container,label){const el=container.querySelector(`button[aria-label="${label}"]`);assert.ok(el,'Missing button: '+label);el.click();return el;}
 
-async function fixture(){
+async function fixture(noTags=false){
   const files=new Map();
   const dir=new TFolder('摘录'); files.set('摘录',{file:dir});
   const home=new TFile('摘录/首页.excerpts'); files.set(home.path,{file:home,data:''});
@@ -39,7 +39,7 @@ async function fixture(){
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
   const leaf={lastFile:null,async openFile(file){this.lastFile=file;},async setViewState(){}};
-  plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:['哲学']}};},on(){return {};}}
+  plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:noTags?[]:['哲学']}};},on(){return {};}}
     ,fileManager:{async processFrontMatter(f,fn){fn({tags:['哲学']});}},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
@@ -88,7 +88,7 @@ test('H2 groups, filtering and editing without redundant card actions',async()=>
   assert.ok(root.querySelector('.ex-chips button.ex-tag').textContent.includes('#哲学'));
   for(const label of ['随机回顾','珍藏','取消珍藏','添加内容','更多摘录操作'])
     assert.equal(root.querySelector('button[aria-label="'+label+'"]'),null,label);
-  assert.equal(root.querySelectorAll('.ex-card-actions button').length,1);
+  assert.equal(root.querySelectorAll('.ex-card-actions button[aria-label="编辑摘录"]').length,1);
   clickByLabel(root,'编辑摘录');await wait();
   const editor=root.querySelector('.ex-editor-text');
   assert.ok(editor);
@@ -134,5 +134,22 @@ test('tag changes preserve expanded selection panel',async()=>{
   await wait();
   assert.equal(root.querySelector('.ex-tag-editor').hidden,false);
   assert.equal(root.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
+  await t.close();
+});
+
+test('cards without tags use a single compact footer add action, then expand editor',async()=>{
+  const t=await fixture(true);const root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card');
+  assert.ok(card.classList.contains('ex-card-no-tags'));
+  assert.ok(card.querySelector('.ex-chips .ex-add-tag'));
+  const add=card.querySelector('.ex-card-footer .ex-footer-tag');
+  assert.ok(add);assert.equal(add.getAttribute('aria-label'),'添加标签');
+  add.click();
+  assert.ok(!card.classList.contains('ex-card-no-tags'));
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
+  assert.equal(card.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
+  card.querySelector('.ex-tag-custom').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.ok(card.classList.contains('ex-card-no-tags'));
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   await t.close();
 });
