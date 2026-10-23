@@ -99,5 +99,5 @@ test('reject absolute, platform-reserved and ambiguous paths',()=>{
     'notes/CON.md', 'notes/trailing.', 'notes/space /item', 'notes/a?.md', 'notes/../escape']) {
     assert.throws(()=>validateRelativePath(invalid),invalid);
   }
-  assert.equal(validateRelativePath('笔记\\\\摘录'), '笔记/摘录');
+  assert.equal(validateRelativePath('笔记\\摘录'), '笔记/摘录');
 });
