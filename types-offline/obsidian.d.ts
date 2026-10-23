@@ -8,6 +8,8 @@ declare module "obsidian" {
     createFolder(path: string): Promise<TFolder>;
     create(path: string, data: string): Promise<TFile>;
     cachedRead(file: TFile): Promise<string>;
+    read(file: TFile): Promise<string>;
+    rename(file: TFile, newPath: string): Promise<void>;
     process(file: TFile, callback: (data: string) => string): Promise<string>;
     on(event: string, callback: (...args: any[]) => void): any;
   }
@@ -30,6 +32,12 @@ declare module "obsidian" {
     addCommand(cmd: { id: string; name: string; callback: () => void }): void;
     registerMarkdownCodeBlockProcessor(name: string, fn: (source: string, el: HTMLElement, ctx: MarkdownPostProcessorContext) => void): void;
     registerEvent(event: any): void;
+  }
+  export class Modal {
+    contentEl: HTMLElement;
+    constructor(app: App);
+    open(): void;
+    close(): void;
   }
   export class Notice { constructor(message: string); }
   export class PluginSettingTab {
