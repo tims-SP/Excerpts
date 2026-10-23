@@ -198,15 +198,19 @@
 .excerpts-root .ex-tag-editor { min-width: 0; display: flex; flex-direction: column; gap: var(--ex-space-2); }
 .excerpts-root .ex-tag-selected-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ex-space-2); }
 .excerpts-root .ex-tag-pills { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ex-space-1); min-width: 0; }
-.excerpts-root button.ex-tag-chip {
-  display: inline-flex; align-items: center; gap: var(--ex-space-2);
-  min-height: 30px; max-width: 100%; padding: 3px var(--ex-space-2);
+.excerpts-root .ex-tag-chip {
+  display: inline-flex; align-items: center; gap: var(--ex-space-1);
+  min-height: 30px; max-width: 100%; padding: 0 0 0 var(--ex-space-2);
   border: 1px solid var(--ex-subtle-border); border-radius: var(--radius-m, 8px);
   background: var(--background-secondary); color: var(--text-normal);
-  font-size: var(--font-ui-smaller, 12px); box-shadow: none;
+  font-size: var(--font-ui-smaller, 12px);
 }
 .excerpts-root .ex-tag-chip span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.excerpts-root .ex-tag-remove { color: var(--text-muted); font-size: 16px; line-height: 1; }
+.excerpts-root button.ex-tag-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0; border: 0; box-shadow: none;
+  background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1;
+}
 .excerpts-root button.ex-tag-add {
   min-height: 32px; border: 1px dashed var(--ex-subtle-border);
   border-radius: var(--radius-m, 8px); padding: 3px var(--ex-space-3);
@@ -238,9 +242,14 @@
 .excerpts-root .ex-entry-editor .ex-tag-entry { margin-bottom: var(--ex-space-1); }
 .excerpts-root .ex-entry-editor .ex-editor-text { width: 100%; }
 @media (pointer: coarse) {
-  .excerpts-root button.ex-tag-chip,
+  .excerpts-root button.ex-tag-remove,
   .excerpts-root button.ex-tag-add,
   .excerpts-root button.ex-tag-suggestion,
   .excerpts-root button.ex-tag-create,
   .excerpts-root button.ex-tag-done { min-height: 44px; }
+}
+
+@media (pointer: coarse) {
+  .excerpts-root .ex-tag-chip { min-height: 44px; }
+  .excerpts-root button.ex-tag-remove { width: 44px; height: 44px; }
 }
