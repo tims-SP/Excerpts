@@ -1,4 +1,4 @@
-# Excerpts — Product specification (beta.10)
+# Excerpts — Product specification (beta.11)
 
 A local-first Obsidian timeline for **capturing, reading and finding** excerpts. One normal `.md` file is one card; `首页.excerpts` is a real FileView entrypoint for its parent folder.
 
