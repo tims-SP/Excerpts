@@ -66,3 +66,12 @@
 - **Test additions:** mock-Vault archive/restore conflict scenarios and DOM tests for modal confirm/cancel, archive/Undo, occupied restore, Extra Undo and unsaved-draft deletion prevention. The official desktop and mobile clients are still **unverified**.
 - **Limits:** Undo tokens are session-local and are not persisted after restart. The archived Markdown remains available; external Sync/Git race conditions require additional client testing.
 - **Remaining priority:** mobile-friendly focus/keyboard behavior, recoverable unsaved edit drafts after app restart, real-client tests, and structured Source/Variant metadata.
+
+## 2026-10-23 — fourth v0.2 development iteration
+
+- **Restart-resilient draft backups:** fast composer and main quote editor save recoverable, collection-local Markdown drafts after an approximately 350 ms debounce. Explicit recovery after reopening avoids unexpectedly replacing any input.
+- **Draft retention:** drafts use unique per-pane IDs; successful saves and explicit cancels move existing backup files under `Excerpts-Drafts/Resolved/` instead of deleting them. Existing Entry markdown and plugin `data.json` are never used as the draft store.
+- **Conflict prevention:** the saved Entry revision accompanies quote drafts. A mismatch leads to a copy-only modal. Editors already open during an external Vault reload retain their starting revision and refuse stale Entry/Extra saves.
+- **CI regression coverage:** jsdom tests include composer and quote restart recovery, successful draft resolution, external-conflict read-only preview, malformed backup rejection, stale editor writes and independent multi-pane backups.
+- **Not yet complete:** crash-resilient Extra editor drafts, guaranteed final keystroke flush on unexpected app kill, cleanup/retention settings for resolved drafts, real desktop/mobile app acceptance, and sync-race stress tests.
+- **Version remains 0.1.0** in manifest pending real-client release validation.
