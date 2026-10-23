@@ -84,3 +84,16 @@
   .excerpts-root button.ex-group-trigger, .excerpts-root button.ex-btn-primary { min-width: 44px; min-height: 44px; }
   .excerpts-root .ex-tags-input, .excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
 }
+
+.excerpts-root .ex-chips.ex-tags-empty { margin-top: var(--ex-space-1); }
+.excerpts-root .ex-tag-editor { flex-direction: column; min-width: 0; border: 0; background: transparent; padding: var(--ex-space-2) 0 0; }
+.excerpts-root button.ex-tag-option.ex-selected { background: var(--background-modifier-hover); font-weight: 600; }
+.excerpts-root .ex-entry-editor { display: flex; flex-direction: column; gap: var(--ex-space-3); }
+.excerpts-root .ex-editor-text {
+  width: 100%; min-width: 0; min-height: 180px; max-height: min(60vh, 520px);
+  resize: vertical; padding: var(--ex-space-3); border: 1px solid var(--ex-border);
+  border-radius: var(--ex-radius); background: var(--background-primary);
+  color: var(--text-normal); font-family: var(--font-monospace);
+  font-size: var(--font-text-size, 16px); line-height: 1.6; overflow-y: auto;
+}
+.excerpts-root .ex-edit-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--ex-space-2); }
