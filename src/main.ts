@@ -67,12 +67,19 @@ export default class ExcerptsPlugin extends Plugin {
   async repointWorkspace(id: string, folder: string): Promise<void> {
     const ws = this.settings.workspaces.find(x => x.id === id);
     if (!ws) throw new Error("收藏集不存在");
-    if (this.settings.workspaces.some(x => x.id !== id && (x.rootFolder === folder || belongsTo(folder, x.rootFolder) || belongsTo(x.rootFolder, folder)))) throw new Error("工作区目录不能重叠");
-    const candidate = { ...ws, rootFolder: validateRelativePath(folder) };
+    const candidateRoot = validateRelativePath(folder);
+    if (this.settings.workspaces.some(x => x.id !== id && (x.rootFolder === candidateRoot || belongsTo(candidateRoot, x.rootFolder) || belongsTo(x.rootFolder, candidateRoot)))) {
+      throw new Error("工作区目录不能重叠");
+    }
+    const candidate = { ...ws, rootFolder: candidateRoot };
     const home = this.app.vault.getAbstractFileByPath(workspacePaths(candidate).home);
     if (!(home instanceof TFile)) throw new Error("新路径没有有效首页，请通过 Obsidian 文件管理器移动整个工作区文件夹");
     const source = await this.app.vault.cachedRead(home);
-    if (!source.includes(`workspace: ${ws.id}`)) throw new Error("目标首页未绑定当前工作区 ID");
+    // Require a real excerpts codeblock, not a coincidental string in a note.
+    const bindings = [...source.matchAll(/```excerpts[ \\t]*\\r?\\n([\\s\\S]*?)\\r?\\n```/g)];
+    if (!bindings.some(match => match[1].trim() === `workspace: ${ws.id}`)) {
+      throw new Error("目标首页未绑定当前工作区 ID");
+    }
     ws.rootFolder = candidate.rootFolder;
     await this.saveSettings();
   }
