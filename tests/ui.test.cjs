@@ -250,3 +250,54 @@ test('undo leaves both files untouched if another note occupies the old path', a
     assert.ok(f.renderer.lastTrash);
   } finally { await f.close(); }
 });
+
+test('deleting one Extra can be undone without changing other content', async () => {
+  const f = await fixture();
+  try {
+    const initial = await f.repo.create(f.workspace, '不变的摘录', ['标签']);
+    await f.repo.update(initial, previous => ({ ...previous, extras: [
+      { id: 'x_a', kind: 'source', title: '来源一', content: '第一卷' },
+      { id: 'x_b', kind: 'source', title: '来源二', content: '第二卷' }
+    ] }));
+    await f.renderer.reload();
+    click(f.container.querySelector('.ex-card'), '来源  2');
+    click(f.container.querySelector('.ex-card'), '修改');
+    click(f.container.querySelector('.ex-card'), '删除条目');
+    click(f.container.querySelector('.ex-card'), '确认删除');
+    await new Promise(resolve => setImmediate(resolve));
+    let entry = (await f.repo.list(f.workspace))[0];
+    assert.deepEqual(entry.extras.map(e => e.id), ['x_b']);
+    assert.equal(entry.text, '不变的摘录');
+    const undo = click(f.container, '撤销附属删除');
+    await new Promise(resolve => setImmediate(resolve));
+    entry = (await f.repo.list(f.workspace))[0];
+    assert.deepEqual(entry.extras.map(e => e.id), ['x_a','x_b']);
+    assert.deepEqual(entry.extras.map(e => e.content), ['第一卷','第二卷']);
+    assert.deepEqual(entry.tags, ['标签']);
+    assert.equal(undo.hidden, true);
+  } finally { await f.close(); }
+});
+
+test('Extra undo refuses to overwrite a newer externally changed entry', async () => {
+  const f = await fixture();
+  try {
+    const initial = await f.repo.create(f.workspace, '原文');
+    await f.repo.update(initial, x => ({ ...x, extras: [
+      { id: 'x_a', kind: 'source', title: '来源', content: '一' }
+    ] }));
+    await f.renderer.reload();
+    click(f.container, '来源  1');
+    click(f.container, '修改');
+    click(f.container, '删除条目');
+    click(f.container, '确认删除');
+    await new Promise(resolve => setImmediate(resolve));
+    const deleted = (await f.repo.list(f.workspace))[0];
+    const newState = await f.repo.update(deleted, x => ({ ...x, text: '外部新修改' }));
+    const expected = f.files.get(newState.path).data;
+    click(f.container, '撤销附属删除');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(Notice.last, /刷新后重试/);
+    assert.equal(f.files.get(newState.path).data, expected);
+    assert.equal((await f.repo.list(f.workspace))[0].extras.length, 0);
+  } finally { await f.close(); }
+});
