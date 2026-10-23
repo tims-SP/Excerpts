@@ -58,6 +58,7 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(root.querySelector('.ex-card').classList.contains('ex-card-loading'),false);
   assert.equal(root.querySelectorAll('.ex-day-group').length,1);
   assert.ok(root.querySelector('.ex-day-rail .ex-day-title'));
   assert.ok(root.querySelector('.ex-card-footer .ex-chips'));
