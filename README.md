@@ -71,3 +71,7 @@ See [five-round UI report](docs/FIVE_ROUND_UI_REVIEW.md) for the five implementa
 ## Visual Rebuild (beta.4)
 
 See [the 11-round design/implementation report](docs/VISUAL_REBUILD_11_ROUNDS.md). UI layouts use the Obsidian native pane, theme variables and menus, with compact flomo-style capture and progressive content disclosure. Browser visual checks are mock-host checks; final Android/iOS QA is still pending.
+
+## Editor experience (beta.5)
+
+All inline editing fields auto-grow. Editing source/variant metadata now creates recoverable Markdown drafts; long text fields retain cursor position across card refreshes. The editor supports Cmd/Ctrl+Enter save without IME composition, consistent disabled saving state, and larger mobile tap targets. See [20-round change log](docs/EDITOR_REBUILD_20_ROUNDS.md).

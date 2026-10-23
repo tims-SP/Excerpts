@@ -8,7 +8,9 @@ import { Workspace, makeId, joinPath, workspacePaths, belongsTo } from "./model"
 export interface SavedDraft {
   id: string;
   collectionId: string;
-  kind: "capture" | "quote";
+  kind: "capture" | "quote" | "extra";
+  extraKey?: string;
+  title?: string;
   entryId: string;
   base: string;
   text: string;
@@ -21,15 +23,19 @@ const TITLE = "# Excerpts · 未保存草稿\n\n";
 const OPEN = "~~~json\n";
 const CLOSE = "\n~~~\n";
 
+function validExtraKey(value: unknown): value is string {
+  return typeof value === "string" && /^(?:new:)?[a-zA-Z0-9_:-]+$/.test(value) && value.length <= 160;
+}
 function validId(value: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(value);
 }
 export function encodeDraft(draft: SavedDraft): string {
   if (!validId(draft.id) || !validId(draft.collectionId) ||
       (draft.entryId && !validId(draft.entryId)) ||
-      !["capture", "quote"].includes(draft.kind) ||
+      !["capture", "quote", "extra"].includes(draft.kind) ||
       (draft.kind === "quote" && !draft.entryId) ||
-      (draft.kind === "capture" && draft.entryId)) throw new Error("草稿身份无效");
+      (draft.kind === "capture" && draft.entryId) ||
+      (draft.kind === "extra" && (!draft.entryId || !validExtraKey(draft.extraKey) || typeof draft.title !== "string"))) throw new Error("草稿身份无效");
   // JSON.stringify escapes newlines in user strings. Tilde fences can be chosen
   // longer than any run inside JSON to allow arbitrary user content.
   const data = JSON.stringify(draft, null, 2);
@@ -46,12 +52,13 @@ export function decodeDraft(raw: string): SavedDraft | null {
   try { value = JSON.parse(m[2]); } catch { return null; }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const x = value as Partial<SavedDraft>;
-  if (!["capture", "quote"].includes(x.kind || "") ||
+  if (!["capture", "quote", "extra"].includes(x.kind || "") ||
       ![x.id, x.collectionId, x.entryId, x.base, x.text, x.tags, x.created, x.updated]
         .every(y => typeof y === "string") ||
       !validId(x.id!) || !validId(x.collectionId!) ||
       (x.entryId !== "" && !validId(x.entryId!)) ||
-      (x.kind === "quote" && !x.entryId) || (x.kind === "capture" && x.entryId !== "")) return null;
+      (x.kind === "quote" && !x.entryId) || (x.kind === "capture" && x.entryId !== "") ||
+       (x.kind === "extra" && (!x.entryId || !validExtraKey(x.extraKey) || typeof x.title !== "string"))) return null;
   const draft = x as SavedDraft;
   // Refuse silently malformed/unowned notes; never rewrite them.
   return encodeDraft(draft) === raw ? draft : null;
@@ -99,7 +106,7 @@ export class DraftRepository {
     await this.app.vault.create(joinPath(folder, draft.id + ".md"), encodeDraft(draft));
     return draft;
   }
-  async update(ws: Workspace, expected: SavedDraft, value: Pick<SavedDraft,"text"|"tags">): Promise<SavedDraft> {
+  async update(ws: Workspace, expected: SavedDraft, value: Pick<SavedDraft,"text"|"tags"|"title">): Promise<SavedDraft> {
     if (expected.collectionId !== ws.id || !validId(expected.id)) throw new Error("草稿不属于当前收藏集");
     const file = this.app.vault.getAbstractFileByPath(joinPath(this.folder(ws), expected.id + ".md"));
     if (!(file instanceof TFile)) throw new Error("草稿文件不存在");
