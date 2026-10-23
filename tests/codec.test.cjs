@@ -93,3 +93,11 @@ test('foreign paragraph in main quote region is treated as read-only',()=>{
   const raw=serializeEntry(example()).replace('<!-- excerpts:extras:start -->','This line is not a quote\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'));
   assert.equal(parseEntry(raw).readOnly,true);
 });
+
+test('reject absolute, platform-reserved and ambiguous paths',()=>{
+  for (const invalid of ['/Users/demo','C:\\\\Vault', '//server/share', 'notes//quotes',
+    'notes/CON.md', 'notes/trailing.', 'notes/space /item', 'notes/a?.md', 'notes/../escape']) {
+    assert.throws(()=>validateRelativePath(invalid),invalid);
+  }
+  assert.equal(validateRelativePath('笔记\\\\摘录'), '笔记/摘录');
+});
