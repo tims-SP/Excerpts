@@ -379,6 +379,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (visible.length > this.pageSize) this.listEl.append(button(
       "继续显示（剩余 " + (visible.length - this.pageSize) + " 条）",
       () => { this.pageSize += 40; this.drawCards(); }, "ex-loadmore"));
+    if (editingCard?.isConnected && this.editor?.focus) {
+      const target = this.editor.focus === "body" ?
+        editingCard.querySelector<HTMLElement>(".ex-editor-text") :
+        editingCard.querySelector<HTMLElement>(".ex-tags-input");
+      target?.focus();
+      if (this.editor.focus === "body" && this.editor.caret && target instanceof HTMLTextAreaElement)
+        target.setSelectionRange(this.editor.caret[0], this.editor.caret[1]);
+      this.editor.focus = undefined;
+    }
   }
   private enqueue(task: () => Promise<void>): void { this.queue.push(task); this.pump(); }
   private pump(): void {
