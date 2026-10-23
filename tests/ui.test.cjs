@@ -249,3 +249,20 @@ test('editing only YAML tags preserves other frontmatter properties and body',as
     assert.match(raw,/原样正文\n\n## 来源\n\n《某书》/);
   } finally {await t.close();}
 });
+
+test('saved property tag changes appear in the card before metadata cache reindexes',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  try{
+    clickByLabel(root,'编辑摘录');await wait();
+    const editor=root.querySelector('.ex-entry-editor');
+    clickByLabel(editor,'移除标签：哲学');
+    [...editor.querySelectorAll('button')].find(b=>b.textContent.includes('添加标签')).click();
+    const input=editor.querySelector('.ex-tags-input');
+    input.value='立即显示';input.dispatchEvent(new window.Event('input',{bubbles:true}));
+    input.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    [...editor.querySelectorAll('button')].find(b=>b.textContent==='保存修改').click();
+    await wait();
+    assert.ok(root.querySelector('.ex-chips').textContent.includes('#立即显示'));
+    assert.ok(!root.querySelector('.ex-chips').textContent.includes('#哲学'));
+  }finally{await t.close();}
+});
