@@ -16,6 +16,18 @@ jobs:
           node-version: '22'
       - run: npm install --no-audit --no-fund
       - run: npm run verify
+      - name: Install Chromium for v4 browser acceptance
+        run: |
+          python -m pip install --quiet playwright==1.57.0
+          python -m playwright install --with-deps chromium
+      - name: Audit every homepage, capture, H2, editor and tag state
+        run: python scripts/visual-acceptance-v4.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: excerpts-visual-qa
+          path: artifacts/visual-v4/*.png
+          retention-days: 7
       - name: Prepare plugin
         run: |
           mkdir -p dist/excerpts

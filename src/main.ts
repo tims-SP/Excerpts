@@ -5,14 +5,27 @@ import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
 import { EXCERPTS_HOME_VIEW, ExcerptsHomeFileView } from "./home-view";
 
+export interface ExcerptsDraft {
+  kind: "capture" | "edit";
+  path?: string;
+  raw?: string;
+  body: string;
+  tags: string[];
+  updated: number;
+}
+
 /** A .excerpts file is a real entrypoint; no independent collection IDs or navigation view. */
 export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   repo!: EntryRepository;
   private rendered = new Set<ExcerptsRenderChild>();
   private checkTimer: ReturnType<typeof setInterval> | null = null;
+  private drafts: Record<string, ExcerptsDraft> = {};
+  private draftTimer: ReturnType<typeof setTimeout> | null = null;
+  private writeQueue: Promise<void> = Promise.resolve();
   async onload(): Promise<void> {
-    const data = await this.loadData() as Partial<PluginSettings> | null;
+    const data = await this.loadData() as (Partial<PluginSettings> & { drafts?: Record<string, ExcerptsDraft> }) | null;
+    this.drafts = data?.drafts && typeof data.drafts === "object" ? data.drafts : {};
     // This is a breaking development release. Ignore the former collections schema.
     this.settings = {
       defaultHome: typeof data?.defaultHome === "string" ? data.defaultHome : "",
@@ -54,7 +67,29 @@ export default class ExcerptsPlugin extends Plugin {
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
     this.configurePolling();
   }
-  onunload(): void { if (this.checkTimer) clearInterval(this.checkTimer); }
+  onunload(): void {
+    if (this.checkTimer) clearInterval(this.checkTimer);
+    if (this.draftTimer) clearTimeout(this.draftTimer);
+    void this.persist();
+  }
+  getDraft(key: string): ExcerptsDraft | null {
+    const draft = this.drafts[key];
+    return draft && typeof draft.body === "string" && Array.isArray(draft.tags) ? {
+      ...draft, tags: [...draft.tags]
+    } : null;
+  }
+  setDraft(key: string, draft: ExcerptsDraft | null): void {
+    if (draft && draft.body.length < 300000) this.drafts[key] = { ...draft, tags: [...draft.tags] };
+    else delete this.drafts[key];
+    if (this.draftTimer) clearTimeout(this.draftTimer);
+    this.draftTimer = setTimeout(() => { this.draftTimer = null; void this.persist(); }, 350);
+  }
+  /** Serialize draft/settings writes so fast typing cannot overwrite newer snapshots. */
+  private persist(): Promise<void> {
+    const snapshot = { ...this.settings, drafts: { ...this.drafts } };
+    this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.saveData(snapshot));
+    return this.writeQueue.catch(error => { console.error("Excerpts: failed to save drafts/settings", error); });
+  }
   private onFileChange(path: string): void {
     this.repo.invalidate(path);
     if (!this.settings.autoRefresh) return;
@@ -76,7 +111,7 @@ export default class ExcerptsPlugin extends Plugin {
     }
   }
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.persist();
     this.configurePolling();
   }
   getHomeFiles(): TFile[] {

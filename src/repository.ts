@@ -24,10 +24,14 @@ export class EntryRepository {
     const all = getAllTags(cache ?? {}) ?? [];
     const inline = new Set((cache?.tags ?? []).map(tag => tag.tag.replace(/^#/, "")));
     const tags = [...new Set(all.map(tag => tag.replace(/^#/, "")))];
+    const sourceTags = cache?.frontmatter?.tags;
+    const propertyTags = [...new Set((Array.isArray(sourceTags) ? sourceTags :
+      typeof sourceTags === "string" ? sourceTags.split(/[ ,]+/) : [])
+      .map(value => String(value).trim().replace(/^#/, "")).filter(Boolean))];
     return {
       path: file.path, basename: file.basename,
       mtime: file.stat?.mtime ?? 0, ctime: file.stat?.ctime ?? 0,
-      size: file.stat?.size ?? 0, tags, inlineTags: [...inline],
+      size: file.stat?.size ?? 0, tags, propertyTags, inlineTags: [...inline],
       favorite: cache?.frontmatter?.favorite === true
     };
   }
@@ -106,6 +110,54 @@ export class EntryRepository {
       }
     }
     throw new Error("无法生成唯一文件名");
+  }
+  /** Original bytes are the conflict baseline. Display parsing never modifies note content. */
+  async readSource(path: string): Promise<string> { return this.app.vault.read(this.file(path)); }
+  /** Frontmatter is not exposed in the inline editor. Preserve its original source verbatim. */
+  editorBody(raw: string): string {
+    const frontmatter = raw.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+    return frontmatter ? raw.slice(frontmatter[0].length) : raw;
+  }
+  /** Replace only a YAML tags node: preserve unrelated keys, comments, spacing and line endings. */
+  private replacePropertyTags(source: string, tags: string[]): string {
+    const fm = source.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)(?=\r?\n|$)/);
+    const newline = fm?.[1].includes("\r\n") || (!fm && source.includes("\r\n")) ? "\r\n" : "\n";
+    const block = tags.length ? ["tags:", ...tags.map(tag => "  - " + JSON.stringify(tag))] : [];
+    if (!fm) {
+      if (source.startsWith("---")) throw new Error("YAML Frontmatter 未闭合，已保留原文件");
+      return block.length ? "---" + newline + block.join(newline) + newline +
+        "---" + newline + newline + source : source;
+    }
+    const lines = fm[2].split(newline);
+    const index = lines.findIndex(line => /^tags[ \t]*:/.test(line));
+    if (index < 0 && lines.some(line => /^['"]tags['"][ \t]*:/.test(line))) {
+      throw new Error("此笔记使用特殊 YAML 标签字段，请用 Obsidian 属性编辑器修改");
+    }
+    if (index >= 0) {
+      let end = index + 1;
+      while (end < lines.length && /^[ \t]+\S/.test(lines[end])) end++;
+      // Preserve blank lines and unrelated YAML by replacing precisely the property node.
+      lines.splice(index, end - index, ...block);
+    } else if (block.length) {
+      lines.push(...block);
+    }
+    const middle = lines.join(newline);
+    return fm[1] + middle + fm[3] + source.slice(fm[0].length);
+  }
+  /** Single atomic Vault.process: Markdown text and YAML tags commit together or not at all. */
+  async saveMarkdown(path: string, originalRaw: string, newBody: string,
+    newTags: string[], originalTags: string[]): Promise<void> {
+    const file = this.file(path);
+    const cleaned = [...new Set(newTags.map(tag => tag.trim().replace(/^#/, "")).filter(Boolean))];
+    if (cleaned.some(tag => /\s/.test(tag))) throw new Error("标签不能包含空格");
+    await this.app.vault.process(file, current => {
+      if (current !== originalRaw) throw new Error("Markdown 已在其他窗口修改；未覆盖原文件");
+      const oldHeader = current.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
+      const nextRaw = (oldHeader ? oldHeader[0] : "") + newBody;
+      return JSON.stringify(cleaned) === JSON.stringify(originalTags) ?
+        nextRaw : this.replacePropertyTags(nextRaw, cleaned);
+    });
+    this.invalidate(path);
   }
   async setFavorite(path: string, value: boolean): Promise<void> {
     await this.app.fileManager.processFrontMatter(this.file(path), frontmatter => {
