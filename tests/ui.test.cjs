@@ -246,3 +246,12 @@ test('card tags are the last content group and not duplicated above H2 sections'
   assert.equal(card.querySelectorAll('.ex-card-options').length,1);
   await t.close();
 });
+
+test('standalone leading Markdown media receives wider card treatment only without H1',async()=>{
+  const media=await fixture(false,'![[图片.png]]\n\n旅途中收集的风景\n\n## 来源\n相册');
+  assert.equal(media.pane.contentEl.querySelector('.ex-card').classList.contains('ex-media-first'),true);
+  await media.close();
+  const titled=await fixture();
+  assert.equal(titled.pane.contentEl.querySelector('.ex-card').classList.contains('ex-media-first'),false);
+  await titled.close();
+});
