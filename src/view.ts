@@ -508,11 +508,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     textarea.setAttribute("aria-label", "编辑摘录 Markdown 原文");
     textarea.addEventListener("input", () => { draft.value = textarea.value; });
     const controls = node("div", "ex-edit-actions");
+    const warning = node("p", "ex-warning");
+    warning.hidden = true;
+    warning.setAttribute("role", "alert");
     const cancel = button("取消", () => {
       this.editingDrafts.delete(item.path);
       const replacement = this.createCard(item);
       card.replaceWith(replacement);
       this.enqueue(() => this.hydrate(item, replacement, this.renderToken));
+      replacement.querySelector<HTMLButtonElement>('button[aria-label="编辑摘录"]')?.focus();
     }, "ex-btn-quiet");
     const save = button("保存", () => {
       if (draft.saving) return;
@@ -522,7 +526,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       void this.repo.updateRaw(item.path, draft.value, draft.original).then(async () => {
         this.editingDrafts.delete(item.path);
         await this.reload();
+        const newCard = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+          .find(el => el.dataset.path === item.path);
+        newCard?.querySelector<HTMLButtonElement>('button[aria-label="编辑摘录"]')?.focus();
       }).catch(error => {
+        warning.textContent = error instanceof Error ? error.message : String(error);
+        warning.hidden = false;
         notify(error);
         draft.saving = false;
         save.disabled = false; cancel.disabled = false; textarea.disabled = false;
@@ -536,7 +545,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     });
     controls.append(cancel, save);
-    editor.append(textarea, controls);
+    editor.append(textarea, warning, controls);
     body.append(editor);
     if (focus) textarea.focus();
   }
