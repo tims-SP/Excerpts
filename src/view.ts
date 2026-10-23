@@ -431,9 +431,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
   }
   private createCard(item: CardIndex): HTMLElement {
-    const card = node("article", "ex-card");
+    const card = node("article", "ex-card ex-card-loading");
     card.dataset.path = item.path;
-    card.append(node("div", "ex-quote ex-markdown"));
+    const quote = node("div", "ex-quote ex-markdown");
+    const skeleton = node("div", "ex-card-placeholder");
+    skeleton.setAttribute("aria-hidden", "true");
+    skeleton.append(node("span", "ex-placeholder-line"), node("span", "ex-placeholder-line ex-placeholder-short"));
+    quote.append(skeleton);
+    card.append(quote);
     card.append(node("div", "ex-extras"));
     const editor = node("div", "ex-tag-editor");
     editor.hidden = true;
@@ -477,9 +482,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     await this.plugin.openMarkdown(path, line);
   }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
-    const parsed = await this.repo.read(item.path);
-    if (this.disposed || token !== this.renderToken || !card.isConnected) return;
-    this.renderContent(card, item, parsed);
+    try {
+      const parsed = await this.repo.read(item.path);
+      if (this.disposed || token !== this.renderToken || !card.isConnected) return;
+      this.renderContent(card, item, parsed);
+      card.classList.remove("ex-card-loading");
+    } catch (error) {
+      if (!this.disposed && token === this.renderToken && card.isConnected) {
+        card.querySelector<HTMLElement>(".ex-quote")?.replaceChildren(node("p", "ex-warning", "摘录加载失败"));
+        card.classList.remove("ex-card-loading");
+      }
+      throw error;
+    }
   }
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
