@@ -100,3 +100,6 @@
 
 .excerpts-root .ex-tag-custom:focus-visible, .excerpts-root .ex-search:focus-visible,
 .excerpts-root .ex-editor-text:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+
+.excerpts-root .ex-group-chevron { display: inline-flex; flex: 0 0 auto; align-items: center; }
+.excerpts-root .ex-group-chevron svg { width: 14px; height: 14px; }
