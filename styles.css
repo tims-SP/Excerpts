@@ -143,8 +143,13 @@
 
 /* Reading surfaces: no floating action over the Markdown content. */
 .excerpts-root .ex-card {
-  --ex-card-pad: var(--ex-space-5);
-  min-width: 0; padding: var(--ex-card-pad); position: relative;
+  /* The footer includes its own 36/44px touch row, so the bottom inset is optically shorter. */
+  --ex-card-pad: 20px;
+  --ex-card-pad-bottom: 12px;
+  --ex-prose-gap: 10px;
+  min-width: 0;
+  padding: var(--ex-card-pad) var(--ex-card-pad) var(--ex-card-pad-bottom);
+  position: relative;
   overflow-wrap: anywhere; border: 1px solid var(--ex-border);
   background: var(--ex-card-surface); border-radius: var(--ex-radius);
   box-shadow: 0 1px 2px rgba(0,0,0,.025);
@@ -163,7 +168,7 @@
   font-family: var(--font-text, var(--font-interface));
   font-size: var(--font-text-size, 16px); line-height: 1.72; letter-spacing: normal;
 }
-.excerpts-root .ex-note-heading { margin: 0 0 var(--ex-space-3); font-size: 1.08em; font-weight: 600; line-height: 1.45; }
+.excerpts-root .ex-note-heading { margin: 0 0 var(--ex-space-2); font-size: 1.08em; font-weight: 600; line-height: 1.45; }
 .excerpts-root .ex-content-viewport { min-width: 0; }
 .excerpts-root .ex-content-clamped {
   max-height: 10.32em; overflow: hidden;
@@ -177,9 +182,9 @@
 .excerpts-root .ex-native-markdown { font-family: inherit; font-size: inherit; line-height: inherit; overflow-wrap: anywhere; }
 .excerpts-root .ex-native-markdown > :first-child { margin-top: 0; }
 .excerpts-root .ex-native-markdown > :last-child { margin-bottom: 0; }
-.excerpts-root .ex-native-markdown p { margin-block: 0 var(--ex-space-3); line-height: inherit; }
+.excerpts-root .ex-native-markdown p { margin-block: 0 var(--ex-prose-gap, 10px); line-height: inherit; }
 .excerpts-root .ex-native-markdown :is(h1,h2,h3,h4,h5,h6) { line-height: 1.4; overflow-wrap: anywhere; }
-.excerpts-root .ex-native-markdown :is(blockquote,ul,ol,pre,table,.callout) { margin-block: var(--ex-space-3); }
+.excerpts-root .ex-native-markdown :is(blockquote,ul,ol,pre,table,.callout) { margin-block: var(--ex-prose-gap, 10px); }
 .excerpts-root .ex-card :is(img,video,audio,iframe,embed,canvas,svg) { max-width: 100%; }
 .excerpts-root .ex-card img { display: inline-block; height: auto; max-height: min(320px, 60vh); object-fit: contain; vertical-align: middle; border-radius: var(--radius-m, 8px); }
 .excerpts-root .ex-card video { max-height: min(320px, 60vh); height: auto; }
@@ -189,7 +194,7 @@
 .excerpts-root .ex-card .internal-embed { max-width: 100%; min-width: 0; }
 
 /* H2 sections are disclosures, never visually identical to tags. */
-.excerpts-root .ex-extras { display: flex; flex-direction: column; min-width: 0; margin-top: var(--ex-space-4); }
+.excerpts-root .ex-extras { display: flex; flex-direction: column; min-width: 0; margin-top: var(--ex-space-3); }
 .excerpts-root .ex-extras:empty { display: none; }
 .excerpts-root .ex-section { min-width: 0; border-top: 1px solid var(--ex-border); }
 .excerpts-root button.ex-group-trigger {
@@ -202,14 +207,14 @@
 .excerpts-root .ex-group-chevron { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 16px; height: 16px; }
 .excerpts-root .ex-group-chevron svg { width: 14px; height: 14px; }
 .excerpts-root .ex-group-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.excerpts-root .ex-group-body { min-width: 0; margin-bottom: var(--ex-space-3); margin-left: 7px; padding: var(--ex-space-1) 0 var(--ex-space-2) var(--ex-space-3); border-left: 2px solid var(--ex-border); }
+.excerpts-root .ex-group-body { min-width: 0; margin-bottom: var(--ex-space-2); margin-left: 7px; padding: var(--ex-space-1) 0 var(--ex-space-2) var(--ex-space-3); border-left: 2px solid var(--ex-border); }
 .excerpts-root .ex-group-body > :first-child { margin-top: 0; }
 
 /* Tag editing belongs directly above the footer, never between prose and H2 content. */
 .excerpts-root .ex-tag-editor {
   display: flex; flex: 0 1 auto; flex-direction: column; align-items: stretch;
   gap: var(--ex-space-2); width: 100%; min-width: 0;
-  padding: var(--ex-space-3) 0 0; margin-top: var(--ex-space-4);
+  padding: var(--ex-space-2) 0 0; margin-top: var(--ex-space-3);
   background: transparent; border: 0; border-top: 1px solid var(--ex-border);
   border-radius: 0;
 }
@@ -220,10 +225,10 @@
 /* Micro pills: tiny *visual* surface, sufficient independent touch target. */
 .excerpts-root .ex-card-footer {
   display: flex; justify-content: space-between; align-items: flex-end;
-  min-height: 36px; margin-top: var(--ex-space-3); gap: var(--ex-space-3);
+  min-height: 36px; margin-top: var(--ex-space-2); gap: var(--ex-space-2);
 }
 .excerpts-root .ex-chips {
-  display: flex; align-items: center; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; flex: 1 1 auto; min-width: 0; min-height: 36px;
   flex-wrap: nowrap; gap: 5px; overflow: hidden;
 }
 .excerpts-root .ex-chips.ex-tags-editing,
@@ -279,7 +284,10 @@
   .excerpts-root .ex-day-group { grid-template-columns: minmax(0, 1fr); gap: var(--ex-space-2); }
   .excerpts-root .ex-day-rail { padding: 0 2px; flex-direction: row; align-items: baseline; gap: var(--ex-space-2); }
   .excerpts-root .ex-day-cards { width: 100%; max-width: none; }
-  .excerpts-root .ex-card { --ex-card-pad: var(--ex-space-4); }
+  .excerpts-root .ex-card {
+    --ex-card-pad: 16px;
+    --ex-card-pad-bottom: 10px;
+  }
   .excerpts-root button.ex-loadmore { margin-left: 50%; }
 }
 @container (max-width: 400px) {
@@ -295,6 +303,7 @@
   .excerpts-root button.ex-tag-overflow,
   .excerpts-root button.ex-tag { min-height: 44px; }
   .excerpts-root button.ex-icon-button { width: 44px; height: 44px; padding: 12px; }
+  .excerpts-root .ex-chips { min-height: 44px; }
   .excerpts-root button.ex-tag { height: 44px; }
   .excerpts-root button.ex-tag-option { min-height: 44px; }
   .excerpts-root .ex-tags-input,.excerpts-root .ex-tag-custom,.excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
