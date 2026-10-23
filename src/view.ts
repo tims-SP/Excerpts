@@ -122,6 +122,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     };
     const toggleTag = (tag: string, add: boolean) => {
       const value = tag.trim().replace(/^#/, "");
+      if (saving) return;
       if (!value || /\s/.test(value)) {
         new Notice("标签不能为空或包含空格");
         return;
@@ -133,7 +134,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       tagSearch.value = "";
       repaintSelected();
       this.showSuggestions();
-      tagSearch.focus();
+      if (!tagsPane.hidden) tagSearch.focus();
     };
     const tagToggle = iconButton("hash", "添加标签", () => {
       tagsPane.hidden = !tagsPane.hidden;
@@ -552,14 +553,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     editor.append(input, optionRow);
     const toggle = button("＋ 标签", () => {
       const opened = editor.hidden;
-      editor.hidden = !opened;
       if (opened) this.openTagEditors.add(item.path);
       else this.openTagEditors.delete(item.path);
-      toggle.setAttribute("aria-expanded", String(opened));
       const card = mount.closest<HTMLElement>(".ex-card");
       const noTags = !item.tags.length && !opened;
       card?.classList.toggle("ex-card-no-tags", noTags);
-      if (opened) input.focus();
+      // Rebuild pills so they switch between filter and remove behavior immediately.
+      this.renderTags(mount, item, opened);
+      if (opened) mount.querySelector<HTMLInputElement>(".ex-tag-custom")?.focus();
       else if (noTags) card?.querySelector<HTMLButtonElement>(".ex-footer-tag")?.focus();
     }, "ex-add-tag");
     toggle.setAttribute("aria-expanded", String(editorOpen));
