@@ -51,8 +51,8 @@ with sync_playwright() as p:
         page.set_content(html,wait_until='domcontentloaded')
         page.wait_for_function('window.__ready === true || window.__error',timeout=12000)
         if mode=='dark': page.evaluate("document.documentElement.classList.add('theme-dark')")
-        page.locator('.ex-card').first.locator('button[aria-label="更多摘录操作"]').click()
-        page.evaluate("window.__menu.items.find(item=>item.title==='编辑摘录').fn()")
+        page.locator('.ex-card').first.locator('button[aria-label="编辑摘录"]').click()
+        page.wait_for_selector('.ex-entry-editor')
         editor=page.locator('.ex-entry-editor')
         assert editor.count()==1, 'Native entry editor missing'
         assert editor.locator('textarea.ex-editor-text').count()==1
