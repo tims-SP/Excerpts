@@ -468,6 +468,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
     body.replaceChildren();
+    // Only a standalone leading embed gains the media-first card treatment.
+    // Complex/mixed content retains the original Markdown flow.
+    const mediaFirst = !parsed.title &&
+      /^\s*(?:!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>|<video\b[^>]*>)(?:\s*\n\s*\n|\s*$)/.test(parsed.body);
+    card.classList.toggle("ex-media-first", mediaFirst);
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
     const content = node("div", "ex-content-viewport");
     const plain = !/(?:!\[|\[\[|\[[^\]]+\]\(|^\s*(?:>|[-*+]\s|\d+\.\s|#{1,6}\s|`{3}|~{3}|\|)|<\w+)/m.test(parsed.body);
