@@ -131,7 +131,7 @@ export class EntryRepository {
       lines.splice(start, end - start);
     }
     if (block) lines.push(block.trimEnd());
-    return "---\n" + lines.filter(line => line !== "").join("\n") + "\n---" +
+    return "---\n" + lines.join("\n") + "\n---" +
       source.slice(frontmatter[0].length);
   }
   /** Single atomic Vault.process: Markdown text and YAML tags commit together or not at all. */
