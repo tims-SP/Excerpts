@@ -25,7 +25,7 @@ function setIcon(el,name){const d={search:"M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14 M
 const files=new Map();
 function add(path,data,tags,n){const file=new TFile(path,n);files.set(path,{file,data,tags});return file}
 add("摘录/首页.excerpts","",[],0);
-add("摘录/第一段.md","# 风与日常\n\n你所经历的一切，都会成为理解世界的方式。\n\n不要急着为每一个问题寻找答案。\n\n## 来源\n\n个人阅读随记\n\n## 批注\n\n值得反复阅读。",["生活","阅读"],1);
+add("摘录/第一段.md","# 风与日常\n\n你所经历的一切，都会成为理解世界的方式。\n\n不要急着为每一个问题寻找答案。\n\n## 来源\n\n个人阅读随记\n\n## 批注\n\n值得反复阅读。",["生活","阅读","思想","文学","摘抄","随笔","人物","灵感","读书笔记"],1);
 add("摘录/第二段.md","长句子也应有充足的呼吸感和清晰的段落间距。在不同屏幕尺寸下，文字不应被编辑按钮遮挡。\n\n我们可以记录思想，也可以记录生活。",["随想"],2);
 add("摘录/无标签.md","没有标签的卡片也应该保持安静，不应强制增加一行无意义的附属信息。",[],3);
 const vault={getAbstractFileByPath:p=>files.get(p)?.file??null,getFiles:()=>[...files.values()].map(x=>x.file),getAllLoadedFiles:()=>[...files.values()].map(x=>x.file),getMarkdownFiles:()=>[...files.values()].map(x=>x.file).filter(x=>x.extension==="md"),cachedRead:async f=>files.get(f.path).data,process:async(f,fn)=>{const entry=files.get(f.path);entry.data=fn(entry.data);return entry.data},create:async(p,v)=>add(p,v,[],0),createFolder:async()=>{},on:()=>({})};
