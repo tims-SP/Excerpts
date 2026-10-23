@@ -44,6 +44,17 @@ A workspace root is selected by the user. Relative default names `首页.md`, `C
 - Removing an individual Extra now has a one-item in-session undo token. Undo uses `Vault.process` and the post-delete snapshot, so a newer edit cannot silently be overwritten. The token is not persistent; preserve permanent edit history through Git or file backups.
 - All collection content remains Markdown. No archived content or drafts are duplicated into plugin `data.json`.
 
+
+## Recoverable editing drafts (v0.2 development)
+
+- Quick capture and main Entry quote editor auto-backup their inputs after roughly 350 ms of idle typing to Markdown notes under `<workspace>/Excerpts-Drafts/`. These files are separate from the authoritative `Cards/` Entry documents and never copied into plugin settings or a remote service.
+- A new random draft ID is created per editor session; two windows never intentionally share an editable backup file. Draft writes use `Vault.process` and compare the entire expected serialized note before modification, refusing externally edited backups.
+- Draft notes contain a readable heading and a fenced JSON payload for exact Unicode/Markdown text round trips. Malformed, foreign-collection or noncanonical records are ignored by automatic recovery and left available for manual inspection.
+- The workspace presents explicit recovery actions; it never silently replaces existing composer text. For Entry drafts, the original Entry revision snapshot is checked before loading. A changed current Entry opens a read-only conflict preview, never a write operation.
+- When a save or explicit cancel completes, the corresponding draft backup is moved into `Excerpts-Drafts/Resolved/`, retaining a manual recovery history. Files are not permanently deleted by the plugin.
+- Editing begun before an external modification is guarded by an original revision snapshot even after UI rerender. Both quote and Extra editors refuse stale saves. This supplements the repository's atomic `Vault.process` check.
+- **Limitations:** automatic backup can miss the last ~350 ms of typing if the app is killed before a scheduled Vault write; unload only attempts a final async flush. Draft persistence currently covers **quick capture and main quote editing**, not the six Extra editors. A completed save can leave a resolved backup behind if moving it fails; this is reported. The real Obsidian client/storage/sync behavior remains unverified.
+
 ## Implementation choices (v0.1)
 
 - TypeScript, native DOM, CSS vars, `registerMarkdownCodeBlockProcessor`, `MarkdownRenderChild`.
