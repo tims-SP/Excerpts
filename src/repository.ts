@@ -118,21 +118,30 @@ export class EntryRepository {
     const frontmatter = raw.match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/);
     return frontmatter ? raw.slice(frontmatter[0].length) : raw;
   }
+  /** Replace only a YAML tags node: preserve unrelated keys, comments, spacing and line endings. */
   private replacePropertyTags(source: string, tags: string[]): string {
-    const block = tags.length ? "tags:\n" + tags.map(t => "  - " + JSON.stringify(t)).join("\n") + "\n" : "";
-    const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/);
-    if (!frontmatter) return block ? "---\n" + block + "---\n\n" + source : source;
-    const yaml = frontmatter[1];
-    const lines = yaml.split(/\r?\n/);
-    const start = lines.findIndex(line => /^tags\s*:/.test(line));
-    if (start >= 0) {
-      let end = start + 1;
-      while (end < lines.length && (!lines[end].trim() || /^[ \t]/.test(lines[end]))) end++;
-      lines.splice(start, end - start);
+    const fm = source.match(/^(---\r?\n)([\s\S]*?)(\r?\n---)(?=\r?\n|$)/);
+    const newline = fm?.[1].includes("\r\n") || (!fm && source.includes("\r\n")) ? "\r\n" : "\n";
+    const block = tags.length ? ["tags:", ...tags.map(tag => "  - " + JSON.stringify(tag))] : [];
+    if (!fm) {
+      return block.length ? "---" + newline + block.join(newline) + newline +
+        "---" + newline + newline + source : source;
     }
-    if (block) lines.push(block.trimEnd());
-    return "---\n" + lines.join("\n") + "\n---" +
-      source.slice(frontmatter[0].length);
+    const lines = fm[2].split(newline);
+    const index = lines.findIndex(line => /^tags[ \t]*:/.test(line));
+    if (index < 0 && lines.some(line => /^['"]tags['"][ \t]*:/.test(line))) {
+      throw new Error("此笔记使用特殊 YAML 标签字段，请用 Obsidian 属性编辑器修改");
+    }
+    if (index >= 0) {
+      let end = index + 1;
+      while (end < lines.length && /^[ \t]+\S/.test(lines[end])) end++;
+      // Preserve blank lines and unrelated YAML by replacing precisely the property node.
+      lines.splice(index, end - index, ...block);
+    } else if (block.length) {
+      lines.push(...block);
+    }
+    const middle = lines.join(newline);
+    return fm[1] + middle + fm[3] + source.slice(fm[0].length);
   }
   /** Single atomic Vault.process: Markdown text and YAML tags commit together or not at all. */
   async saveMarkdown(path: string, originalRaw: string, newBody: string,
