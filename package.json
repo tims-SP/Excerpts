@@ -9,11 +9,13 @@
     "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
     "test": "node scripts/test.cjs",
     "smoke": "node scripts/smoke.cjs",
-    "verify": "npm run test && npm run build && npm run smoke"
+    "verify": "npm run test && npm run build && npm run smoke && npm run ui",
+    "ui": "node --test tests/ui.test.cjs"
   },
   "devDependencies": {
     "obsidian": "latest",
     "typescript": "^5.8.3",
-    "esbuild": "^0.25.5"
+    "esbuild": "^0.25.5",
+    "jsdom": "^26.1.0"
   }
 }
