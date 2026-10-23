@@ -537,7 +537,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.editor = {
       path: item.path, raw, body: this.repo.editorBody(raw),
       tags: [...item.propertyTags], initialTags: [...item.propertyTags], saving: false,
-      focus: "body"
+      focus: "body", caret: [0, 0]
     };
     this.renderInlineEditor(card, item);
     this.preserveEditDraft();
