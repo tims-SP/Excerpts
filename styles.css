@@ -44,3 +44,7 @@
 .excerpts-root .ex-warning { color: var(--text-error); font-size: 12px; margin: 8px 0; }
 .excerpts-root .ex-loadmore { margin: 12px auto; }
 @media (max-width: 600px) { .excerpts-root { padding: 4px 0 30px; } .excerpts-root .ex-composer,.excerpts-root .ex-card { padding: 14px; } .excerpts-root .ex-compose-actions { align-items: stretch; flex-wrap:wrap; } .excerpts-root .ex-compose-actions > * { flex: 1; } .excerpts-root .ex-card-top { align-items: start; } .excerpts-root .ex-card-actions { flex-wrap:wrap; justify-content:flex-end; } .excerpts-root .ex-header { padding: 6px 2px 18px; } }
+
+/* v0.2: revisited card uses the host theme accent; no global styling. */
+.excerpts-root .ex-card.ex-recalled { border-color: var(--interactive-accent); }
+.excerpts-root .ex-recall-hint { color: var(--text-accent); font-size: 12px; }
