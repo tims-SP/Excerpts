@@ -2,10 +2,10 @@
 
 An Obsidian community plugin for **folder-scoped local collections**. It never replaces the global Obsidian editor, theme, or file browser.
 
-## Features in v0.2.0-beta.1
+## Features in v0.2.0-beta.3
 
 - Create one or more collections bound to user-selected folders, with an independently generated home Markdown file.
-- Open a flomo-inspired card feed only on the authorized home file in **Reading view**.
+- Open a flomo-inspired card feed in an authorized **native Obsidian collection pane** (with a configurable Markdown homepage fallback).
 - Save each excerpt as a regular Markdown file in the collection's `Cards/` directory.
 - Add tags, search, filter, favorite, and edit excerpts.
 - Attach multiple sources, variants, notes, contexts, links, and custom blocks.
@@ -34,7 +34,7 @@ A collection folder contains a generated `首页.md`, `Cards/` with a Markdown f
 
 ## Limitations
 
-- Designed for Reading view; Live Preview does not become a full-screen app.
+- Dedicated collection pages use a native Obsidian ItemView; the Markdown codeblock fallback is mainly for Reading view.
 - Files remain ordinary Markdown, but structured extras should be edited in the plugin to maintain markers.
 - A conflicting Git merge must be resolved externally; there is no automatic multi-device conflict resolver.
 - Full Obsidian desktop/iOS/Android acceptance tests have not yet run; mobile support is a build target.
@@ -63,3 +63,7 @@ License: MIT (see LICENSE).
 - The Settings option **打开首页时进入摘录视图** can disable automatic redirection to let you edit the homepage as plain Markdown. The **打开首页** button still opens the native collection pane.
 - Capture is compact; tags and search expand on demand. Recent entries and random review appear together.
 - The actual Obsidian status/nav/toolbars cannot be made to look exactly like ChatGPT's conceptual preview; this plugin inherits host chrome and the current Obsidian theme.
+
+### v0.2.0-beta.3 — Five rounds of interface refinement
+
+See [five-round UI report](docs/FIVE_ROUND_UI_REVIEW.md) for the five implementation/test checkpoints, accessibility details, platform limitations, and screenshot acceptance criteria. No storage migrations.
