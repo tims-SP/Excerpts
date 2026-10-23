@@ -7,6 +7,17 @@ GitHub Actions (`.github/workflows/build.yml`): checkout -> setup Node 22 -> npm
 Artifacts:
 - `excerpts-obsidian-plugin`: ZIP with `main.js`, `manifest.json`, `styles.css` and a nested installation zip.
 - `excerpts-dev-deps`: Linux Node 22 `node_modules` snapshot, retained for seven days, intended only for isolated debug environments.
+- `excerpts-source-snapshot`: matching repository source files and test scripts for reproducible offline builds, retained for seven days.
+
+## Independent rebuild from a single Actions run
+
+Download both `excerpts-source-snapshot` and `excerpts-dev-deps` from the **same completed successful run**. Each is an outer Actions ZIP containing a `.tar.gz` archive. Extract the source archive into a clean directory and extract the dependencies into that same directory, then run:
+
+```sh
+npm run verify
+```
+
+This rebuild checks Node data tests, TypeScript against the official Obsidian declarations, esbuild and the compiled-plugin Vault mock. Compare the generated `main.js` with the `excerpts-obsidian-plugin` artifact from the same commit. Node version and native dependency platform should match Actions (Linux, Node 22). The isolated rebuild still does **not** count as a genuine Obsidian client test.
 
 ## Local offline development
 
