@@ -41,3 +41,14 @@ test('truncate by Unicode code points with room for suffix', () => {
 test('local fallback uses local date, not UTC serialization', () => {
   assert.equal(excerptFileStem('![[图片.png]]', date), '摘录 2026-10-24 00-11');
 });
+test('normal sentences outrank earlier media descriptions', () => {
+  const doc = '![[cover.png|封面照片]]\n\n正文才是文章的主题。';
+  assert.equal(excerptFileStem(doc, date), '正文才是文章的主题。');
+  assert.equal(excerptFileStem('![封面照片](cover.png)\n\n讲述一次旅行。', date), '讲述一次旅行。');
+  assert.equal(excerptFileStem('![[cover.png|封面照片]]', date), '封面照片');
+});
+test('Obsidian callout markers never become a filename', () => {
+  assert.equal(excerptFileStem('> [!quote]\n> 人生如逆旅，我亦是行人。', date), '人生如逆旅，我亦是行人。');
+  assert.equal(excerptFileStem('> [!note] 读书摘记\n> 正文', date), '读书摘记');
+  assert.equal(excerptFileStem('> [!quote]', date), '摘录 2026-10-24 00-11');
+});
