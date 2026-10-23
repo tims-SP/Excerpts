@@ -55,6 +55,19 @@ async function test(){
   const loaded=(await repo.list(ws))[0];
   assert.equal(loaded.extras[0].content,'《测试》');
   assert.equal(loaded.tags[0],'诗歌');
+  // Editing must not rewrite a damaged record, even when the cached Entry is valid.
+  const goodRaw=files.get(item.path).data;
+  const damagedRaw=goodRaw.replace('<!-- excerpts:extras:end -->','');
+  files.get(item.path).data=damagedRaw;
+  await assert.rejects(()=>repo.update(saved,prev=>({...prev,favorite:false})),/损坏/);
+  assert.equal(files.get(item.path).data,damagedRaw);
+  files.get(item.path).data=goodRaw;
+  // A path using Windows separators must not bypass the overlap check.
+  await plugin.createWorkspace('另一个收藏集','其它/空间');
+  await assert.rejects(()=>plugin.repointWorkspace(ws.id,'其它\\空间'),/重叠/);
+  // A string mentioning the workspace ID is not an authorized homepage.
+  files.set('假首页/首页.md',{file:new TFile('假首页/首页.md'),data:'# text\nworkspace: '+ws.id+'\n'});
+  await assert.rejects(()=>plugin.repointWorkspace(ws.id,'假首页'),/未绑定/);
   // Existing notes are untouched.
   files.set('普通笔记.md',{file:new TFile('普通笔记.md'),data:'# A separate note'});
   assert.equal(files.get('普通笔记.md').data,'# A separate note');
