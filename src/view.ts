@@ -34,11 +34,13 @@ function dayLabel(timestamp: number): { title: string; subtitle: string } {
   const today = new Date();
   const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((midnight(today) - midnight(date)) / 86400000);
+  const recent = days === 0 || days === 1;
   const title = days === 0 ? "今天" : days === 1 ? "昨天" :
-    date.getFullYear() === today.getFullYear() ?
-      date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" }) :
-      date.toLocaleDateString("zh-CN", { year: "numeric", month: "short", day: "numeric" });
-  return { title, subtitle: date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) };
+    date.toLocaleDateString("zh-CN", { month: "long", day: "numeric" });
+  const subtitle = recent ?
+    date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) :
+    date.getFullYear() !== today.getFullYear() ? date.getFullYear() + "年" : "";
+  return { title, subtitle };
 }
 
 /** Unsaved text survives view teardown within the current plugin session. */
@@ -401,7 +403,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         group.dataset.day = key;
         const label = dayLabel(item.ctime);
         const rail = node("header", "ex-day-rail");
-        rail.append(node("h4", "ex-day-title", label.title), node("span", "ex-day-subtitle", label.subtitle));
+        rail.append(node("h4", "ex-day-title", label.title));
+        if (label.subtitle) rail.append(node("span", "ex-day-subtitle", label.subtitle));
         const cards = node("div", "ex-day-cards");
         group.append(rail, cards);
         this.listEl.append(group);
