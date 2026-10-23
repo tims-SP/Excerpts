@@ -88,15 +88,17 @@ function makeTagEditor(
   const render = () => {
     chips.replaceChildren();
     for (const tag of selected) {
-      const remove = button("", () => {
+      const pill = node("span", "ex-tag-chip");
+      pill.append(node("span", "", "#" + tag));
+      const remove = button("×", () => {
         if (disabled) return;
         selected = selected.filter(item => item !== tag);
         render(); onChange();
-      }, "ex-tag-chip");
-      remove.append(node("span", "", "#" + tag), node("span", "ex-tag-remove", "×"));
+      }, "ex-tag-remove");
       remove.setAttribute("aria-label", "移除标签：" + tag);
       remove.disabled = disabled;
-      chips.append(remove);
+      pill.append(remove);
+      chips.append(pill);
     }
     suggestions.replaceChildren();
     const match = input.value.trim().replace(/^#/, "").toLocaleLowerCase();
