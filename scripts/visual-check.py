@@ -57,6 +57,13 @@ with sync_playwright() as p:
         assert editor.count()==1, 'Native entry editor missing'
         assert editor.locator('textarea.ex-editor-text').count()==1
         assert editor.locator('textarea.ex-editor-text').evaluate('(el)=>getComputedStyle(el).fontSize')
+        text_align=page.evaluate('''() => {
+          const e=document.querySelector('.ex-editor-text');
+          const q=document.querySelector('.ex-card .ex-quote');
+          return e.getBoundingClientRect().left+parseFloat(getComputedStyle(e).paddingLeft)
+            -q.getBoundingClientRect().left;
+        }''')
+        assert abs(text_align)<=1,('editor text baseline shifted',mode,width,text_align)
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         page.screenshot(path=str(root/'artifacts'/f'excerpts-editor-{mode}-{width}.png'),full_page=True)
         print('editor',mode,width,'entry height',editor.bounding_box()['height'])
