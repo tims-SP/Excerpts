@@ -107,3 +107,11 @@
 .excerpts-root .ex-tag-option { border-radius: 999px; padding: 5px 10px; }
 
 .excerpts-root .ex-card.ex-editing { border-color: var(--background-modifier-border-focus, var(--interactive-accent)); }
+
+/* Empty-tag cards keep the add affordance in the existing footer row. */
+.excerpts-root .ex-card.ex-card-no-tags > .ex-chips { display: none; }
+.excerpts-root .ex-card .ex-footer-tag { display: none; color: var(--text-muted); }
+.excerpts-root .ex-card.ex-card-no-tags .ex-footer-tag { display: inline-flex; }
+@media (pointer: coarse) {
+  .excerpts-root .ex-card .ex-footer-tag { min-width: 44px; min-height: 44px; }
+}
