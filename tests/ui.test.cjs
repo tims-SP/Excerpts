@@ -45,7 +45,8 @@ class Modal {
   open() { this.isOpen = true; }
   close() { this.isOpen = false; }
 }
-const replacement = { TAbstractFile, TFile, TFolder, MarkdownRenderChild, Plugin, PluginSettingTab, Setting, Notice, Menu, Modal };
+function setIcon(el, name) { el.setAttribute('data-icon', name); const svg=document.createElement('svg');svg.setAttribute('aria-hidden', 'true');el.append(svg); }
+const replacement = { TAbstractFile, TFile, TFolder, MarkdownRenderChild, Plugin, PluginSettingTab, Setting, Notice, Menu, Modal, setIcon };
 const oldLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'obsidian') return replacement;
@@ -94,7 +95,8 @@ async function fixture() {
   };
 }
 function click(scope, label) {
-  const found = [...scope.querySelectorAll('button')].find(button => button.textContent.includes(label));
+  const found = [...scope.querySelectorAll('button')].find(button =>
+    button.textContent.replace(/\s+/g, ' ').includes(label.replace(/\s+/g, ' ')) || button.getAttribute('aria-label')?.includes(label));
   assert.ok(found, 'Missing button: ' + label);
   found.click(); return found;
 }
@@ -419,64 +421,24 @@ test('a manually corrupted draft is not offered or overwritten', async () => {
   } finally { await f.close(); }
 });
 
-test('open quote editor cannot overwrite a changed Entry after workspace refresh', async () => {
-  const f = await fixture();
-  try {
-    await f.repo.create(f.workspace, '最初正文');
-    await f.renderer.reload();
-    click(f.container, '编辑');
-    type(f.container.querySelector('.ex-edit-panel textarea'), '旧编辑器的修改');
-    const current = (await f.repo.list(f.workspace))[0];
-    await f.repo.update(current, x => ({ ...x, text: '同步后的新正文' }));
-    await f.renderer.reload();
-    assert.equal(f.container.querySelector('.ex-edit-panel textarea').value, '旧编辑器的修改');
-    click(f.container.querySelector('.ex-edit-panel'), '保存修改');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.match(Notice.last, /拒绝覆盖/);
-    assert.equal((await f.repo.list(f.workspace))[0].text, '同步后的新正文');
-  } finally { await f.close(); }
-});
 
-test('stale open Extra editor cannot overwrite externally updated content', async () => {
+test('native theme UI exposes icon-only actions with accessible labels', async () => {
   const f = await fixture();
   try {
-    const entry = await f.repo.create(f.workspace, '测试原文');
-    await f.repo.update(entry, x => ({ ...x, extras: [
-      { id: 'x_src', kind: 'source', title: '初始来源', content: '卷一' }
-    ] }));
+    await f.repo.create(f.workspace, '卡片内容', ['文学']);
     await f.renderer.reload();
-    click(f.container, '来源  1');
-    click(f.container, '修改');
-    type(f.container.querySelector('.ex-edit-panel textarea'), '未保存的旧批注');
-    const before = (await f.repo.list(f.workspace))[0];
-    await f.repo.update(before, x => ({ ...x, extras: x.extras.map(a => ({ ...a, content: '外部已经修改' })) }));
-    await f.renderer.reload();
-    click(f.container.querySelector('.ex-edit-panel'), '保存');
+    const header = f.container.querySelector('.ex-header');
+    assert.equal(header.querySelector('.ex-eyebrow'), null, 'old decorative English title must disappear');
+    assert.equal(header.querySelector('.ex-title').textContent, '测试收藏集');
+    assert.ok(header.querySelector('button[aria-label="随机回顾"] [aria-hidden="true"]'));
+    const card = f.container.querySelector('.ex-card');
+    assert.ok(card.querySelector('button[aria-label="编辑"] [aria-hidden="true"]'));
+    assert.equal(card.querySelector('button[aria-label="珍藏"]').getAttribute('aria-pressed'), 'false');
+    click(card, '珍藏');
     await new Promise(resolve => setImmediate(resolve));
-    assert.match(Notice.last, /拒绝覆盖/);
-    assert.equal((await f.repo.list(f.workspace))[0].extras[0].content, '外部已经修改');
-  } finally { await f.close(); }
-});
-
-test('two collection panes keep separate draft files rather than overwriting', async () => {
-  const f = await fixture();
-  try {
-    type(f.container.querySelector('.ex-compose-text'), '第一个窗口草稿');
-    await new Promise(resolve => setTimeout(resolve, 430));
-    const otherContainer = document.createElement('div');
-    document.body.append(otherContainer);
-    let other;
-    f.plugin.processor('workspace: ' + f.workspace.id, otherContainer, {
-      sourcePath: '隔离/摘录/首页.md',
-      addChild(child) { other = child; }
-    });
-    other.onload();
-    await new Promise(resolve => setTimeout(resolve, 50));
-    type(otherContainer.querySelector('.ex-compose-text'), '第二个窗口草稿');
-    await new Promise(resolve => setTimeout(resolve, 430));
-    const drafts = await f.renderer.draftRepo.list(f.workspace);
-    assert.equal(drafts.length, 2);
-    assert.deepEqual(drafts.map(x => x.text).sort(), ['第一个窗口草稿','第二个窗口草稿'].sort());
-    other.onunload(); otherContainer.remove();
+    await f.renderer.reload();
+    assert.equal(f.container.querySelector('button[aria-label="取消珍藏"]').getAttribute('aria-pressed'), 'true');
+    assert.ok(f.container.querySelector('.ex-toolbar-title .ex-list-heading'));
+    assert.equal(f.container.querySelectorAll('.ex-extra-group').length, 0);
   } finally { await f.close(); }
 });

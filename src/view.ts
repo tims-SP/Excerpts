@@ -1,4 +1,4 @@
-import { MarkdownRenderChild, Notice, Menu, Modal } from "obsidian";
+import { MarkdownRenderChild, Notice, Menu, Modal, setIcon } from "obsidian";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository, TrashedEntry } from "./repository";
 import { Entry, Extra, ExtraKind, EXTRA_KINDS, EXTRA_LABELS, Workspace, makeId } from "./model";
@@ -13,6 +13,16 @@ function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", text = ""
 function button(label: string, action: () => void, cls = ""): HTMLButtonElement {
   const b = node("button", `ex-btn ${cls}`, label);
   b.type = "button"; b.addEventListener("click", action); return b;
+}
+/** Use Obsidian's clickable-icon affordance and native Lucide icon registry. */
+function iconButton(icon: string, label: string, action: () => void, cls = ""): HTMLButtonElement {
+  const b = node("button", `clickable-icon ex-icon-button ${cls}`);
+  b.type = "button";
+  b.setAttribute("aria-label", label);
+  b.setAttribute("title", label);
+  setIcon(b, icon);
+  b.addEventListener("click", action);
+  return b;
 }
 function inputBox(placeholder: string, value = ""): HTMLInputElement {
   const el = node("input", "ex-input"); el.type = "text"; el.placeholder = placeholder; el.value = value; return el;
@@ -93,7 +103,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.empty(); root.addClass("excerpts-root");
     const header = node("div", "ex-header");
     const brand = node("div", "ex-brand");
-    brand.append(node("div", "ex-eyebrow", "EXCERPTS / COLLECTION"), node("h2", "ex-title", this.workspace.name));
+    brand.append(node("h2", "ex-title", this.workspace.name));
     const actions = node("div", "ex-actions");
     const undoButton = button("撤销删除", () => void this.undoTrash(), "ex-btn-quiet");
     undoButton.hidden = true;
@@ -103,11 +113,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     undoExtraButton.hidden = true;
     this.undoExtraButton = undoExtraButton;
     actions.append(undoExtraButton);
-    actions.append(button("随机回顾", () => this.recallRandom(), "ex-btn-quiet"));
-    actions.append(button("刷新", () => void this.reload(), "ex-btn-quiet"));
+    actions.append(iconButton("shuffle", "随机回顾", () => this.recallRandom()));
+    actions.append(iconButton("refresh-cw", "刷新", () => void this.reload()));
     header.append(brand, actions); root.append(header);
     const form = node("div", "ex-composer");
-    form.append(node("div", "ex-section-label", "收藏一段喜欢的文字"));
+    const composeLabel = node("div", "ex-section-label", "随手收藏");
+    form.append(composeLabel);
     const quote = textarea("一句话、一段文字，或刚刚闪现的灵感……", "", "ex-compose-text");
     this.captureInput = quote;
     const tags = inputBox("标签（用逗号分隔，可选）");
@@ -121,7 +132,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.addEventListener("input", queueCapture);
     tags.addEventListener("input", queueCapture);
     const composeActions = node("div", "ex-compose-actions");
-    const saveButton = button("保存摘录", () => void save(), "ex-btn-primary");
+    const saveButton = button("保存摘录", () => void save(), "mod-cta ex-btn-primary");
     composeActions.append(tags, saveButton);
     form.append(quote, composeActions); root.append(form);
     quote.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); void save(); } });
@@ -145,11 +156,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     };
     const toolbar = node("div", "ex-toolbar");
+    const toolbarTitle = node("div", "ex-toolbar-title");
+    toolbarTitle.append(node("h3", "ex-list-heading", "最近收藏"));
+    this.countEl = node("span", "ex-count", "0 条收藏");
+    toolbarTitle.append(this.countEl);
+    const searchWrap = node("div", "ex-search-wrap");
+    const searchIcon = node("span", "ex-search-icon");
+    setIcon(searchIcon, "search");
     const search = inputBox("搜索摘录、来源、变种或批注…");
     search.setAttribute("aria-label", "搜索摘录");
     search.addEventListener("input", () => { this.searchText = search.value.toLocaleLowerCase(); this.drawCards(); });
-    this.countEl = node("span", "ex-count", "0 条收藏");
-    toolbar.append(search, this.countEl); root.append(toolbar);
+    searchWrap.append(searchIcon, search);
+    toolbar.append(toolbarTitle, searchWrap); root.append(toolbar);
     this.listEl = node("div", "ex-card-list"); root.append(this.listEl);
   }
   private queueDraft(key: string, value: { kind: "capture" | "quote"; entryId: string; base: string; text: string; tags: string }): void {
@@ -266,6 +284,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const visible = this.visibleItems();
     if (this.countEl) this.countEl.textContent = `${visible.length} / ${this.items.length} 条收藏`;
     const tagBar = node("div", "ex-filter-tags");
+    tagBar.setAttribute("aria-label", "按标签筛选");
     const all = button("全部", () => { this.tagFilter = ""; this.drawCards(); }, !this.tagFilter ? "ex-selected" : "ex-btn-quiet");
     tagBar.append(all);
     const tags = [...new Set(this.items.flatMap(x => x.tags))].sort((a,b) => a.localeCompare(b, "zh"));
@@ -280,28 +299,30 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private pageSize = 40;
   private card(entry: Entry): HTMLElement {
     const card = node("article", "ex-card");
+    card.setAttribute("aria-label", "摘录卡片");
     if (entry.id === this.recalledId) card.classList.add("ex-recalled");
     const top = node("div", "ex-card-top");
     if (entry.id === this.recalledId) top.append(node("span", "ex-recall-hint", "随机回顾"));
     top.append(node("span", "ex-date", dateLabel(entry.created)));
     const tools = node("div", "ex-card-actions");
     if (!entry.readOnly) {
-      tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
-      tools.append(button("编辑", () => {
+      const favorite = iconButton(entry.favorite ? "bookmark-check" : "bookmark", entry.favorite ? "取消珍藏" : "珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), entry.favorite ? "ex-is-favorite" : "");
+      favorite.setAttribute("aria-pressed", entry.favorite ? "true" : "false");
+      tools.append(favorite);
+      tools.append(iconButton("pencil", "编辑", () => {
         if (this.editing !== entry.id && !this.quoteBases.has(entry.id)) this.quoteBases.set(entry.id, revision(entry));
         this.editing = this.editing === entry.id ? null : entry.id;
         this.drawCards();
-      }, "ex-btn-quiet"));
+      }));
       if (this.recoverableDrafts.some(d => d.kind === "quote" && d.entryId === entry.id)) {
         tools.append(button("恢复草稿", () => this.restoreQuote(entry), "ex-btn-quiet"));
       }
-      const more = button("更多", () => {
+      const more = iconButton("ellipsis", "更多摘录操作", () => {
         const menu = new Menu();
         menu.addItem(item => item.setTitle("移至回收站").onClick(() => this.confirmTrash(entry)));
         const rect = more.getBoundingClientRect();
         menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
-      }, "ex-btn-quiet");
-      more.setAttribute("aria-label", "更多摘录操作");
+      });
       tools.append(more);
     }
     top.append(tools); card.append(top);
@@ -320,7 +341,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     }
     if (!entry.readOnly) {
-      const add = button("＋ 添加内容", () => {
+      const add = button("添加内容", () => {
         const menu = new Menu();
         for (const kind of EXTRA_KINDS) {
           menu.addItem(item => item.setTitle(EXTRA_LABELS[kind]).onClick(() => {
@@ -381,10 +402,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const key = `${entry.id}:${kind}`;
     const data = entry.extras.filter(x => x.kind === kind);
     const isOpen = this.plugin.settings.collapseExtras ? this.expanded.has(key) : !this.expanded.has(key);
-    const line = button(`${isOpen ? "▾" : "▸"}  ${EXTRA_LABELS[kind]}  ${data.length}`, () => {
+    const line = button(`${EXTRA_LABELS[kind]} ${data.length}`, () => {
       if (this.expanded.has(key)) this.expanded.delete(key); else this.expanded.add(key);
       this.drawCards();
     }, "ex-group-trigger");
+    const disclosure = node("span", "ex-disclosure-icon");
+    setIcon(disclosure, isOpen ? "chevron-up" : "chevron-down");
+    line.prepend(disclosure);
     line.setAttribute("aria-expanded", isOpen ? "true" : "false");
     group.append(line);
     if (isOpen) {

@@ -2,7 +2,7 @@
 
 An Obsidian community plugin for **folder-scoped local collections**. It never replaces the global Obsidian editor, theme, or file browser.
 
-## Features in v0.1.0
+## Features in v0.2.0-beta.1
 
 - Create one or more collections bound to user-selected folders, with an independently generated home Markdown file.
 - Open a flomo-inspired card feed only on the authorized home file in **Reading view**.
@@ -11,6 +11,8 @@ An Obsidian community plugin for **folder-scoped local collections**. It never r
 - Attach multiple sources, variants, notes, contexts, links, and custom blocks.
 - Readable offline data; changing/deleting plugin settings does not delete Markdown.
 - No global CSS selectors and no extra ribbon/sidebar clutter.
+- Native Obsidian icon actions and theme tokens, with flomo-style quick capture and compact entry cards.
+- Responsive card layout, progressive extras, built-in search and random recall.
 
 ## Installation
 
@@ -36,7 +38,8 @@ A collection folder contains a generated `首页.md`, `Cards/` with a Markdown f
 - Files remain ordinary Markdown, but structured extras should be edited in the plugin to maintain markers.
 - A conflicting Git merge must be resolved externally; there is no automatic multi-device conflict resolver.
 - Full Obsidian desktop/iOS/Android acceptance tests have not yet run; mobile support is a build target.
-- Deleting entries and image attachments in the UI, multi-column gallery, import, and semantic search are deferred.
+- Image attachments in the UI, multi-column gallery, import, and semantic search are deferred.
+- UI refresh is a beta; real Obsidian clients still require acceptance testing.
 
 ## Roadmap
 
