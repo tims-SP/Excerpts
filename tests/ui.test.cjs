@@ -40,7 +40,12 @@ class Menu {
   }
   showAtPosition() { Menu.last = this; return this; }
 }
-const replacement = { TAbstractFile, TFile, TFolder, MarkdownRenderChild, Plugin, PluginSettingTab, Setting, Notice, Menu };
+class Modal {
+  constructor() { this.contentEl = document.createElement('div'); Modal.last = this; }
+  open() { this.isOpen = true; }
+  close() { this.isOpen = false; }
+}
+const replacement = { TAbstractFile, TFile, TFolder, MarkdownRenderChild, Plugin, PluginSettingTab, Setting, Notice, Menu, Modal };
 const oldLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'obsidian') return replacement;
@@ -58,6 +63,13 @@ async function fixture() {
     async createFolder(p) { if (files.has(p)) throw Error('exists'); files.set(p, { file: new TFolder(p) }); },
     async create(p, data) { if (files.has(p)) throw Error('exists'); const file = new TFile(p); files.set(p, { file, data }); return file; },
     async cachedRead(file) { return files.get(file.path).data; },
+    async read(file) { return files.get(file.path).data; },
+    async rename(file, next) {
+      if (files.has(next)) throw Error('destination occupied');
+      const item = files.get(file.path);
+      if (!item) throw Error('source missing');
+      files.delete(file.path); file.path = next; files.set(next, item);
+    },
     async process(file, callback) { processes++; const item = files.get(file.path); item.data = callback(item.data); },
     on() { return {}; }
   };
@@ -178,5 +190,63 @@ test('damaged Markdown remains read-only; random revisit does not write', async 
     click(f.container, '随机回顾');
     assert.match(f.container.querySelector('.ex-card.ex-recalled').textContent, /可回顾的独特词语/);
     assert.equal(f.processes, 0);
+  } finally { await f.close(); }
+});
+
+test('native confirmation archives intact Markdown; Undo restores without overwriting', async () => {
+  const f = await fixture();
+  try {
+    const entry = await f.repo.create(f.workspace, '保留原文');
+    const original = f.files.get(entry.path).data;
+    await f.renderer.reload();
+    click(f.container, '更多');
+    const action = Menu.last.items.find(item => item.title === '移至回收站');
+    assert.ok(action);
+    action.action();
+    assert.equal(Modal.last.isOpen, true);
+    assert.match(Modal.last.contentEl.textContent, /不会永久删除/);
+    click(Modal.last.contentEl, '取消');
+    assert.equal(Modal.last.isOpen, false);
+    assert.equal(f.files.get(entry.path).data, original);
+    click(f.container, '更多');
+    Menu.last.items.find(item => item.title === '移至回收站').action();
+    click(Modal.last.contentEl, '移至回收站');
+    await new Promise(resolve => setImmediate(resolve));
+    await f.renderer.reload();
+    assert.equal(f.files.has(entry.path), false);
+    assert.equal(f.container.querySelectorAll('.ex-card').length, 0);
+    const archived = [...f.files.entries()].find(([p]) => p.includes('/Excerpts-Recycle/'));
+    assert.ok(archived);
+    assert.equal(archived[1].data, original);
+    const undo = [...f.container.querySelectorAll('button')].find(b => b.textContent.includes('撤销删除'));
+    assert.equal(undo.hidden, false);
+    undo.click();
+    await new Promise(resolve => setImmediate(resolve));
+    await f.renderer.reload();
+    assert.equal(f.files.get(entry.path).data, original);
+    assert.equal(undo.hidden, true);
+    assert.equal(f.container.querySelectorAll('.ex-card').length, 1);
+  } finally { await f.close(); }
+});
+
+test('undo leaves both files untouched if another note occupies the old path', async () => {
+  const f = await fixture();
+  try {
+    const entry = await f.repo.create(f.workspace, '需要恢复');
+    await f.renderer.reload();
+    click(f.container, '更多');
+    Menu.last.items.find(item => item.title === '移至回收站').action();
+    click(Modal.last.contentEl, '移至回收站');
+    await new Promise(resolve => setImmediate(resolve));
+    const receipt = f.renderer.lastTrash;
+    assert.ok(receipt);
+    const archived = f.files.get(receipt.recyclePath).data;
+    f.files.set(entry.path, { file: new TFile(entry.path), data: 'other note' });
+    click(f.container, '撤销删除');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.files.get(entry.path).data, 'other note');
+    assert.equal(f.files.get(receipt.recyclePath).data, archived);
+    assert.match(Notice.last, /拒绝覆盖/);
+    assert.ok(f.renderer.lastTrash);
   } finally { await f.close(); }
 });
