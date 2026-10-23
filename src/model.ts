@@ -19,6 +19,7 @@ export interface CardIndex {
   ctime: number;
   size: number;
   tags: string[];
+  propertyTags: string[];
   inlineTags: string[];
   favorite: boolean;
 }
