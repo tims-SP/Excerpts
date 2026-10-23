@@ -21,6 +21,17 @@ jobs:
           mkdir -p dist/excerpts
           cp main.js manifest.json styles.css dist/excerpts/
           cd dist && zip -r excerpts-0.1.0.zip excerpts
+      - name: Package source snapshot for isolated rebuilds
+        run: |
+          tar -czf dist/excerpts-source-snapshot.tar.gz \
+            src tests scripts docs .github/workflows \
+            README.md LICENSE package.json esbuild.config.mjs \
+            tsconfig.json tsconfig.offline.json manifest.json styles.css versions.json types-offline
+      - uses: actions/upload-artifact@v4
+        with:
+          name: excerpts-source-snapshot
+          path: dist/excerpts-source-snapshot.tar.gz
+          retention-days: 7
       - name: Package build dependencies
         run: tar -czf dist/excerpts-deps-linux-node22.tar.gz node_modules
       - uses: actions/upload-artifact@v4
