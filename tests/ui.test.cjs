@@ -718,7 +718,7 @@ test('tag picker stays collapsed until Add and supports repeated suggestions, cu
     click(card, '编辑');
     const editor = [...f.container.querySelectorAll('.ex-card')].find(x => x.dataset.entryId === target.id).querySelector('.ex-entry-editor');
     assert.equal(editor.querySelector('.ex-tag-entry').hidden, true, 'Suggestions stay closed by default');
-    assert.equal(card.querySelector('.ex-chips'), null, 'Reading-only duplicate tags must be hidden in editing');
+    assert.equal(editor.closest('.ex-card').querySelector('.ex-chips'), null, 'Reading-only duplicate tags must be hidden in editing');
     click(editor, '添加标签');
     assert.equal(editor.querySelector('.ex-tag-entry').hidden, false);
     click(editor, '添加已有标签：哲学');
