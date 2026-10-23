@@ -101,3 +101,17 @@ test('reject absolute, platform-reserved and ambiguous paths',()=>{
   }
   assert.equal(validateRelativePath('笔记\\摘录'), '笔记/摘录');
 });
+
+test('non-round-trippable quote whitespace is read-only',()=>{
+  const original=serializeEntry(example());
+  for (const raw of [
+    original.replace('> 有些话','>  有些话'),
+    original.replace('> 有些话','> 有些话  '),
+    original.replace('\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'),
+      '\\n\\n\\n<!-- excerpts:extras:start -->'.replaceAll('\\n','\n'))
+  ]) {
+    const parsed=parseEntry(raw);
+    assert.equal(parsed.readOnly,true);
+    assert.throws(()=>patchEntry(raw,parsed,parsed));
+  }
+});
