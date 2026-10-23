@@ -55,6 +55,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private sectionsShown = new Map<string, Set<string>>();
   private editor: {path: string; raw: string; body: string; tags: string[]; initialTags: string[]; saving: boolean; focus?: "body" | "tags"; caret?: [number, number]} | null = null;
   private disposed = false;
+  private captureSaveDraft: (() => void) | null = null;
+  private editingDraftKey(): string { return this.workspace.homePath + ":edit"; }
+  private captureDraftKey(): string { return this.workspace.homePath + ":capture"; }
+  private preserveEditDraft(): void {
+    const session = this.editor;
+    if (!session) return;
+    this.plugin.setDraft(this.editingDraftKey(), this.editorDirty() ?
+      { kind: "edit", path: session.path, raw: session.raw, body: session.body,
+        tags: [...session.tags], updated: Date.now() } : null);
+  }
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
     private repo: EntryRepository) { super(container); }
   onload(): void { this.build(); void this.reload(); }
@@ -64,6 +74,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
+    this.captureSaveDraft?.();
+    this.preserveEditDraft();
     this.unmountMarkdown();
     this.queue = [];
   }
@@ -89,25 +101,41 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     form.setAttribute("aria-label", "快速收藏");
     const quote = node("textarea", "ex-compose-text");
     quote.placeholder = "记录你想留下的文字……";
-    quote.rows = 2;
+    quote.rows = 1;
     quote.setAttribute("aria-label", "摘录正文");
     const fit = () => {
       quote.style.height = "auto";
-      quote.style.height = Math.max(48, Math.min(340, quote.scrollHeight || 48)) + "px";
+      quote.style.height = Math.max(36, Math.min(280, quote.scrollHeight || 36)) + "px";
     };
-    quote.addEventListener("input", fit);
+    const captureDraft = this.plugin.getDraft(this.captureDraftKey());
+    if (captureDraft?.kind === "capture") quote.value = captureDraft.body;
+    const syncComposer = () => {
+      const hasText = !!quote.value.trim();
+      form.classList.toggle("ex-has-content", hasText || picker.getTags().length > 0);
+      saveButton.disabled = !hasText;
+    };
+    const keepCaptureDraft = () => {
+      const body = quote.value;
+      const tags = picker.getTags();
+      this.plugin.setDraft(this.captureDraftKey(), body || tags.length ?
+        { kind: "capture", body, tags, updated: Date.now() } : null);
+      syncComposer();
+    };
+    quote.addEventListener("input", () => { fit(); keepCaptureDraft(); });
+    this.captureSaveDraft = keepCaptureDraft;
     quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
     let tagToggle: HTMLButtonElement;
     const tagArea = node("div", "ex-capture-tags");
     tagArea.hidden = true;
-    const picker = createTagPicker([], () => this.items.flatMap(item => item.tags),
-      () => { tagArea.hidden = !picker.isExpanded() && !picker.getTags().length; },
+    const picker = createTagPicker(captureDraft?.tags ?? [], () => this.items.flatMap(item => item.tags),
+      () => { tagArea.hidden = !picker.isExpanded() && !picker.getTags().length; keepCaptureDraft(); },
       expanded => {
         tagToggle?.setAttribute("aria-expanded", String(expanded));
         tagArea.hidden = !expanded && !picker.getTags().length;
       },
       () => tagToggle);
     tagArea.append(picker.element);
+    tagArea.hidden = !picker.getTags().length;
     tagToggle = iconButton("hash", "添加标签", () => picker.setExpanded(!picker.isExpanded()));
     tagToggle.setAttribute("aria-expanded", "false");
     const composeActions = node("div", "ex-compose-actions");
@@ -117,6 +145,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     composeActions.append(options, saveButton);
     form.append(quote, tagArea, composeActions);
     root.append(form);
+    if (quote.value || picker.getTags().length) form.classList.add("ex-is-composing");
+    fit();
+    syncComposer();
     let saving = false;
     let resume = false;
     quote.addEventListener("keydown", event => {
@@ -133,6 +164,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       try {
         await this.repo.create(this.workspace, markdown, picker.getTags());
         quote.value = ""; picker.setTags([]); picker.setExpanded(false); fit();
+        this.plugin.setDraft(this.captureDraftKey(), null);
+        syncComposer();
         form.classList.remove("ex-is-composing");
         await this.reload();
         if (resume) quote.focus();
@@ -142,8 +175,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         saveButton.disabled = false; saveButton.textContent = "保存";
       }
     };
-    quote.addEventListener("blur", () => {
-      if (!quote.value && !picker.getTags().length) form.classList.remove("ex-is-composing");
+    form.addEventListener("focusout", () => {
+      window.setTimeout(() => {
+        if (!form.contains(document.activeElement) && !quote.value && !picker.getTags().length)
+          form.classList.remove("ex-is-composing");
+      }, 0);
     });
 
     const toolbar = node("div", "ex-toolbar");
@@ -203,6 +239,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     cards.sort((a, b) => direction * (a.ctime - b.ctime));
     if (this.disposed || token !== this.refreshToken) return;
     this.items = cards;
+    if (!this.editor) {
+      const draft = this.plugin.getDraft(this.editingDraftKey());
+      if (draft?.kind === "edit" && draft.path && draft.raw !== undefined &&
+          cards.some(item => item.path === draft.path)) {
+        const item = cards.find(value => value.path === draft.path)!;
+        this.editor = {path:item.path,raw:draft.raw,body:draft.body,
+          tags:[...draft.tags],initialTags:[...item.propertyTags],saving:false};
+      }
+    }
     this.renderTagsFilter();
     if (this.searchText) this.scheduleSearch();
     else { this.matches = null; this.drawCards(); }
@@ -230,6 +275,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       (!this.tagFilter || item.tags.includes(this.tagFilter)) &&
       (!this.searchText || (this.matches !== null && this.matches.has(item.path)))
     );
+    if (this.editor) {
+      const current = this.items.find(item => item.path === this.editor!.path);
+      if (current && !found.some(item => item.path === current.path)) found.unshift(current);
+    }
     if (this.recalledPath) {
       const index = found.findIndex(item => item.path === this.recalledPath);
       if (index > 0) found.unshift(found.splice(index, 1)[0]);
@@ -293,7 +342,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.unmountMarkdown();
     this.listEl.replaceChildren();
     const visible = this.visibleItems();
-    this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条收藏";
+    const filtered = !!this.tagFilter || !!this.searchText;
+    const realCount = visible.filter(item => item.path !== this.editor?.path ||
+      ((!this.tagFilter || item.tags.includes(this.tagFilter)) &&
+       (!this.searchText || (this.matches?.has(item.path) ?? false)))).length;
+    this.countEl.textContent = !this.items.length ? "0 条" :
+      filtered ? realCount + " / " + this.items.length + " 条" : this.items.length + " 条";
     if (!visible.length) {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
