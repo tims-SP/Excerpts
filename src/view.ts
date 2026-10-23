@@ -41,7 +41,10 @@ function dayLabel(timestamp: number): { title: string; subtitle: string } {
   return { title, subtitle: date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) };
 }
 
-/** Minimal Markdown-based excerpt homepage. */
+/** Unsaved text survives view teardown within the current plugin session. */
+const composerDrafts = new Map<string, { text: string; tags: string[] }>();
+
+/** Obsidian Markdown excerpt homepage. */
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: CardIndex[] = [];
   private listEl!: HTMLElement;
@@ -115,6 +118,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const quote = node("textarea", "ex-compose-text");
     quote.placeholder = "记录你想留下的文字……";
     quote.rows = 2;
+    const priorDraft = composerDrafts.get(this.workspace.homePath);
+    if (priorDraft) quote.value = priorDraft.text;
     quote.setAttribute("aria-label", "摘录正文");
     const fit = () => {
       // Let CSS enforce its responsive max-height; no competing JS viewport limit.
@@ -132,7 +137,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     tagSearch.placeholder = "搜索或创建标签";
     tagSearch.setAttribute("aria-label", "搜索或创建摘录标签");
     const suggested = node("div", "ex-tag-suggestions");
-    const selectedTags = new Set<string>();
+    const selectedTags = new Set<string>(priorDraft?.tags ?? []);
+    const persistDraft = () => {
+      if (quote.value || selectedTags.size)
+        composerDrafts.set(this.workspace.homePath, { text: quote.value, tags: [...selectedTags] });
+      else composerDrafts.delete(this.workspace.homePath);
+    };
+    quote.addEventListener("input", persistDraft);
     const selectedChips = node("div", "ex-capture-selected");
     const repaintSelected = () => {
       selectedChips.replaceChildren();
@@ -157,6 +168,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else selectedTags.delete(canonical);
       tagSearch.value = "";
       repaintSelected();
+      persistDraft();
       this.showSuggestions();
       if (!tagsPane.hidden) tagSearch.focus();
     };
@@ -170,6 +182,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const options = node("div", "ex-capture-options");
     options.append(tagToggle, selectedChips);
     const saveButton = button("保存", () => void save(), "ex-btn-primary mod-cta");
+    saveButton.disabled = !quote.value.trim();
+    quote.addEventListener("input", () => { if (!saving) saveButton.disabled = !quote.value.trim(); });
     composeActions.append(options, saveButton);
     tagsPane.append(tagSearch, suggested);
     form.append(quote, tagsPane, composeActions);
@@ -205,6 +219,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         await this.repo.create(this.workspace, markdown, [...selectedTags]);
         quote.value = ""; tagSearch.value = ""; selectedTags.clear();
         repaintSelected();
+        persistDraft();
         tagsPane.hidden = true; fit();
         tagToggle.setAttribute("aria-expanded", "false");
         form.classList.remove("ex-is-composing");
@@ -213,7 +228,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       } catch (error) { notify(error); }
       finally {
         saving = false; resume = false;
-        quote.disabled = false; tagSearch.disabled = false; tagToggle.disabled = false; saveButton.disabled = false;
+        quote.disabled = false; tagSearch.disabled = false; tagToggle.disabled = false;
+        saveButton.disabled = !quote.value.trim();
         selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = false; });
         saveButton.textContent = "保存";
       }
