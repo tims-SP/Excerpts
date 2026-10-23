@@ -67,3 +67,7 @@ License: MIT (see LICENSE).
 ### v0.2.0-beta.3 — Five rounds of interface refinement
 
 See [five-round UI report](docs/FIVE_ROUND_UI_REVIEW.md) for the five implementation/test checkpoints, accessibility details, platform limitations, and screenshot acceptance criteria. No storage migrations.
+
+## Visual Rebuild (beta.4)
+
+See [the 11-round design/implementation report](docs/VISUAL_REBUILD_11_ROUNDS.md). UI layouts use the Obsidian native pane, theme variables and menus, with compact flomo-style capture and progressive content disclosure. Browser visual checks are mock-host checks; final Android/iOS QA is still pending.
