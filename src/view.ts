@@ -98,10 +98,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.addEventListener("input", fit);
     quote.addEventListener("focus", () => form.classList.add("ex-is-composing"));
     let tagToggle: HTMLButtonElement;
-    const picker = createTagPicker([], () => this.items.flatMap(item => item.tags), () => {},
-      expanded => tagToggle?.setAttribute("aria-expanded", String(expanded)),
-      () => tagToggle);
     const tagArea = node("div", "ex-capture-tags");
+    tagArea.hidden = true;
+    const picker = createTagPicker([], () => this.items.flatMap(item => item.tags),
+      () => { tagArea.hidden = !picker.isExpanded() && !picker.getTags().length; },
+      expanded => {
+        tagToggle?.setAttribute("aria-expanded", String(expanded));
+        tagArea.hidden = !expanded && !picker.getTags().length;
+      },
+      () => tagToggle);
     tagArea.append(picker.element);
     tagToggle = iconButton("hash", "添加标签", () => picker.setExpanded(!picker.isExpanded()));
     tagToggle.setAttribute("aria-expanded", "false");
