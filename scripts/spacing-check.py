@@ -29,14 +29,14 @@ with sync_playwright() as p:
             assert page.locator(".ex-card .ex-group-body").count() == 0
             group = page.locator(".ex-card .ex-group-trigger").first
             group.click()
-            assert page.locator(".ex-card .ex-group-body").count() >= 1
+            page.locator(".ex-card .ex-group-body").first.wait_for(state="visible")
             assert page.locator(".ex-card .ex-group-trigger.ex-selected").count() >= 1
             if width <= 480:
                 assert box(".ex-card .ex-group-trigger")["height"] >= 44
                 assert box('.ex-card button[aria-label="编辑摘录"]')["width"] >= 44
             page.locator('.ex-card button[aria-label="编辑摘录"]').first.click()
             editor = page.locator(".ex-entry-editor").first
-            assert editor.count() == 1
+            editor.wait_for(state="visible")
             assert page.locator(".ex-card.ex-is-editing").count() == 1
             assert editor.locator(".ex-editor-text").bounding_box()["width"] > card["width"] - 50
             if width <= 480:
