@@ -1,4 +1,4 @@
-import { MarkdownRenderChild, Notice } from "obsidian";
+import { MarkdownRenderChild, Notice, Menu } from "obsidian";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
 import { Entry, Extra, ExtraKind, EXTRA_KINDS, EXTRA_LABELS, Workspace, makeId } from "./model";
@@ -75,16 +75,26 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const tags = inputBox("标签（用逗号分隔，可选）");
     tags.classList.add("ex-tags-input");
     const composeActions = node("div", "ex-compose-actions");
-    composeActions.append(tags, button("保存摘录", () => void save(), "ex-btn-primary"));
+    const saveButton = button("保存摘录", () => void save(), "ex-btn-primary");
+    composeActions.append(tags, saveButton);
     form.append(quote, composeActions); root.append(form);
     quote.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); void save(); } });
+    let saving = false;
     const save = async () => {
-      const text = quote.value.trim(); if (!text) return new Notice("请输入摘录内容");
+      if (saving) return;
+      const text = quote.value.trim(); if (!text) { new Notice("请输入摘录内容"); return; }
+      // Lock input while Vault.create runs: two rapid clicks must never create duplicates.
+      saving = true; saveButton.disabled = true; quote.disabled = true; tags.disabled = true;
+      saveButton.textContent = "保存中…";
       try {
         const parsedTags = tags.value.split(/[,，]/).map(s => s.trim().replace(/^#/, "")).filter(Boolean);
         await this.repo.create(this.workspace, text, [...new Set(parsedTags)]);
         quote.value = ""; tags.value = ""; await this.reload();
       } catch(e) { new Notice(`保存失败：${errorMessage(e)}`); }
+      finally {
+        saving = false; saveButton.disabled = false; quote.disabled = false; tags.disabled = false;
+        saveButton.textContent = "保存摘录";
+      }
     };
     const toolbar = node("div", "ex-toolbar");
     const search = inputBox("搜索摘录、来源、变种或批注…");
@@ -142,8 +152,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (entry.id === this.recalledId) top.append(node("span", "ex-recall-hint", "随机回顾"));
     top.append(node("span", "ex-date", dateLabel(entry.created)));
     const tools = node("div", "ex-card-actions");
-    tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
-    tools.append(button("编辑", () => { this.editing = this.editing === entry.id ? null : entry.id; this.drawCards(); }, "ex-btn-quiet"));
+    if (!entry.readOnly) {
+      tools.append(button(entry.favorite ? "★ 已珍藏" : "☆ 珍藏", () => void this.saveEdit(entry, x => ({...x, favorite: !x.favorite})), "ex-btn-quiet"));
+      tools.append(button("编辑", () => { this.editing = this.editing === entry.id ? null : entry.id; this.drawCards(); }, "ex-btn-quiet"));
+    }
     top.append(tools); card.append(top);
     if (this.editing === entry.id) this.renderQuoteEditor(card, entry);
     else card.append(node("div", "ex-quote", entry.text));
@@ -152,9 +164,32 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     card.append(chips);
     if (entry.readOnly) card.append(node("div", "ex-warning", `文件结构存在问题，仅能阅读：${entry.problem || "未知错误"}`));
     const extras = node("div", "ex-extras");
-    const kinds = EXTRA_KINDS;
-    for (const kind of kinds) this.renderExtraGroup(extras, entry, kind);
-    card.append(extras);
+    for (const kind of EXTRA_KINDS) {
+      const key = `${entry.id}:${kind}`;
+      // Empty groups do not consume space. Only the active composer is revealed.
+      if (entry.extras.some(x => x.kind === kind) || this.editingExtra === `new:${key}`) {
+        this.renderExtraGroup(extras, entry, kind);
+      }
+    }
+    if (!entry.readOnly) {
+      const add = button("＋ 添加内容", () => {
+        const menu = new Menu();
+        for (const kind of EXTRA_KINDS) {
+          menu.addItem(item => item.setTitle(EXTRA_LABELS[kind]).onClick(() => {
+            const key = `${entry.id}:${kind}`;
+            this.editingExtra = `new:${key}`;
+            if (this.plugin.settings.collapseExtras) this.expanded.add(key);
+            else this.expanded.delete(key);
+            this.drawCards();
+          }));
+        }
+        const rect = add.getBoundingClientRect();
+        menu.showAtPosition({ x: rect.left, y: rect.bottom }, add.ownerDocument);
+      }, "ex-add-extra");
+      add.setAttribute("aria-label", "为摘录添加附属内容");
+      extras.append(add);
+    }
+    if (extras.childElementCount) card.append(extras);
     return card;
   }
   private renderQuoteEditor(card: HTMLElement, entry: Entry) {
@@ -195,10 +230,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
         body.append(row);
       }
-      if (!entry.readOnly) {
-        body.append(button(`+ 添加${EXTRA_LABELS[kind]}`, () => { this.editingExtra = `new:${key}`; this.drawCards(); }, "ex-add-extra"));
-        if (this.editingExtra === `new:${key}`) this.extraEditor(body, entry, kind);
-      }
+      if (!entry.readOnly && this.editingExtra === `new:${key}`) this.extraEditor(body, entry, kind);
       group.append(body);
     }
     target.append(group);
