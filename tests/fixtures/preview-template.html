@@ -1,36 +1,38 @@
-<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Excerpts native redesign preview</title><style>
-:root{--font-interface:system-ui,-apple-system,sans-serif;--font-text:system-ui,-apple-system,sans-serif;--font-text-size:16px;--h2-size:1.4em;--text-normal:#202326;--text-muted:#656c74;--text-faint:#8b949e;--text-accent:#466895;--text-on-accent:#fff;--interactive-accent:#54769e;--background-primary:#fff;--background-secondary:#f5f5f6;--background-modifier-border:#e5e5e6;--background-modifier-border-hover:#bdc5cc;--background-modifier-hover:#f1f1f2;--radius-s:5px;--radius-m:8px;--radius-l:12px;}
-.theme-dark{--text-normal:#e7e9eb;--text-muted:#adb2b8;--text-faint:#808890;--text-accent:#a7c5ef;--text-on-accent:#fff;--interactive-accent:#617d9c;--background-primary:#232529;--background-secondary:#2d3035;--background-modifier-border:#41454a;--background-modifier-border-hover:#62666d;--background-modifier-hover:#393b40;} body{background:var(--background-primary);color:var(--text-normal);margin:0;padding:12px;font:14px var(--font-interface);} button{font:inherit;padding:6px 10px;color:var(--text-normal);border:1px solid var(--background-modifier-border);background:var(--background-secondary);border-radius:var(--radius-s);cursor:pointer;}button.mod-cta{background:var(--interactive-accent);color:var(--text-on-accent);border-color:transparent;}
-
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Excerpts beta.11 actual-bundle visual fixture</title>
+<style>
+:root{--font-interface:system-ui,-apple-system,sans-serif;--font-text:system-ui,-apple-system,sans-serif;--font-text-size:16px;--font-ui-small:13px;--font-ui-smaller:12px;--font-ui-medium:14px;--h3-size:1.22em;--text-normal:#22252b;--text-muted:#626974;--text-faint:#828a92;--text-accent:#4b7196;--text-on-accent:#fff;--interactive-accent:#54769e;--interactive-accent-hover:#42688e;--background-primary:#fff;--background-secondary:#f5f5f6;--background-modifier-border:#e2e3e5;--background-modifier-border-focus:#6b91b8;--background-modifier-hover:#ebecee;--radius-m:8px;--radius-l:12px;--line-height-normal:1.6}
+.theme-dark{--text-normal:#e7e9eb;--text-muted:#afb5bc;--text-faint:#89929a;--text-accent:#aac9f0;--text-on-accent:#fff;--interactive-accent:#617d9c;--interactive-accent-hover:#7e9cb8;--background-primary:#24262a;--background-secondary:#2f3237;--background-modifier-border:#45484f;--background-modifier-border-focus:#83a7ca;--background-modifier-hover:#393e44}
+body{margin:0;background:var(--background-primary);color:var(--text-normal);font:14px var(--font-interface)}
+button,input,textarea{font:inherit}button{cursor:pointer}
+.ex-native-markdown p{margin:0 0 12px}.ex-native-markdown blockquote{margin:0 0 12px;padding-left:12px;border-left:2px solid var(--background-modifier-border)}
 /*__EXCERPTS_CSS__*/
-body { padding: 0; }
-</style></head><body><div id="mount" class="excerpts-native-host"><div id="renderMount"></div></div><script>
+</style></head><body><div id="mount"></div>
+<script>
 const module={exports:{}};
-function require(id){if(id!=='obsidian')throw Error(id);return mock;}
-class TAbstractFile{constructor(path){this.path=path}}
-class TFile extends TAbstractFile{}; class TFolder extends TAbstractFile{};
-class ItemView { constructor(leaf){this.leaf=leaf;this.contentEl=document.createElement("div");} async setState(s){this.state=s;} };class Plugin{registerView(type,cb){this.viewType=type;this.factory=cb;}async loadData(){return null};async saveData(v){this.saved=v};addSettingTab(){};registerEvent(){};addCommand(){};registerMarkdownCodeBlockProcessor(n,cb){this.processor=cb}}
-class MarkdownRenderChild{constructor(el){this.containerEl=el}onload(){}onunload(){}}
-class PluginSettingTab{};class Setting{};class Notice{constructor(message){console.log('notice',message)}};
-class Menu{constructor(){this.items=[]}addItem(fn){const o={setTitle(s){this.title=s;return this},onClick(f){this.fn=f;return this}};fn(o);this.items.push(o)}showAtPosition(){window.__menu=this}};
-class Modal{constructor(){this.contentEl=document.createElement('div')}open(){}close(){}}
-function setIcon(node,name){node.dataset.icon=name;const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('width','18');svg.setAttribute('height','18');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2'); const paths={shuffle:'M16 3h5v5 M4 20L21 3 M16 16l5 5 M21 16v5 M4 4l5 5', 'refresh-cw':'M20 11a8 8 0 0 0-15-4L2 10 M2 5v5h5 M4 13a8 8 0 0 0 15 4l3-3 m-5 0h5v5',search:'M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14M16 16l5 5',bookmark:'M6 4h12v17l-6-4-6 4V4', 'bookmark-check':'M6 4h12v17l-6-4-6 4V4 m3 6l2 2l4-4',pencil:'M4 20l4-1 12-12-3-3L5 16l-1 4',ellipsis:'M5 12h.1M12 12h.1M19 12h.1','chevron-down':'M6 9l6 6 6-6','chevron-up':'M6 15l6-6 6 6'};const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',paths[name]||paths.bookmark);svg.appendChild(p);node.appendChild(svg)}
-const mock={TAbstractFile,TFile,TFolder,ItemView,Plugin,PluginSettingTab,MarkdownRenderChild,Setting,Notice,Menu,Modal,setIcon};
-HTMLElement.prototype.empty=function(){this.replaceChildren()};HTMLElement.prototype.addClass=function(x){this.classList.add(x)};HTMLElement.prototype.setText=function(x){this.textContent=x};
-const files=new Map(), vault={getAbstractFileByPath(p){return files.get(p)?.file||null},getMarkdownFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file)},async createFolder(p){const f=new TFolder(p);files.set(p,{file:f});return f},async create(p,content){const f=new TFile(p);files.set(p,{file:f,data:content});return f},async cachedRead(f){return files.get(f.path).data},async process(f,cb){const x=files.get(f.path);x.data=cb(x.data)},on(){return {}}};
-const app={vault,workspace:{getLeaf(){return {view:{getViewType(){return "markdown"}},async setViewState(){}}},revealLeaf(){}}};
+function require(id){if(id!=="obsidian")throw Error("Unmocked: "+id);return obsidian;}
+class TAbstractFile{constructor(path){this.path=path;this.parent={path:path.split("/").slice(0,-1).join("/")||"/"}}}
+class TFile extends TAbstractFile{constructor(path,n){super(path);const filename=path.split("/").pop();this.basename=filename.replace(/\.[^.]+$/,"");this.extension=filename.split(".").pop();this.stat={ctime:1700000000000-n*86400000,mtime:1700000000000-n*86400000,size:128}}}
+class TFolder extends TAbstractFile{}
+class Component{constructor(el){this.containerEl=el;this.children=[]}load(){this.onload?.()}unload(){this.onunload?.()}addChild(child){this.children.push(child)}removeChild(child){this.children=this.children.filter(v=>v!==child)}}
+class MarkdownRenderChild extends Component{}
+class FileView extends Component{constructor(){super(document.createElement("div"));this.file=null}async openFile(file){this.file=file;await this.onLoadFile(file)}}
+class Plugin{async loadData(){return null}async saveData(){}registerView(name,fn){this.factory=fn}registerExtensions(){}addSettingTab(){}addRibbonIcon(){}addCommand(){}registerEvent(){}}
+class PluginSettingTab{}class Setting{}
+class Notice{constructor(message){(window.__notices||=[]).push(String(message))}}
+class Menu{constructor(){this.items=[]}addItem(fn){let item={setTitle(s){this.title=s;return this},onClick(fn){this.action=fn;return this}};fn(item);this.items.push(item)}showAtPosition(){window.__menu=this}}
+function setIcon(el,name){const d={search:"M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14 M16 16l5 5",hash:"M4 9h16 M4 15h16 M10 3L8 21 M16 3l-2 18",tags:"M3 3h8l10 10-8 8L3 11V3z",pencil:"M4 20l4-1 12-12-3-3L5 16l-1 4","chevron-right":"M9 6l6 6-6 6","chevron-down":"M6 9l6 6 6-6"};const svg=document.createElementNS("http://www.w3.org/2000/svg","svg"),p=document.createElementNS("http://www.w3.org/2000/svg","path");svg.setAttribute("viewBox","0 0 24 24");svg.setAttribute("width","18");svg.setAttribute("height","18");svg.setAttribute("fill","none");svg.setAttribute("stroke","currentColor");svg.setAttribute("stroke-width","2");p.setAttribute("d",d[name]||"M4 12h16");svg.append(p);el.append(svg)}
+const files=new Map();
+function add(path,data,tags,n){const file=new TFile(path,n);files.set(path,{file,data,tags});return file}
+add("摘录/首页.excerpts","",[],0);
+add("摘录/第一段.md","# 风与日常\n\n你所经历的一切，都会成为理解世界的方式。\n\n不要急着为每一个问题寻找答案。\n\n## 来源\n\n个人阅读随记\n\n## 批注\n\n值得反复阅读。",["生活","阅读"],1);
+add("摘录/第二段.md","长句子也应有充足的呼吸感和清晰的段落间距。在不同屏幕尺寸下，文字不应被编辑按钮遮挡。\n\n我们可以记录思想，也可以记录生活。",["随想"],2);
+add("摘录/无标签.md","没有标签的卡片也应该保持安静，不应强制增加一行无意义的附属信息。",[],3);
+const vault={getAbstractFileByPath:p=>files.get(p)?.file??null,getFiles:()=>[...files.values()].map(x=>x.file),getAllLoadedFiles:()=>[...files.values()].map(x=>x.file),getMarkdownFiles:()=>[...files.values()].map(x=>x.file).filter(x=>x.extension==="md"),cachedRead:async f=>files.get(f.path).data,process:async(f,fn)=>{const entry=files.get(f.path);entry.data=fn(entry.data);return entry.data},create:async(p,v)=>add(p,v,[],0),createFolder:async()=>{},on:()=>({})};
+function renderMarkdown(markdown,target){for(const part of markdown.split(/\n\s*\n/)){if(!part.trim())continue;let p=document.createElement(part.startsWith("> ")?"blockquote":"p");p.textContent=part.replace(/^> /,"");target.append(p)}}
+const obsidian={TAbstractFile,TFile,TFolder,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice,Menu,setIcon,getAllTags(cache){return [...(cache.tags||[]).map(v=>v.tag),...(cache.frontmatter?.tags||[]).map(t=>"#"+t)]},MarkdownRenderer:{async render(app,md,target){renderMarkdown(md,target)}}};
+HTMLElement.prototype.empty=function(){this.replaceChildren()};HTMLElement.prototype.addClass=function(n){this.classList.add(n)};HTMLElement.prototype.createDiv=function(){const el=document.createElement("div");this.append(el);return el};
+const app={vault,metadataCache:{getFileCache:f=>({tags:[],frontmatter:{tags:files.get(f.path)?.tags||[]}}),on:()=>({})},fileManager:{async processFrontMatter(file,callback){const entry=files.get(file.path),frontmatter={tags:entry.tags};callback(frontmatter);entry.tags=frontmatter.tags||[]}},workspace:{getLeaf(){return {async openFile(){}}},async revealLeaf(){}}};
 </script><script>/*__EXCERPTS_BUNDLE__*/</script><script>
-(async()=>{
- const Excerpts=module.exports;
- const plugin=new Excerpts();plugin.app=app;app.workspace.on=(key,cb)=>{};app.workspace.onLayoutReady=cb=>cb();app.workspace.getActiveFile=()=>null;await plugin.onload();
- const ws=await plugin.createWorkspace('我喜欢的句子','阅读/摘录');
- const entries=[
- ['你所经历的一切，都会成为你理解世界的方式。','思考,阅读', [{kind:'source',title:'来源',content:'个人阅读随记'}, {kind:'variant',title:'简写',content:'经历塑造理解。'}]],
- ['不要急着给每一个问题寻找答案。有时候，认真生活本身就是一种回应。','生活,随想',[{kind:'note',title:'我的理解',content:'有些问题需要时间慢慢展开。'}]],
- ['让我们记住每一件真正值得珍藏的小事。','摘录',[]]];
- for(const [txt,tags,extra] of entries){const item=await plugin.repo.create(ws,txt,tags.split(','));if(extra.length)await plugin.repo.update(item,old=>({...old,extras:extra.map((x,i)=>({...x,id:'x_'+i}))}));}
- const mount=document.querySelector('#renderMount');
- plugin.processor('workspace: '+ws.id,mount,{sourcePath:'阅读/摘录/首页.md',addChild(child){child.onload();window.child=child}});
- window.__ready=true;
-})().catch(e=>{console.error(e);window.__error=e.message});
+(async()=>{try{const Excerpts=module.exports;const plugin=new Excerpts();plugin.app=app;await plugin.onload();const pane=plugin.factory({});document.getElementById("mount").append(pane.contentEl);await pane.openFile(files.get("摘录/首页.excerpts").file);window.__plugin=plugin;window.__pane=pane;window.__ready=true}catch(e){window.__error=String(e.stack||e);console.error(e)}})();
 </script></body></html>
