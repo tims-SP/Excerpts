@@ -452,6 +452,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       return;
     }
     if (this.editor) {
+      if (this.editor.saving) { new Notice("正在保存当前摘录"); return; }
       if (this.editorDirty()) {
         new Notice("请先保存或取消当前摘录的修改");
         return;
@@ -546,8 +547,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       try {
         await this.repo.saveMarkdown(item.path, session.raw, session.body,
           session.tags, session.initialTags);
-        if (this.editor === session) this.editor = null;
-        await this.reload();
+        if (this.editor === session) {
+          this.editor = null;
+          item.propertyTags = [...session.tags];
+          item.tags = [...new Set([...session.tags, ...item.inlineTags])];
+          this.sectionsShown.delete(item.path);
+          this.renderTagsFilter();
+          this.drawCards();
+          // Obsidian updates the metadata cache asynchronously; a later refresh reconciles it.
+          this.requestRefresh();
+        }
       } catch (error) {
         status.textContent = "保存失败，修改仍在编辑器中";
         notify(error);
