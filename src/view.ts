@@ -570,7 +570,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Freeze the current filtered result set; no Markdown bodies are read for selection. */
   private enterSelectionMode(): void {
-    if (this.selectionMode !== "normal" || this.deleteBusy || !this.searchReady ||
+    // A menu can remain open when a scan starts; recheck at invocation time.
+    if (this.disposed || this.scanStatus === "scanning" ||
+        this.selectionMode !== "normal" || this.deleteBusy || !this.searchReady ||
         this.pendingTags.size || !this.visibleItems().length) return;
     for (const path of [...this.openTagEditors]) {
       const item = this.items.find(card => card.path === path);
