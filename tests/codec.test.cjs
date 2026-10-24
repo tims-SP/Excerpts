@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseMarkdown, findSectionHeadingLine } = require('../.test-compiled/codec.js');
+const { parseMarkdown, findSectionHeadingLine, visibleMediaMarkdown } = require('../.test-compiled/codec.js');
 const { belongsTo, isExcerptPath, validateRelativePath } = require('../.test-compiled/model.js');
 
 test('regular Markdown needs no dedicated schema or frontmatter', () => {
@@ -63,7 +63,6 @@ test('H2 source-line lookup skips YAML and fenced headings, preserves duplicates
 });
 
 test('media classification skips code but preserves list continuation indentation',()=>{
-  const {visibleMediaMarkdown}=require('../src/codec.ts');
   const source=[
     '- 引文',
     '    ![[清单中的图.png]]',
