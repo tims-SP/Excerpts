@@ -850,7 +850,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       card.setAttribute("tabindex", "0");
       card.setAttribute("aria-checked", String(checked));
       card.setAttribute("aria-label", (checked ? "取消选择：" : "选择：") +
-        (this.items.find(item => item.path === path)?.basename ?? path));
+        (this.itemByPath.get(path)?.basename ?? path));
     } else {
       card.removeAttribute("role"); card.removeAttribute("tabindex");
       card.removeAttribute("aria-checked"); card.removeAttribute("aria-label");
@@ -1406,17 +1406,23 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!this.guard("page")) return;
       void this.plugin.openMarkdown(item.path).catch(notify);
     }));
-    const seen = new Map<string, number>();
-    for (let index = 0; index < (parsed?.sections.length ?? 0); index++) {
-      const section = parsed!.sections[index];
-      const count = (seen.get(section.name) ?? 0) + 1;
-      seen.set(section.name, count);
-      const suffix = parsed!.sections.filter(part => part.name === section.name).length > 1
-        ? "（第 " + count + " 个）" : "";
-      menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() => {
-        if (!this.guard("page")) return;
-        void this.openSection(item.path, index).catch(notify);
-      }));
+    // The card itself refuses per-section preview above 24 H2 headings.
+    // The menu must honor that same limit instead of creating hundreds of actions.
+    const sections = parsed?.sections ?? [];
+    if (sections.length <= 24) {
+      const totals = new Map<string, number>();
+      for (const section of sections) totals.set(section.name, (totals.get(section.name) ?? 0) + 1);
+      const seen = new Map<string, number>();
+      for (let index = 0; index < sections.length; index++) {
+        const section = sections[index];
+        const count = (seen.get(section.name) ?? 0) + 1;
+        seen.set(section.name, count);
+        const suffix = (totals.get(section.name) ?? 0) > 1 ? "（第 " + count + " 个）" : "";
+        menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() => {
+          if (!this.guard("page")) return;
+          void this.openSection(item.path, index).catch(notify);
+        }));
+      }
     }
     menu.addSeparator();
     menu.addItem(entry => {
