@@ -195,4 +195,7 @@ test('scan status is a minimal responsive indicator, never a floating card overl
   assert.match(css,/@container \(max-width: 700px\)[\s\S]*?\.ex-scan-progress \{ width: 80px;/);
   assert.match(css,/\.ex-scan-status\[data-state="scanning"\]/);
   assert.match(css,/\.ex-scan-progress\[hidden\] \{ display: none !important; \}/);
+  assert.match(css,/\.ex-page-hint\[hidden\] \{ display: none !important; \}/);
+  assert.match(css,/\.ex-page-hint\[data-state="invalid"\]/);
+  assert.doesNotMatch(css,/button\.ex-tag-source/);
 });
