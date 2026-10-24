@@ -58,6 +58,7 @@ REQUIRED = {
     "saved-filter-error": ".ex-save-page-hint.ex-is-error",
     "empty-results": ".ex-empty",
     "settings": ".ex-settings-fixture",
+    "folder-view": ".ex-folder-fixture .excerpts-root",
     "invalid-page": ".ex-page-hint:not([hidden])",
     "scan-progress": ".ex-scan-progress:not([hidden])",
 }
@@ -67,7 +68,7 @@ SCENARIOS = [
     "home", "composer-picker", "composer-draft", "search-empty",
     "filter", "page-menu", "section-open", "card-picker", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
-    "saved-filter-error", "settings", "stale", "scan-progress", "invalid"
+    "saved-filter-error", "settings", "folder", "stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
 WIDTHS = (320, 390, 768, 1280)
@@ -265,6 +266,26 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "settings", "settings")
             page.evaluate("""() => {
               document.querySelector('.ex-settings-fixture').remove();
+              document.getElementById('mount').hidden = false;
+            }""")
+
+            # A folder opened from the file explorer uses a distinct ItemView,
+            # but the same compiled card renderer and visual contract.
+            page.evaluate("""async () => {
+              const plugin = window.__plugin;
+              if (!plugin.folderFactory) throw Error('folder view was not registered');
+              const pane = plugin.folderFactory({});
+              pane.contentEl.classList.add('ex-folder-fixture');
+              document.body.append(pane.contentEl);
+              await pane.setState({folderPath:'摘录'}, {});
+              window.__folderView = pane;
+              document.getElementById('mount').hidden = true;
+            }""")
+            page.wait_for_selector(".ex-folder-fixture .ex-card .ex-section", timeout=15000)
+            screenshot(page, theme, width, "folder", "folder-view")
+            page.evaluate("""async () => {
+              await window.__folderView.onClose();
+              window.__folderView.contentEl.remove();
               document.getElementById('mount').hidden = false;
             }""")
 
