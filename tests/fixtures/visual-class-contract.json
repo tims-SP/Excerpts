@@ -195,5 +195,7 @@
     "ex-virtual-top-spacer",
     "ex-virtual-window",
     "ex-warning"
-  ]
+  ],
+  "stylesheet_git_blob_sha": "3f8478eaafd703d1c332c343d229c4e73cf7c10d",
+  "stylesheet_review": "CSS layout/color/shape changes require reviewing Screenshot QA artifacts and explicitly approving a new stylesheet_git_blob_sha."
 }
