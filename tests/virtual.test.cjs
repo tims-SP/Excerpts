@@ -70,6 +70,22 @@ test('ten thousand virtual rows never become ten thousand DOM cards',async()=>{
   timeline.dispose();
   assert.equal(host.childElementCount,0);
   assert.ok(unmounts<=mounts);
+  const thirtyThousand=Array.from({length:30000},(_,i)=>({
+    path:'large-'+i,firstOfDay:i%5===0,dayTitle:'日期',daySubtitle:'',
+    estimatedHeight:100
+  }));
+  const second=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{const element=document.createElement('article');element.dataset.path=row.path;return element;},
+    unmount:()=>{}
+  });
+  second.setRows(thirtyThousand);
+  assert.ok(host.querySelectorAll('article').length<=16);
+  viewport.scrollTop=2500000;
+  viewport.dispatchEvent(new dom.window.Event('scroll'));
+  await new Promise(resolve=>setTimeout(resolve,40));
+  assert.ok(host.querySelectorAll('article').length<=16);
+  second.dispose();
   dom.window.close();
 });
 

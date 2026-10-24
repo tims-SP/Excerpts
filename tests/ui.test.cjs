@@ -242,6 +242,65 @@ test('reading original opens native Markdown preview without focusing editor',as
   await t.close();
 });
 
+
+test('large native Markdown and excessive H2 groups require the reading view',async()=>{
+  const huge=await fixture(false,'长文'.repeat(30000));
+  const card=huge.pane.contentEl.querySelector('.ex-card');
+  assert.equal(card.querySelector('.ex-expand-body').dataset.action,'read');
+  assert.match(card.textContent,/正文过长/);
+  assert.equal(renders.some(x=>x.path===huge.md.path&&x.content.length>50000),false,
+    'oversized Markdown is never rendered into the scrolling feed');
+  card.querySelector('.ex-expand-body').click();
+  await wait();
+  assert.equal(huge.leaf.state.state.mode,'preview');
+  await huge.close();
+  const groups=Array.from({length:25},(_,i)=>'## 分组'+i+'\\n内容').join('\\n\\n').replace(/\\n/g,'\n');
+  const many=await fixture(false,groups);
+  const section=many.pane.contentEl.querySelector('.ex-extras');
+  assert.equal(section.querySelectorAll('.ex-group-trigger').length,0);
+  assert.match(section.textContent,/25 个分组/);
+  assert.equal(section.querySelector('.ex-group-read').hidden,false);
+  await many.close();
+});
+
+test('unfinished tag edits block virtual-row recycling instead of losing the input',async()=>{
+  const t=await fixture();
+  for(let i=0;i<100;i++) await t.plugin.app.vault.create('摘录/卡片-'+i+'.md','短摘录');
+  t.plugin.refreshViews(true);await waitForIndex(t);
+  const root=t.pane.contentEl,list=root.querySelector('.ex-card-list');
+  list.getBoundingClientRect=()=>({top:-root.scrollTop,left:0,width:700,height:0});
+  Object.defineProperty(root,'clientHeight',{configurable:true,value:800});
+  const card=root.querySelector('.ex-card'),start=root.scrollTop;
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  assert.ok(input);
+  root.scrollTop=12000;
+  root.dispatchEvent(new dom.window.Event('scroll'));
+  await waitFor(()=>root.scrollTop===start,'edited card stays anchored');
+  assert.equal(card.isConnected,true);
+  assert.equal(card.querySelector('.ex-tag-custom'),input);
+  card.querySelector('.ex-tag-cancel').click();
+  await t.close();
+});
+
+test('bounded full-text search cache avoids rereading older excerpts',async()=>{
+  const t=await fixture();
+  for(let i=0;i<75;i++)await t.plugin.app.vault.create('摘录/全文-'+i+'.md','单独的正文 '+i);
+  const cards=await t.plugin.repo.scan(t.plugin.workspaceForHome(t.home),64,()=>{},()=>false);
+  const original=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  let reads=0;
+  t.plugin.app.vault.cachedRead=async file=>{reads++;return original(file);};
+  await t.plugin.repo.search(cards,'不存在的短语',()=>false);
+  const first=reads;
+  assert.ok(first>=75);
+  await t.plugin.repo.search(cards,'另一个不存在的短语',()=>false);
+  assert.equal(reads,first,'second search uses the bounded normalized text cache');
+  t.plugin.repo.invalidate(t.md.path);
+  await t.plugin.repo.search(cards,'第三个不存在的短语',()=>false);
+  assert.equal(reads,first+1,'a modified file invalidates only its own cached search text');
+  await t.close();
+});
+
 test('H2 menu targets the correct source line including repeated section names',async()=>{
   const source='---\ntags: [文学]\n---\n\n# 标题\n\n```md\n## 不是分组\n```\n\n## 来源\n甲\n\n## 来源\n乙';
   const t=await fixture(false,source);const root=t.pane.contentEl;

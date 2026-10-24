@@ -1,20 +1,52 @@
-# Excerpts — Architecture (beta.10)
+# Excerpts — Architecture
 
-A `.excerpts` file is an Obsidian FileView entrypoint. Its parent directory determines the Markdown scope. Each regular `.md` file becomes one card in the timeline; the original file stays authoritative.
+An `.excerpts` file is an Obsidian FileView entrypoint; its parent folder defines the Markdown scope.
+Each ordinary `.md` file is one excerpt. Markdown stays the only source of truth. Saved `.excerpts`
+views store a tag/query filter, not an independent collection.
 
-- `src/main.ts`: extension registration, Vault file events, latest home entry, commands and minimal settings.
-- `src/home-view.ts`: binds the entry FileView to the renderer.
-- `src/view.ts`: small capture composer, newest-first feed, collapsed search, tag capsules and filtering, expandable H2 sections, single card edit action.
-- `src/repository.ts`: file listing, bounded cache, fixed-size batched full-text search, plain Markdown creation and standard YAML tag updates.
-- `src/codec.ts`: read-only extraction of display boundaries for H1 and H2.
-- `src/settings.ts`: create and open home files; optional recursive scope.
+## Modules
 
-There is no collection model, favorite state, random recall or custom attachment store. MarkdownRenderer renders card content in the original source path context.
+- `src/main.ts`: plugin commands, exclusive metadata-scan owner, Vault invalidations,
+  preview-mode and editing-mode Markdown openers.
+- `src/home-view.ts`: lifecycle of an `.excerpts` FileView.
+- `src/view.ts`: capture composer, date timeline, tags, H2 disclosures, selection and deletion,
+  card preview behavior, and the integration with virtual rows.
+- `src/virtual-list.ts`: single-scroll-container virtualization, row reuse, buffer selection,
+  resize handling, mounted-row disposal and scroll-anchor compensation.
+- `src/height-index.ts`: Fenwick tree for O(log n) row-height updates and scroll-offset lookup.
+- `src/card-preview.ts`: read-only media classification, preview ceilings and safe-expand decisions.
+- `src/repository.ts`: batched metadata scans, bounded parsed-Markdown and search-text caches,
+  file creation, frontmatter edits and checked Trash deletion.
+- `src/codec.ts`: read-only Markdown H1/H2 display boundaries.
 
-## Lifecycle
+## Feed and reading
 
-Opening or closing a home file attaches or detaches the nested MarkdownRenderChild. Vault events trigger debounced refresh. The force-refresh command rebuilds indexes; manual polling is not needed. Up to 40 cards initially load; IntersectionObserver hydrates visible cards and repository reads have a concurrency cap of four. Search is batched, debounced and cancellable.
+The composer, filter toolbar and entire date-grouped feed share one `.excerpts-native-host`
+scroll container. Desktop date rails remain left of cards; mobile date labels remain above them.
+The timeline has no page numbers or manual load-more button. The logical row index contains
+the full sorted/filter-matched dataset, while the DOM contains only the viewport and buffered
+rows. Batch count is automatic from measured heights and viewport size, or fixed at 16/32/64/96
+from settings; it never truncates the visible region. Up to four Markdown hydration tasks run
+concurrently. Leaving the buffer disposes the corresponding MarkdownRenderChild.
 
-## QA
+Previews have content-specific height ceilings; short notes keep their natural height. Safe
+bodies can expand within a card. Oversized bodies or H2 sections route to the native Markdown
+Reading view (`mode: "preview"`) without editor focus. Editing stays a separate native
+source-mode action. Markdown files and embedded media are never rewritten for the card layout.
 
-Mock-based UI tests are not a replacement for real Obsidian rendering and interaction tests. The old standalone screenshot scripts target removed Entry/Extra editors and should not be treated as current acceptance tests.
+## Indexing and safety
+
+The existing manual index-refresh model is unchanged. Initial metadata scanning and explicit
+refresh process 32/64/128/256 files per yield (default 64), report progress and cancel safely.
+A plugin-level exclusive scan lock remains held until the scan has actually settled. Vault
+changes invalidate relevant cached content and mark the displayed snapshot stale; they do not
+launch an automatic scan. Search runs against the full committed index in cancellable batches;
+normalized text reuse has bounded memory. Selection and deletion use the full filtered path
+snapshot, not the virtualized DOM. Editing and destructive-operation guards remain authoritative.
+
+## Verification
+
+`npm run verify` runs unit/UI checks, builds the plugin, smoke-checks the output and verifies
+release files. `npm run ui` includes 10,000/30,000-row virtualization checks, viewport scroll
+restoration, native preview-mode entry and card-preview classification. Browser visual checks
+are separate; mock DOM tests do not validate native Obsidian media rendering on real devices.
