@@ -8,15 +8,25 @@ global.HTMLElement=dom.window.HTMLElement;
 HTMLElement.prototype.empty=function(){this.replaceChildren();};
 HTMLElement.prototype.addClass=function(name){this.classList.add(name);};
 HTMLElement.prototype.createDiv=function(){const el=document.createElement('div');this.append(el);return el;};
+HTMLElement.prototype.createEl=function(tag,{text}={}){const el=document.createElement(tag);if(text)el.textContent=text;this.append(el);return el;};
 class TAbstractFile {constructor(path){this.path=path;}}
 class TFile extends TAbstractFile {constructor(path){super(path);const leaf=path.split('/').pop();this.basename=leaf.replace(/\.[^.]+$/,'');this.extension=leaf.split('.').pop();this.stat={mtime:200,ctime:100,size:128};this.parent={path:path.split('/').slice(0,-1).join('/') || '/'};}}
 class TFolder extends TAbstractFile{}
 class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}load(){this.onload?.();}unload(){this.onunload?.();}}
 class FileView {constructor(){this.contentEl=document.createElement('div');this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
 class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,lastLine(){return 0;},getLine(){return '';},setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}getMode(){return this.mode;}}
-class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(){}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
-class PluginSettingTab {constructor(){}}
-class Setting {}
+class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(command){(this.commands??=[]).push(command);}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
+class PluginSettingTab {constructor(){this.containerEl=document.createElement('div');}}
+class Setting {
+  static instances=[];
+  constructor(root){this.root=root;Setting.instances.push(this);}
+  setName(name){this.name=name;return this;}
+  setDesc(desc){this.desc=desc;return this;}
+  addText(fn){const item={setPlaceholder(value){this.placeholder=value;return this;},onChange(handler){this.handler=handler;return this;}};fn(item);this.text=item;return this;}
+  addButton(fn){const item={disabled:false,setCta(){return this;},setButtonText(value){this.text=value;return this;},setDisabled(value){this.disabled=value;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.button=item;return this;}
+  addToggle(fn){const item={disabled:false,setValue(value){this.value=value;return this;},setDisabled(value){this.disabled=value;return this;},onChange(handler){this.handler=handler;return this;}};fn(item);this.toggle=item;return this;}
+  addDropdown(fn){const item={disabled:false,options:{},addOption(key,value){this.options[key]=value;return this;},setValue(value){this.value=value;return this;},setDisabled(value){this.disabled=value;return this;},onChange(handler){this.handler=handler;return this;}};fn(item);this.dropdown=item;return this;}
+}
 class Notice {constructor(message){Notice.last=message;}}
 class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},setWarning(){this.warning=true;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}addSeparator(){}showAtPosition(){Menu.last=this;}}
 class Modal {
@@ -533,6 +543,8 @@ test('saved page restores filters and can update only after explicit confirmatio
   Menu.last.items.find(item=>item.title==='更新当前页面').handler();await wait();
   assert.match(t.files.get(saved.path).data,/tag: ""/);
   assert.equal(root.querySelector('.ex-title').textContent,'文学摘录');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.match(root.querySelector('.ex-page-hint').textContent,/筛选配置已变化.*重新打开/);
   await t.pane.openFile(t.home);await wait();
   assert.equal(t.pane.contentEl.querySelector('.ex-title').textContent,'摘录');
   await t.close();
@@ -1518,4 +1530,130 @@ test('moving an entire nested folder marks the index stale without rescanning',a
     'renamed child appears after the manual scan completes');
   assert.equal(scans,1);
   await t.close();
+});
+
+test('a blocked saved-query page can manually scan then apply its persisted search',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'检索页',{tag:'',query:'测试标题'});
+  const realScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release,scans=0;
+  t.plugin.repo.scan=async(...args)=>{
+    scans++;
+    if(scans===1)await new Promise(resolve=>{release=resolve;});
+    return realScan(...args);
+  };
+  t.plugin.refreshViews(true);
+  await waitFor(()=>typeof release==='function','first page scanning');
+  const second=t.plugin.factory({});
+  document.body.append(second.contentEl);
+  await second.openFile(saved);
+  const secondRenderer=[...t.plugin.rendered].find(c=>c.workspace.homePath===saved.path);
+  assert.equal(secondRenderer.scanStatus,'blocked');
+  assert.equal(second.contentEl.querySelector('.ex-search').value,'测试标题');
+  release();
+  await waitFor(()=>[...t.plugin.rendered].find(c=>c.workspace.homePath===t.home.path)?.scanStatus==='done',
+    'first page completed');
+  clickByLabel(second.contentEl,'页面选项');
+  const refresh=Menu.last.items.find(i=>i.title==='刷新摘录');
+  assert.equal(refresh.disabled,false,'blocked page may refresh despite persisted query');
+  refresh.handler();
+  await waitFor(()=>secondRenderer.scanStatus==='done' &&
+    second.contentEl.querySelector('.ex-count')?.textContent==='1 / 1' &&
+    second.contentEl.querySelector('.ex-card')?.dataset.path===t.md.path,'saved query resumed after manual scan');
+  assert.equal(scans,2,'no background or queued scan');
+  await second.onUnloadFile(saved);second.contentEl.remove();await t.close();
+});
+
+test('stale bulk selection disables deletion immediately and denies old callbacks',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='批量选择').handler();
+  root.querySelector('.ex-select-all').click();
+  const renderer=[...t.plugin.rendered][0];
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,false);
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(renderer.scanStatus,'stale');
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  assert.match(Notice.last,/退出批量选择后刷新/);
+  renderer.confirmBulkDelete();
+  assert.match(Notice.last,/退出批量选择后刷新/);
+  assert.equal(document.querySelector('.ex-delete-modal'),null);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(renderer.selectionMode,'normal');
+  assert.equal(t.files.has(t.md.path),true);
+  await t.close();
+});
+
+test('external edits to the current .excerpts invalidate the page, metadata events do not',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'独立筛选',{tag:'哲学',query:''});
+  await t.pane.openFile(saved);
+  const root=t.pane.contentEl,renderer=[...t.plugin.rendered][0];
+  t.plugin.onFileChange(saved.path); // A metadata notification is not a content change.
+  assert.equal(renderer.homeInvalid,false);
+  assert.equal(renderer.scanStatus,'done');
+  t.files.get(saved.path).data='version: 1\nfilter:\n  tag: ""\n  query: ""\n';
+  t.vaultEvents.get('modify')(saved);
+  assert.equal(renderer.homeInvalid,true);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.match(root.querySelector('.ex-page-hint').textContent,/筛选配置已变化/);
+  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(i=>i.title==='刷新摘录').disabled,true);
+  await t.pane.openFile(saved);
+  assert.equal([...t.plugin.rendered][0].homeInvalid,false,'reopening reads the new configuration');
+  await t.close();
+});
+
+test('settings and ribbon reject new page creation and navigation while busy',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;
+  tab.display();
+  const created=Setting.instances.find(x=>x.name==='创建首页文件').button;
+  const opened=Setting.instances.find(x=>x.name===t.home.path).button;
+  const scope=Setting.instances.find(x=>x.name==='包含子文件夹').toggle;
+  assert.equal(created.disabled,false);
+  let release;
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{await new Promise(resolve=>{release=resolve;});return scan(...args);};
+  t.plugin.refreshViews(true);
+  assert.equal(created.disabled,true);
+  assert.equal(opened.disabled,true);
+  assert.equal(scope.disabled,true);
+  const count=t.files.size;
+  await created.handler();
+  opened.handler();
+  t.plugin.ribbon.action();
+  assert.equal(t.files.size,count,'old handlers and ribbon cannot create files while busy');
+  assert.match(Notice.last,/操作尚未完成/);
+  release();
+  await waitFor(()=>[...t.plugin.rendered][0].scanStatus==='done','scan completes');
+  assert.equal(created.disabled,false);
+  assert.equal(opened.disabled,false);
+  await t.close();
+});
+
+test('refresh command targets only the active .excerpts view',async()=>{
+  const t=await fixture();
+  const second=t.plugin.factory({});
+  document.body.append(second.contentEl);
+  await second.openFile(t.home);
+  await waitFor(()=>[...t.plugin.rendered].every(c=>c.scanStatus==='done'),'both pages ready');
+  const firstRenderer=[...t.plugin.rendered][0];
+  const secondRenderer=[...t.plugin.rendered][1];
+  const real=t.plugin.repo.scan.bind(t.plugin.repo);
+  let scans=0;
+  t.plugin.repo.scan=async(...args)=>{scans++;return real(...args);};
+  const cmd=t.plugin.commands.find(c=>c.id==='refresh-home');
+  assert.ok(cmd);
+  t.plugin.app.workspace.activeLeaf={view:second};
+  cmd.callback();
+  await waitFor(()=>scans===1 && secondRenderer.scanStatus==='done','second active page refreshed');
+  assert.equal(firstRenderer.scanStatus,'done');
+  t.plugin.app.workspace.activeLeaf={view:{getViewType(){return 'markdown';}}};
+  cmd.callback();
+  assert.equal(scans,1,'non-excerpts active views do not refresh other excerpts');
+  assert.match(Notice.last,/选中一个摘录页/);
+  await second.onUnloadFile(t.home);second.contentEl.remove();await t.close();
 });

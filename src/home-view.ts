@@ -15,6 +15,8 @@ export class ExcerptsHomeFileView extends FileView {
   getViewType(): string { return EXCERPTS_HOME_VIEW; }
   getDisplayText(): string { return this.file?.basename ?? "摘录"; }
   getIcon(): string { return "bookmark"; }
+  /** Commands target only the currently active .excerpts view. */
+  requestRefresh(force = false): void { this.renderer?.requestRefresh(force); }
   async onLoadFile(file: TFile): Promise<void> {
     this.teardown();
     this.contentEl.empty();

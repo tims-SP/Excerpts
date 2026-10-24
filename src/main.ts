@@ -34,8 +34,20 @@ export default class ExcerptsPlugin extends Plugin {
     this.addSettingTab(this.settingsTab);
     this.addRibbonIcon("bookmark", "打开摘录首页", () => void this.openHome().catch(showError));
     this.addCommand({ id: "open-home", name: "打开摘录首页", callback: () => void this.openHome().catch(showError) });
-    this.addCommand({ id: "refresh-home", name: "刷新摘录", callback: () => this.refreshViews(true) });
-    this.registerEvent(this.app.vault.on("modify", file => this.onFileChange(file.path)));
+    this.addCommand({ id: "refresh-home", name: "刷新摘录", callback: () => {
+      const view = this.app.workspace.activeLeaf?.view;
+      if (view instanceof ExcerptsHomeFileView) view.requestRefresh(true);
+      else new Notice("请先打开并选中一个摘录页");
+    } });
+    this.registerEvent(this.app.vault.on("modify", file => {
+      if (file instanceof TFile && file.extension.toLowerCase() === "excerpts") {
+        for (const child of this.rendered) {
+          if (child.workspace.homePath === file.path) child.invalidateHome("configuration");
+        }
+        return;
+      }
+      this.onFileChange(file.path);
+    }));
     this.registerEvent(this.app.vault.on("create", file => this.onFileChange(file.path, file instanceof TFolder)));
     this.registerEvent(this.app.vault.on("delete", file => {
       const path = file.path;
@@ -128,6 +140,9 @@ export default class ExcerptsPlugin extends Plugin {
     }
   }
   private onFileChange(path: string, folder = false): void {
+    // A .excerpts file is page configuration, not a Markdown card.
+    // Only a real vault "modify" event invalidates its active page.
+    if (!folder && path.toLowerCase().endsWith(".excerpts")) return;
     // Vault events only invalidate the visible index; they never launch a scan.
     this.repo.invalidate(path);
     for (const child of this.rendered) {
@@ -137,6 +152,7 @@ export default class ExcerptsPlugin extends Plugin {
           root.startsWith(path + "/")) child.markStale();
     }
   }
+  canOpenHome(): boolean { return !this.isBusy(); }
   isBusy(except?: ExcerptsRenderChild): boolean {
     return [...this.rendered].some(child => child !== except && child.isBusy());
   }
@@ -217,6 +233,10 @@ export default class ExcerptsPlugin extends Plugin {
     return content;
   }
   async openHome(path?: string): Promise<void> {
+    if (!this.canOpenHome()) {
+      new Notice("另一项摘录操作尚未完成，请结束后再打开摘录页");
+      return;
+    }
     const homes = this.getHomeFiles();
     const file = path
       ? homes.find(item => item.path === path)

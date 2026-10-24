@@ -1,13 +1,20 @@
-import { App, Notice, PluginSettingTab, Setting, ToggleComponent, DropdownComponent } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, ToggleComponent, DropdownComponent, ButtonComponent } from "obsidian";
 import type ExcerptsPlugin from "./main";
 import { SCAN_BATCH_SIZES } from "./model";
 export class ExcerptsSettingTab extends PluginSettingTab {
   private scopeToggle: ToggleComponent | null = null;
   private batchDropdown: DropdownComponent | null = null;
+  private homeButtons: ButtonComponent[] = [];
   syncBusy(): void {
     const busy = this.plugin.isBusy();
     this.scopeToggle?.setDisabled(busy);
     this.batchDropdown?.setDisabled(busy);
+    for (const button of this.homeButtons) button.setDisabled(busy);
+  }
+  private canOpen(): boolean {
+    if (this.plugin.canOpenHome()) return true;
+    new Notice("另一项摘录操作尚未完成，请结束后再打开摘录页");
+    return false;
   }
   constructor(app: App, private plugin: ExcerptsPlugin) { super(app, plugin); }
   display(): void {
@@ -15,6 +22,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     root.empty();
     this.scopeToggle = null;
     this.batchDropdown = null;
+    this.homeButtons = [];
     root.createEl("h2", { text: "摘录 · Excerpts" });
     root.createEl("p", { text: "首页.excerpts 是主入口；其他 .excerpts 文件可保存独立筛选，摘录内容仍是普通 Markdown。" });
     root.createEl("h3", { text: "首页入口" });
@@ -22,13 +30,17 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     new Setting(root).setName("创建首页文件")
       .setDesc("在 Vault 内指定文件夹，创建空白首页.excerpts。已有文件不会被覆盖。")
       .addText(t => t.setPlaceholder("笔记/摘录").onChange((v: string) => { folder = v; }))
-      .addButton(b => b.setCta().setButtonText("创建并打开").onClick(async () => {
-        try {
+      .addButton(b => {
+        this.homeButtons.push(b);
+        b.setCta().setButtonText("创建并打开").onClick(async () => {
+          if (!this.canOpen()) return;
+          try {
           const file = await this.plugin.createHome(folder);
           await this.plugin.openHome(file.path);
           this.display();
-        } catch (error) { new Notice(message(error)); }
-      }));
+          } catch (error) { new Notice(message(error)); }
+        });
+      });
     const files = this.plugin.getHomeFiles();
     const homes = files.filter(file => file.basename === "首页" ||
       file.path === this.plugin.settings.defaultHome);
@@ -37,14 +49,26 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     for (const file of homes) {
       new Setting(root).setName(file.path)
         .setDesc(file.path === this.plugin.settings.defaultHome ? "默认首页" : "全部摘录入口")
-        .addButton(b => b.setButtonText("打开").onClick(() => void this.plugin.openHome(file.path)));
+        .addButton(b => {
+          this.homeButtons.push(b);
+          b.setButtonText("打开").onClick(() => {
+            if (!this.canOpen()) return;
+            void this.plugin.openHome(file.path);
+          });
+        });
     }
     if (pages.length) {
       root.createEl("h3", { text: "已保存的摘录页" });
       for (const file of pages) {
         new Setting(root).setName(file.basename)
           .setDesc(file.path)
-          .addButton(b => b.setButtonText("打开").onClick(() => void this.plugin.openHome(file.path)));
+          .addButton(b => {
+          this.homeButtons.push(b);
+          b.setButtonText("打开").onClick(() => {
+            if (!this.canOpen()) return;
+            void this.plugin.openHome(file.path);
+          });
+        });
       }
     }
     root.createEl("h3", { text: "文件范围" });

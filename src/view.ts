@@ -68,6 +68,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanStatus: "idle" | "blocked" | "scanning" | "done" | "stale" | "error" = "idle";
   private scanDirty = false;
   private homeInvalid = false;
+  private homeInvalidCause: "path" | "configuration" = "path";
   private scanDone = 0;
   private scanTotal = 0;
   private lastScanCount: number | null = null;
@@ -152,7 +153,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private reason(action: "save" | "refresh" | "search" | "filter" | "tag" | "select" | "delete" | "page"): string | null {
     if (this.disposed) return "页面已关闭";
-    if (this.homeInvalid) return "摘录页位置已变化，请从文件列表重新打开";
+    if (this.homeInvalid) return this.homeInvalidCause === "configuration"
+      ? "摘录页配置已变化，请从文件列表重新打开" : "摘录页位置已变化，请从文件列表重新打开";
     if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
     if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
     if (this.saveBusy) return "正在保存，请完成后再操作";
@@ -161,6 +163,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.pendingTags.size) return "正在保存标签，请完成后再操作";
     if (this.openTagEditors.size && action !== "tag") return "请先完成或取消标签编辑";
     if (!this.searchReady) return "正在搜索，请先清除搜索条件";
+    // A blocked page has no index yet. Its persisted search is applied after manual scanning.
+    if (action === "refresh" && this.scanStatus === "blocked") return null;
     if (this.searchText && ["select", "refresh", "tag", "delete", "filter"].includes(action))
       return "请先清除搜索条件，再进行此操作";
     if (this.scanStatus === "blocked" && action !== "refresh")
@@ -203,6 +207,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   markStale(path?: string): void {
     if (this.disposed || this.homeInvalid || (path && path !== this.workspace.homePath &&
         !isExcerptPath(path, this.workspace))) return;
+    const staleSelection = this.scanStatus === "done" && this.selectionMode === "selecting";
     if (this.scanStatus === "scanning") this.scanDirty = true;
     else this.scanStatus = "stale";
     if (!this.searchReady) {
@@ -214,17 +219,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.listEl) this.drawCards();
     }
     this.renderScanStatus();
+    if (this.selectionMode !== "normal") this.updateSelectionControls();
     this.updateAvailability();
+    if (staleSelection) new Notice("摘录内容已变化，请退出批量选择后刷新");
   }
   requestRefresh(force = false): void {
     if (!this.guard("refresh")) return;
     this.workspace.recursive = this.plugin.settings.recursive;
     void this.reload(force);
   }
-  /** An externally moved/deleted .excerpts entry cannot safely write using its old path. */
-  invalidateHome(): void {
+  /** A changed or relocated .excerpts page cannot safely continue using its old configuration. */
+  invalidateHome(cause: "path" | "configuration" = "path"): void {
     if (this.disposed || this.homeInvalid) return;
     this.homeInvalid = true;
+    this.homeInvalidCause = cause;
     this.refreshToken++; this.searchToken++;
     if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -244,9 +252,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     }
     this.renderScanStatus();
-    this.announceScan("摘录页位置已变化，请从文件列表重新打开");
+    const message = cause === "configuration"
+      ? "摘录页配置已变化，请从文件列表重新打开"
+      : "摘录页位置已变化，请从文件列表重新打开";
+    this.announceScan(message);
     this.updateAvailability();
-    new Notice("摘录页位置已变化，请从文件列表重新打开");
+    new Notice(message);
   }
   private renderScanStatus(): void {
     const status = this.homeInvalid ? "invalid" :
@@ -265,7 +276,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scanStatusEl.dataset.state = status;
     this.scanTextEl.textContent = labels[status];
     const hint = this.homeInvalid
-      ? "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
+      ? this.homeInvalidCause === "configuration"
+        ? "筛选配置已变化，当前页面无法继续操作。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
+        : "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
       : this.scanStatus === "blocked"
         ? "因其他摘录页正在操作，本页未扫描。待操作结束后，请从页面选项手动刷新。"
         : "";
@@ -718,9 +731,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private async updateCurrentPage(): Promise<void> {
     if (!this.guard("page") || !this.savedFilter || this.savedPageRaw === null || !this.isPageDirty()) return;
     const filter = this.currentFilter();
-    this.savedPageRaw = await this.plugin.updateSavedPage(this.workspace.homePath, this.savedPageRaw, filter);
-    this.savedFilter = filter;
-    new Notice("已更新当前摘录页");
+    await this.plugin.updateSavedPage(this.workspace.homePath, this.savedPageRaw, filter);
+    // Do not keep using an in-memory filter after its underlying .excerpts file has changed.
+    this.invalidateHome("configuration");
   }
   /** Freeze the current filtered result set; no Markdown bodies are read for selection. */
   private enterSelectionMode(): void {
@@ -879,8 +892,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       async onProgress => this.performDeletion([snapshot], false, onProgress)).open();
   }
   private confirmBulkDelete(): void {
-    if (this.deleteBusy || this.selectionBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size ||
-        this.scanStatus !== "done" || this.plugin.isBusy(this)) return;
+    if (this.deleteBusy || this.selectionBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size) return;
+    if (this.scanStatus !== "done" || this.homeInvalid) {
+      new Notice("摘录内容已变化，请退出批量选择后刷新");
+      return;
+    }
+    if (this.plugin.isBusy(this)) {
+      new Notice("另一个摘录页面正在操作，请完成后再试");
+      return;
+    }
     const candidates = [...this.selectedPaths].map(path => this.selectedCandidates.get(path))
       .filter((candidate): candidate is DeleteCandidate => Boolean(candidate));
     if (!candidates.length) return;
