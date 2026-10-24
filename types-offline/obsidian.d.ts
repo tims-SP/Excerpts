@@ -34,8 +34,8 @@ declare module "obsidian" {
       getFileCache(file: TFile): CachedMetadata | null;
       on(event: string, callback: (file: TFile) => void): any;
     };
-    fileManager: { processFrontMatter(file: TFile, edit: (properties: Record<string, any>) => void): Promise<void> };
-    workspace: { getLeaf(arg?: boolean | "tab"): WorkspaceLeaf; revealLeaf(leaf: WorkspaceLeaf): Promise<void> };
+    fileManager: { processFrontMatter(file: TFile, edit: (properties: Record<string, any>) => void): Promise<void>; trashFile(file: TFile): Promise<void> };
+    workspace: { getLeaf(arg?: boolean | "tab"): WorkspaceLeaf; getLeavesOfType(type: string): WorkspaceLeaf[]; revealLeaf(leaf: WorkspaceLeaf): Promise<void> };
   }
   export class Component {
     load(): void; unload(): void;
@@ -86,14 +86,16 @@ declare module "obsidian" {
     setTitle(value: string): MenuItem;
     setIcon(value: string): MenuItem;
     setDisabled(value: boolean): MenuItem;
+    setWarning(): MenuItem;
     onClick(handler: () => void): MenuItem;
   }
   export class Menu {
     addItem(callback: (item: MenuItem) => void): this;
+    addSeparator(): this;
     showAtPosition(point: { x: number; y: number }, document?: Document): void;
   }
   export function setIcon(el: HTMLElement, name: string): void;
-  export class Notice { constructor(message: string); }
+  export class Notice { constructor(message: string, timeout?: number); }
   export class Modal {
     modalEl: HTMLElement;
     contentEl: HTMLElement;
