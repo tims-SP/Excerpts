@@ -63,17 +63,24 @@ export class SavePageModal extends Modal {
       this.saving = true;
       save.disabled = true; cancel.disabled = true; input.disabled = true;
       save.textContent = "保存中…";
+      let failed = false;
       try {
         await this.onSave(name);
         this.close();
       } catch (error) {
+        failed = true;
         hint.textContent = error instanceof Error ? error.message : String(error);
         hint.classList.add("ex-is-error");
       } finally {
         this.saving = false;
         input.disabled = false; cancel.disabled = false;
         save.textContent = "保存";
-        if (this.contentEl.isConnected) refresh();
+        if (this.contentEl.isConnected) {
+          // Keep an IO/conflict error visible until the user edits the name.
+          if (!failed) refresh();
+          else save.disabled = Boolean(pageNameError(input.value.trim()) ??
+            this.validateName(input.value.trim()));
+        }
       }
     };
     input.addEventListener("input", refresh);
