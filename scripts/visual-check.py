@@ -97,6 +97,7 @@ with sync_playwright() as playwright:
                     paddingLeft: parseFloat(styles.paddingLeft),
                     paddingBottom: parseFloat(styles.paddingBottom),
                     radius: styles.borderTopLeftRadius,
+                    saveRadius: getComputedStyle(q('.ex-compose-actions > .ex-btn-primary')).borderTopLeftRadius,
                     placeholder: q('.ex-compose-text').placeholder,
                     textareaBorder: getComputedStyle(q('.ex-compose-text')).borderWidth,
                     textareaBg: getComputedStyle(q('.ex-compose-text')).backgroundColor
@@ -105,9 +106,10 @@ with sync_playwright() as playwright:
             compact = page.locator(".excerpts-native-host").evaluate("(el) => el.clientWidth <= 700")
             assert layout["placeholder"] == "现在想记录的是…", (theme,width,layout)
             assert layout["radius"] == "12px", (theme,width,layout)
+            assert layout["saveRadius"] == "999px", (theme,width,layout)
             assert layout["textareaBorder"] == "0px", (theme,width,layout)
             assert layout["textareaBg"] == "rgba(0, 0, 0, 0)", (theme,width,layout)
-            assert layout["paddingLeft"] == (16 if compact else 20), (theme,width,layout)
+            assert layout["paddingLeft"] == (14 if compact else 20), (theme,width,layout)
             assert layout["paddingTop"] == (14 if compact else 16), (theme,width,layout)
             assert layout["paddingBottom"] == (10 if compact else 12), (theme,width,layout)
             assert layout["textHeight"] >= (78 if compact else 84), (theme,width,layout)
@@ -118,6 +120,20 @@ with sync_playwright() as playwright:
             assert layout["tagsRight"] <= layout["saveRight"], (theme,width,layout)
 
             page.screenshot(path=str(root / "artifacts" / f"composer-idle-{theme}-{width}.png"), full_page=True)
+            # Filter paint remains a 30px capsule even when the touch target is 44px.
+            filter_button = page.locator('.ex-toolbar button[aria-label="筛选标签"]')
+            filter_button.click()
+            filter_pill = page.locator(".ex-filter-tags button.ex-btn").first
+            filter_shape = filter_pill.evaluate("""el => ({
+                radius: getComputedStyle(el).borderTopLeftRadius,
+                visualHeight: getComputedStyle(el, '::before').height,
+                targetHeight: el.getBoundingClientRect().height
+            })""")
+            assert filter_shape["radius"] == "999px", (theme,width,filter_shape)
+            assert filter_shape["visualHeight"] == "30px", (theme,width,filter_shape)
+            assert filter_shape["targetHeight"] >= (44 if width <= 480 else 32), (theme,width,filter_shape)
+            filter_button.click()
+
             # Even many tags cannot push the save button away or produce a second footer row.
             page.locator(".ex-capture-tag-toggle").click()
             for row in page.locator(".ex-capture-tags .ex-tag-choice").all():

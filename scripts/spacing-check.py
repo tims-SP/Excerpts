@@ -65,7 +65,7 @@ with sync_playwright() as playwright:
             assert coords["inputHeight"] > 0, coords
             # Container queries use the Obsidian pane width, not the device category.
             compact = page.locator(".excerpts-native-host").evaluate("(el) => el.clientWidth <= 700")
-            expected_side, expected_bottom = (16, 10) if compact else (20, 12)
+            expected_side, expected_bottom = (14, 10) if compact else (20, 12)
             assert coords["cardPaddingTop"] == expected_side, (theme, width, coords)
             assert coords["cardPaddingInline"] == expected_side, (theme, width, coords)
             assert coords["cardPaddingBottom"] == expected_bottom, (theme, width, coords)
