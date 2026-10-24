@@ -97,6 +97,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reading = 0;
   private markdownChildren = new Map<string, Array<{ mount: HTMLElement; child: MarkdownRenderChild }>>();
   private previewObservers = new Map<string, ResizeObserver>();
+  private previewUpdates = new Map<string, () => void>();
+  private sectionHeightChecks = new Map<string, Map<number, () => void>>();
   private sectionObservers = new Map<string, Map<number, ResizeObserver>>();
   private lastAverageHeight = 0;
   private lastBatchViewportHeight = 0;
@@ -148,6 +150,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.tagResizeObserver = new ResizeObserver(() => {
         this.reflowVisibleTags();
         this.reflowCaptureTags();
+        for (const update of this.previewUpdates.values()) update();
+        for (const group of this.sectionHeightChecks.values()) {
+          for (const check of group.values()) check();
+        }
         this.timeline?.resize();
       });
       this.tagResizeObserver.observe(viewport);
@@ -1151,6 +1157,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const current of paths) {
       this.previewObservers.get(current)?.disconnect();
       this.previewObservers.delete(current);
+      this.previewUpdates.delete(current);
+      this.sectionHeightChecks.delete(current);
       for (const observer of this.sectionObservers.get(current)?.values() ?? []) observer.disconnect();
       this.sectionObservers.delete(current);
       for (const { child } of this.markdownChildren.get(current) ?? []) this.removeChild(child);
@@ -1166,8 +1174,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }));
   }
   private compactLayout(): boolean {
-    return this.containerEl.clientWidth > 0 ? this.containerEl.clientWidth <= 700 :
-      document.body.classList.contains("is-mobile");
+    const hostWidth = this.containerEl.closest<HTMLElement>(".excerpts-native-host")?.clientWidth ?? 0;
+    return hostWidth > 0 ? hostWidth <= 700 : document.body.classList.contains("is-mobile");
   }
   private listBatchSize(viewport: HTMLElement): number {
     const { listBatchMode, listBatchSize } = this.plugin.settings;
@@ -1396,7 +1404,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       card.classList.remove("ex-card-loading");
     } catch (error) {
       if (!this.disposed && token === this.renderToken && card.isConnected) {
-        card.querySelector<HTMLElement>(".ex-quote")?.replaceChildren(node("p", "ex-warning", "摘录加载失败"));
+        const quote = card.querySelector<HTMLElement>(".ex-quote");
+        if (quote) {
+          quote.replaceChildren(node("p", "ex-preview-error", "摘录加载失败"));
+          quote.append(button("阅读原文 ↗", () => {
+            if (this.guard("page")) void this.plugin.openMarkdownPreview(item.path).catch(notify);
+          }, "ex-expand-body"));
+        }
         card.classList.remove("ex-card-loading");
       }
       throw error;
@@ -1410,9 +1424,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     card.classList.toggle("ex-media-first", mediaFirst);
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
     const content = node("div", "ex-content-viewport");
-    const policy = previewPolicy(classifyPreview(parsed), this.compactLayout());
-    card.dataset.previewKind = policy.kind;
-    content.style.setProperty("--ex-preview-limit", policy.limit + "px");
+    const previewKind = classifyPreview(parsed);
+    card.dataset.previewKind = previewKind;
     // Clamp before rendering to prevent transient full-height layout shifts.
     content.classList.add("ex-content-clamped");
     body.append(content);
@@ -1429,8 +1442,25 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }, "ex-expand-body");
     expand.hidden = true;
     body.append(expand);
+    let previewFailed = false;
+    const showPreviewFailure = () => {
+      if (!card.isConnected || this.disposed) return;
+      previewFailed = true;
+      this.expandedBodies.delete(item.path);
+      this.unmountMarkdownIn(content, item.path);
+      content.replaceChildren(node("p", "ex-preview-error",
+        "内容预览失败，请在 Obsidian 阅读模式中查看。"));
+      content.classList.remove("ex-content-clamped");
+      expand.hidden = false;
+      expand.dataset.action = "read";
+      expand.textContent = "阅读原文 ↗";
+      expand.setAttribute("aria-expanded", "false");
+      this.previewObservers.get(item.path)?.disconnect();
+      this.previewObservers.delete(item.path);
+    };
     const updatePreview = () => {
-      if (!card.isConnected || !content.isConnected) return;
+      if (previewFailed || !card.isConnected || !content.isConnected) return;
+      const policy = previewPolicy(previewKind, this.compactLayout());
       const rendered = content.querySelector<HTMLElement>(".ex-native-markdown");
       const measured = Math.max(rendered?.scrollHeight ?? 0, content.scrollHeight,
         rendered?.getBoundingClientRect().height ?? 0);
@@ -1444,6 +1474,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       expand.textContent = action === "read" ? "阅读原文 ↗" : expanded ? "收起正文" : "展开正文";
       expand.setAttribute("aria-expanded", String(expanded));
     };
+    this.previewUpdates.set(item.path, updatePreview);
     if (parsed.body.length > 50000) {
       content.append(node("p", "ex-long-content-hint", "正文过长，请在原文阅读模式中查看。"));
       content.classList.remove("ex-content-clamped");
@@ -1452,8 +1483,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       expand.textContent = "阅读原文 ↗";
       expand.setAttribute("aria-expanded", "false");
     } else if (parsed.body) {
-      void this.renderMarkdown(content, parsed.body, item.path).then(() => {
+      void this.renderMarkdown(content, parsed.body, item.path).then(result => {
         if (!content.isConnected || this.disposed) return;
+        if (!result.ok) { showPreviewFailure(); return; }
         updatePreview();
         const markdown = content.querySelector<HTMLElement>(".ex-native-markdown");
         if (markdown && typeof ResizeObserver !== "undefined") {
@@ -1470,7 +1502,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
   }
 
-  private renderMarkdown(container: HTMLElement, markdown: string, path: string): Promise<void> {
+  private renderMarkdown(container: HTMLElement, markdown: string, path: string):
+    Promise<{ ok: true } | { ok: false; error: string }> {
     const mount = node("div", "ex-native-markdown markdown-rendered");
     container.append(mount);
     const child = new MarkdownRenderChild(mount);
@@ -1478,9 +1511,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const list = this.markdownChildren.get(path) ?? [];
     list.push({ mount, child });
     this.markdownChildren.set(path, list);
-    return MarkdownRenderer.render(this.plugin.app, markdown, mount, path, child).catch(error => {
-      if (mount.isConnected) mount.append(node("p", "ex-warning", String(error)));
-    });
+    return Promise.resolve()
+      .then(() => MarkdownRenderer.render(this.plugin.app, markdown, mount, path, child))
+      .then(() => ({ ok: true as const }))
+      .catch(error => ({ ok: false as const,
+        error: error instanceof Error ? error.message : String(error) }));
   }
   private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     mount.replaceChildren();
@@ -1498,7 +1533,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     const shown = this.sectionsShown.get(item.path) ?? new Set<number>();
     const card = mount.closest<HTMLElement>(".ex-card");
-    const safe = previewPolicy(classifyPreview(parsed), this.compactLayout()).expandedLimit;
     parsed.sections.forEach((section, index) => {
       const wrapper = node("section", "ex-section");
       const expanded = shown.has(index);
@@ -1536,6 +1570,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
 
       const enforceSafeHeight = () => {
         if (!card?.isConnected || region.hidden || exceeded) return;
+        const safe = previewPolicy(classifyPreview(parsed), this.compactLayout()).expandedLimit;
         if (region.scrollHeight <= safe && card.getBoundingClientRect().height <= safe + 320) return;
         exceeded = true;
         shown.delete(index);
@@ -1566,8 +1601,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           read.hidden = false;
           return;
         }
-        void this.renderMarkdown(region, section.markdown, item.path).then(() => {
+        void this.renderMarkdown(region, section.markdown, item.path).then(result => {
           if (this.disposed || !region.isConnected || region.hidden) return;
+          if (!result.ok) {
+            exceeded = true;
+            shown.delete(index);
+            this.sectionsShown.set(item.path, shown);
+            this.unmountMarkdownIn(region, item.path);
+            region.replaceChildren();
+            region.hidden = true;
+            trigger.setAttribute("aria-expanded", "false");
+            trigger.setAttribute("aria-label", "阅读原文：" + section.name);
+            setIcon(chevron, "arrow-up-right");
+            wrapper.insertBefore(node("p", "ex-preview-error", "分组预览失败"), read);
+            read.hidden = false;
+            return;
+          }
           enforceSafeHeight();
           if (exceeded || typeof ResizeObserver === "undefined") return;
           const observer = new ResizeObserver(() => enforceSafeHeight());
@@ -1580,6 +1629,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       };
       // Bind the shared renderer without rebuilding the main Markdown body.
       mountSection = renderSection;
+      const checks = this.sectionHeightChecks.get(item.path) ?? new Map<number, () => void>();
+      checks.set(index, enforceSafeHeight);
+      this.sectionHeightChecks.set(item.path, checks);
       if (expanded) renderSection();
     });
   }
