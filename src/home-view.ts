@@ -2,6 +2,7 @@ import { FileView, TFile, WorkspaceLeaf } from "obsidian";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
 import { ExcerptsRenderChild } from "./view";
+import { parsePageFilter } from "./page-config";
 
 export const EXCERPTS_HOME_VIEW = "excerpts-home-file";
 
@@ -19,12 +20,25 @@ export class ExcerptsHomeFileView extends FileView {
     this.contentEl.empty();
     this.contentEl.addClass("excerpts-native-host");
     const root = this.contentEl.createDiv();
-    this.renderer = new ExcerptsRenderChild(root, this.plugin, this.plugin.workspaceForHome(file), this.repo);
+    let filter;
+    let raw: string;
+    try {
+      raw = await this.plugin.app.vault.cachedRead(file);
+      filter = parsePageFilter(raw);
+    } catch (error) {
+      root.setText(error instanceof Error ? error.message : String(error));
+      root.addClass("ex-page-error");
+      return;
+    }
+    this.renderer = new ExcerptsRenderChild(root, this.plugin, this.plugin.workspaceForHome(file),
+      this.repo, filter, filter ? raw : null);
     this.plugin.trackRenderer(this.renderer);
     this.renderer.load();
-    void this.plugin.rememberHome(file.path).catch(error => {
-      console.error("Excerpts: failed to persist the last homepage", error);
-    });
+    if (file.basename === "首页" && !filter) {
+      void this.plugin.rememberHome(file.path).catch(error => {
+        console.error("Excerpts: failed to persist the default homepage", error);
+      });
+    }
   }
   async onUnloadFile(_file: TFile): Promise<void> { this.teardown(); }
   async onClose(): Promise<void> { this.teardown(); }
