@@ -1,5 +1,5 @@
 import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
-import { findSectionHeadingLine } from "./codec";
+import { findSectionHeadingLine, parseMarkdown } from "./codec";
 import type ExcerptsPlugin from "./main";
 import { DeleteCandidate, DeleteProgress, EntryRepository } from "./repository";
 import { DeleteExcerptModal, DeleteOutcome } from "./delete-modal";
@@ -87,6 +87,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshToken = 0;
   private saveBusy = false;
+  /** Scoped identities for this view's own creates; never suppress external modifies. */
+  private localCreates = new Map<string, { file: TFile | null; tags: string[] }>();
   private updateComposerControls: () => void = () => {};
   private renderToken = 0;
   private timeline: VirtualTimeline | null = null;
@@ -171,6 +173,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.tagResizeObserver?.disconnect();
     this.timeline?.dispose();
     this.timeline = null;
+    this.localCreates.clear();
     this.selectedPaths.clear(); this.selectedCandidates.clear(); this.selectionScope.clear();
     this.unmountMarkdown();
     this.plugin.notifyActivityChange(this);
@@ -271,8 +274,79 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     if (broadcast) this.plugin.notifyActivityChange(this);
   }
+  /** Register the exact path before vault.create can emit a create event. */
+  private beginLocalCreate(path: string, tags: string[]): (file?: TFile) => void {
+    const record = { file: null as TFile | null, tags };
+    this.localCreates.set(path, record);
+    return file => {
+      if (this.localCreates.get(path) !== record) return;
+      if (!file) { this.localCreates.delete(path); return; }
+      record.file = file;
+      // Bounded event provenance. Eviction is fail-closed: old events mark stale.
+      while (this.localCreates.size > 128) {
+        const oldest = this.localCreates.keys().next().value;
+        if (oldest === undefined) break;
+        this.localCreates.delete(oldest);
+      }
+    };
+  }
+  /** Commit only this file to an existing index; no vault-wide scan or queue. */
+  private commitCreatedFile(file: TFile, markdown: string, tags: string[]): void {
+    if (this.disposed || this.homeInvalid || !isExcerptPath(file.path, this.workspace)) return;
+    const card = this.repo.indexCreatedFile(file, tags);
+    const priorIndex = this.items.findIndex(item => item.path === card.path);
+    if (priorIndex !== -1) this.items.splice(priorIndex, 1);
+    const insertion = this.items.findIndex(item => item.ctime < card.ctime);
+    this.items.splice(insertion === -1 ? this.items.length : insertion, 0, card);
+    this.itemByPath.set(card.path, card);
+    this.lastScanCount = this.items.length;
+    if (this.searchText && this.matches !== null) {
+      const query = this.searchText.trim().toLocaleLowerCase();
+      const parsed = parseMarkdown(markdown);
+      const body = [parsed.title, parsed.body,
+        ...parsed.sections.map(section => section.name + "\n" + section.markdown)]
+        .join("\n").toLocaleLowerCase();
+      if (card.basename.toLocaleLowerCase().includes(query) ||
+          card.tags.some(tag => tag.toLocaleLowerCase().includes(query)) ||
+          body.includes(query)) this.matches.add(card.path);
+      else this.matches.delete(card.path);
+    }
+    this.rebuildAvailableTags();
+    this.showSuggestions();
+    this.renderTagsFilter();
+    this.renderScanStatus();
+    const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
+    this.drawCards(viewport && viewport.scrollTop > 48 ? "anchor" : "top");
+  }
+  /** Metadata follows a successful create asynchronously; update only that card. */
+  private syncCreatedMetadata(file: TFile, tags: string[]): void {
+    const index = this.items.findIndex(item => item.path === file.path);
+    if (index === -1 || this.scanStatus === "scanning") return;
+    const next = this.repo.indexCreatedFile(file, tags);
+    const old = this.items[index];
+    if (old.mtime === next.mtime && old.size === next.size &&
+        old.tags.join("\u001f") === next.tags.join("\u001f") &&
+        old.inlineTags.join("\u001f") === next.inlineTags.join("\u001f") &&
+        old.frontmatterTags.join("\u001f") === next.frontmatterTags.join("\u001f")) return;
+    this.items[index] = next;
+    this.itemByPath.set(file.path, next);
+    if (this.searchText && this.matches && next.tags.some(tag =>
+      tag.toLocaleLowerCase().includes(this.searchText.toLocaleLowerCase())))
+      this.matches.add(file.path);
+    this.rebuildAvailableTags();
+    this.showSuggestions();
+    this.renderTagsFilter();
+    this.drawCards("anchor");
+  }
   /** Mark cached results obsolete without scheduling any scan. */
-  markStale(path?: string): void {
+  markStale(path?: string, event: "create" | "metadata" | "other" = "other", file?: TFile): void {
+    if (path && (event === "create" || event === "metadata")) {
+      const own = this.localCreates.get(path);
+      if (own && (own.file === null || own.file === file)) {
+        if (event === "metadata" && own.file) this.syncCreatedMetadata(own.file, own.tags);
+        return;
+      }
+    }
     if (this.disposed || this.homeInvalid || (path && path !== this.workspace.homePath &&
         !isExcerptPath(path, this.workspace))) return;
     const staleSelection = this.scanStatus === "done" && this.selectionMode === "selecting";
@@ -577,6 +651,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = true; });
       saveButton.textContent = "保存中…";
       let created = false;
+      const savedTags = [...selectedTags];
       try {
         let file: TFile;
         if (openEditor && retryOpenTarget) {
@@ -588,7 +663,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
             throw new Error("原 Markdown 文件已移动或替换，已取消重试。请从文件列表检查原文件");
           }
         } else {
-          file = await this.repo.create(this.workspace, markdown, [...selectedTags]);
+          file = await this.repo.create(this.workspace, markdown, savedTags,
+            path => this.beginLocalCreate(path, savedTags));
           created = true;
           if (openEditor) retryOpenTarget = { path: file.path, file };
         }
@@ -598,7 +674,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           quote.value = ""; tagSearch.value = ""; selectedTags.clear();
           picker.refresh(); repaintSelected(); persistDraft();
           closeTagPanel(false); fit(); form.classList.remove("ex-is-composing");
-          this.markStale(file.path);
+          try {
+            this.commitCreatedFile(file, markdown, savedTags);
+          } catch (error) {
+            // The Markdown file exists: never report a failed save or recreate it.
+            this.markStale(file.path);
+            new Notice("摘录已保存，但列表更新失败。请手动刷新");
+            console.error("Excerpts: incremental list update failed", error);
+          }
         }
         if (openEditor) {
           const initialRaw = await this.repo.readRaw(file.path);
