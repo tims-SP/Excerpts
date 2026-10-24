@@ -520,7 +520,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else selectedTags.delete(canonical);
       repaintSelected();
       persistDraft();
-      retryOpenPath = null;
+      retryOpenTarget = null;
       this.showSuggestions();
     };
     options.append(selectedChips, tagToggle);
@@ -554,8 +554,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.append(form);
     let saving = false;
     let resume = false;
-    let retryOpenPath: string | null = null;
-    quote.addEventListener("input", () => { retryOpenPath = null; });
+    let retryOpenTarget: { path: string; file: TFile } | null = null;
+    quote.addEventListener("input", () => { retryOpenTarget = null; });
     quote.addEventListener("keydown", event => {
       if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault(); resume = true; void save();
@@ -576,17 +576,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       let created = false;
       try {
         let file: TFile;
-        if (openEditor && retryOpenPath) {
-          const retry = this.plugin.app.vault.getAbstractFileByPath(retryOpenPath);
-          if (!(retry instanceof TFile)) {
-            retryOpenPath = null;
-            throw new Error("已创建的 Markdown 文件不存在，请重新操作");
+        if (openEditor && retryOpenTarget) {
+          const pending = retryOpenTarget;
+          try {
+            file = this.repo.assertScopedFile(this.workspace, pending.path, pending.file);
+          } catch {
+            retryOpenTarget = null;
+            throw new Error("原 Markdown 文件已移动或替换，已取消重试。请从文件列表检查原文件");
           }
-          file = retry;
         } else {
           file = await this.repo.create(this.workspace, markdown, [...selectedTags]);
           created = true;
-          if (openEditor) retryOpenPath = file.path;
+          if (openEditor) retryOpenTarget = { path: file.path, file };
         }
 
         // Once the file exists, the draft is saved even if opening the native tab fails.
@@ -598,13 +599,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
         if (openEditor) {
           const initialRaw = await this.repo.readRaw(file.path);
-          await this.plugin.openMarkdown(file.path, undefined, true);
+          await this.plugin.openMarkdown(file.path, undefined, true,
+            { workspace: this.workspace, file });
           this.plugin.trackNewEditor(file, initialRaw);
-          retryOpenPath = null;
+          retryOpenTarget = null;
         } else if (resume) quote.focus();
       } catch (error) {
         notify(error);
-        if (openEditor && retryOpenPath)
+        if (openEditor && retryOpenTarget)
           new Notice("文件已创建；再次点击「编辑文档」可重试打开");
       } finally {
         saving = false; resume = false;
@@ -1766,6 +1768,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     editor.hidden = false;
     const selected = new Set(item.frontmatterTags);
     const original = [...item.frontmatterTags];
+    const targetFile = this.plugin.app.vault.getAbstractFileByPath(item.path);
     const card = editor.closest<HTMLElement>(".ex-card");
     const heading = node("div", "ex-tag-editor-head");
     const title = node("strong", "ex-tag-editor-title", "编辑标签");
@@ -1801,7 +1804,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       picker.setDisabled(true); cancel.disabled = true; done.disabled = true;
       done.textContent = "保存中…";
       try {
-        await this.repo.setFrontmatterTags(item.path, [...selected], original);
+        if (!(targetFile instanceof TFile))
+          throw new Error("原摘录文件不存在，请重新打开卡片");
+        await this.repo.setFrontmatterTags(item.path, [...selected], original,
+          this.workspace, targetFile);
         item.frontmatterTags = [...selected];
         item.tags = [...new Set([...selected, ...item.inlineTags])];
         this.closeTagEditor(item, card);

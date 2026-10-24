@@ -278,9 +278,21 @@ export default class ExcerptsPlugin extends Plugin {
         return;
       }
       const leaf = this.app.workspace.getLeaf("tab");
-      await leaf.setViewState({ type: EXCERPTS_FOLDER_VIEW, state: { folderPath: path }, active: true });
-      if (this.resolveFolder(path) !== folder) throw new Error("文件夹位置已变化，请重新打开摘录");
-      await this.app.workspace.revealLeaf(leaf);
+      try {
+        await leaf.setViewState({ type: EXCERPTS_FOLDER_VIEW, state: { folderPath: path }, active: true });
+        if (this.resolveFolder(path) !== folder)
+          throw new Error("文件夹位置已变化，请重新打开摘录");
+        await this.app.workspace.revealLeaf(leaf);
+        if (this.resolveFolder(path) !== folder)
+          throw new Error("文件夹位置已变化，请重新打开摘录");
+      } catch (error) {
+        // Only detach the newly requested tab, never any existing Excerpts leaves.
+        try { leaf.detach(); } catch (cleanupError) {
+          console.error("Excerpts: failed to detach folder navigation tab", cleanupError);
+          new Notice("打开摘录失败，请手动关闭本次创建的异常标签页");
+        }
+        throw error;
+      }
     } finally {
       this.homeNavigationBusy = false;
       this.notifyActivityChange();
@@ -386,16 +398,23 @@ export default class ExcerptsPlugin extends Plugin {
       throw new Error("无法切换到 Markdown 阅读模式");
     await this.app.workspace.revealLeaf(leaf);
   }
-  async openMarkdown(path: string, line?: number, atEnd = false): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(path);
+  async openMarkdown(path: string, line?: number, atEnd = false,
+    expected?: { workspace: Workspace; file: TFile }): Promise<void> {
+    const file = expected
+      ? this.repo.assertScopedFile(expected.workspace, path, expected.file)
+      : this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) throw new Error("Markdown 文件不存在：" + path);
     // A new tab keeps the .excerpts homepage, its filters and scroll position intact.
     const leaf = this.app.workspace.getLeaf("tab");
+    if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
     await leaf.openFile(file);
+    if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
     // Switch the leaf's view state rather than calling an unsupported MarkdownView setter.
     if (leaf.view instanceof MarkdownView && leaf.view.getMode() !== "source") {
+      if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
       await leaf.setViewState({ type: "markdown", state: { file: path, mode: "source" } });
     }
+    if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
     await this.app.workspace.revealLeaf(leaf);
     const view = leaf.view;
     if (view instanceof MarkdownView) {

@@ -27,6 +27,7 @@ declare module "obsidian" {
     view: ItemView;
     openFile(file: TFile): Promise<void>;
     setViewState(state: any): Promise<void>;
+    detach(): void;
   }
   export class App {
     vault: Vault;

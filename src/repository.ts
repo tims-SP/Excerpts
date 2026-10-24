@@ -46,6 +46,15 @@ export class EntryRepository {
       if (!found) await this.app.vault.createFolder(cursor);
     }
   }
+  /** Refuse to operate on a moved, deleted, replaced or out-of-scope Markdown file. */
+  assertScopedFile(ws: Workspace, path: string, expectedFile: TFile): TFile {
+    this.assertFolderSource(ws);
+    const current = this.app.vault.getAbstractFileByPath(path);
+    if (!(current instanceof TFile) || current !== expectedFile || current.path !== path ||
+        current.extension.toLowerCase() !== "md" || !isExcerptPath(path, ws))
+      throw new Error("摘录文件已移动、替换或超出文件夹范围，请重新打开");
+    return current;
+  }
   /** Metadata-only scan. Each batch yields to the UI without reading Markdown bodies. */
   async scan(ws: Workspace, batchSize: number,
     onProgress: (done: number, total: number) => void,
@@ -272,8 +281,9 @@ export class EntryRepository {
     return this.app.vault.cachedRead(this.file(path));
   }
   /** Atomically replace only YAML tags; never rewrite inline #tags in the Markdown body. */
-  async setFrontmatterTags(path: string, tags: string[], expected: string[]): Promise<void> {
-    const file = this.file(path);
+  async setFrontmatterTags(path: string, tags: string[], expected: string[],
+    ws: Workspace, expectedFile: TFile): Promise<void> {
+    const file = this.assertScopedFile(ws, path, expectedFile);
     const normalized = new Map<string, string>();
     for (const original of tags) {
       const tag = original.trim().replace(/^#/, "");
@@ -285,6 +295,8 @@ export class EntryRepository {
     const comparable = (list: string[]) => list.map(value => value.replace(/^#/, "").trim().toLocaleLowerCase())
       .filter(Boolean).sort().join("\n");
     await this.app.fileManager.processFrontMatter(file, frontmatter => {
+      // Obsidian may have waited for other Vault writers before invoking this callback.
+      this.assertScopedFile(ws, path, expectedFile);
       const raw = frontmatter.tags;
       const current = Array.isArray(raw) ? raw.map(String) :
         typeof raw === "string" ? raw.split(/[\s,]+/) : [];
@@ -294,5 +306,13 @@ export class EntryRepository {
       else delete frontmatter.tags;
     });
     this.invalidate(path);
+    // An external rename after the native write started cannot be rolled back here.
+    if (ws.kind === "folder") {
+      try {
+        this.assertScopedFile(ws, path, expectedFile);
+      } catch {
+        throw new Error("标签写入已返回，但文件夹或文件位置发生变化，请核对实际标签结果");
+      }
+    }
   }
 }

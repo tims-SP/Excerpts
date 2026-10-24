@@ -2726,3 +2726,172 @@ test('folder identity is checked during scans and before delete writes',async()=
   assert.equal(scanned.length,1,'explicit reopened folder can scan');
   await t.close();
 });
+
+test('native editor retry refuses an unrelated file substituted at the saved path',async()=>{
+  const t=await fixture();
+  const original=t.leaf.openFile;
+  t.leaf.openFile=async()=>{throw Error('native open unavailable');};
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  const item=[...t.files].find(([p])=>p.startsWith('摘录/摘录 ')&&p.endsWith('.md'));
+  assert.ok(item);
+  const replacement=new TFile(item[0]);
+  t.files.set(item[0],{file:replacement,data:'DO NOT OPEN'});
+  let opened=0;
+  t.leaf.openFile=async f=>{opened++;return original.call(t.leaf,f);};
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  assert.equal(opened,0,'replacement file is never opened by retry');
+  assert.equal(t.files.get(item[0]).data,'DO NOT OPEN');
+  assert.equal([...t.files].filter(([p])=>p.startsWith('摘录/摘录 ')&&p.endsWith('.md')).length,1);
+  assert.match(Notice.last,/原 Markdown 文件已移动或替换/);
+  await t.close();
+});
+
+test('native editor retry refuses moved original file and never creates a second file',async()=>{
+  const t=await fixture();
+  t.leaf.openFile=async()=>{throw Error('native open unavailable');};
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  const item=[...t.files].find(([p])=>p.startsWith('摘录/摘录 ')&&p.endsWith('.md'));
+  assert.ok(item);
+  t.files.delete(item[0]);
+  item[1].file.path='摘录/改名.md';
+  t.files.set(item[1].file.path,item[1]);
+  let opened=0;
+  t.leaf.openFile=async()=>{opened++;};
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  assert.equal(opened,0);
+  assert.equal(t.files.has('摘录/改名.md'),true);
+  assert.equal(t.files.has(item[0]),false,'moved original is not silently recreated');
+  assert.match(Notice.last,/原 Markdown 文件已移动或替换/);
+  await t.close();
+});
+
+test('scoped editor opening blocks a target replaced before native open',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const original=t.plugin.app.workspace.getLeaf;
+  let count=0;
+  t.plugin.app.workspace.getLeaf=mode=>{
+    const x=original(mode);
+    if(mode==='tab') {
+      const replacement=new TFile(t.md.path);
+      t.files.set(t.md.path,{file:replacement,data:'other note'});
+    }
+    return x;
+  };
+  t.leaf.openFile=async()=>{count++;};
+  await assert.rejects(
+    t.plugin.openMarkdown(t.md.path,undefined,false,{workspace:ws,file:t.md}),
+    /已移动|替换/);
+  assert.equal(count,0);
+  await t.close();
+});
+
+test('tag edit refuses replaced source Markdown without touching new frontmatter',async()=>{
+  const t=await fixture();
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const picker=card.querySelector('.ex-tag-custom');
+  picker.value='另一个标签';picker.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...card.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent.includes('创建 #另一个标签')).click();
+  const substitute=new TFile(t.md.path);
+  t.files.set(t.md.path,{file:substitute,data:'new body'});
+  card.querySelector('.ex-tag-done').click();
+  await wait();
+  assert.equal(t.getTagWrites(),0);
+  assert.deepEqual(t.tagState.get(t.md.path),['哲学']);
+  assert.match(Notice.last,/摘录文件已移动|替换/);
+  await t.close();
+});
+
+test('tag write checks folder identity when native callback is released',async()=>{
+  const t=await fixture();
+  await t.pane.onUnloadFile(t.home);
+  const view=t.plugin.factories['excerpts-folder']({});
+  document.body.append(view.contentEl);
+  await view.setState({folderPath:'摘录'},{});
+  await waitFor(()=>view.contentEl.querySelector('.ex-scan-status')?.dataset.state==='done');
+  const card=view.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  input.value='异步标签';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...card.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent.includes('创建 #异步标签')).click();
+  let release;
+  const real=t.plugin.app.fileManager.processFrontMatter;
+  t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
+    await new Promise(resolve=>{release=resolve;});
+    return real(file,fn);
+  };
+  card.querySelector('.ex-tag-done').click();
+  await waitFor(()=>typeof release==='function','tag write reached native API');
+  const folder=t.files.get('摘录').file;
+  t.files.delete('摘录');folder.path='迁走';t.files.set('迁走',{file:folder});
+  t.vaultEvents.get('rename')(folder,'摘录');
+  release();
+  await waitFor(()=>!([...t.plugin.rendered].find(c=>c.workspace.kind==='folder')?.pendingTags.size),
+    'tag operation finished');
+  assert.equal(t.getTagWrites(),0,'native callback must not modify tags after relocation');
+  assert.deepEqual(t.tagState.get(t.md.path),['哲学']);
+  await view.onClose();view.contentEl.remove();
+  await t.close();
+});
+
+test('scan stops after source folder moves between metadata batches',async()=>{
+  const t=await fixture();
+  await t.pane.onUnloadFile(t.home);
+  const folder=t.files.get('摘录').file;
+  const ws=t.plugin.workspaceForFolder(folder);
+  for(let i=0;i<40;i++) {
+    const f=new TFile('摘录/补充'+i+'.md');
+    t.files.set(f.path,{file:f,data:'body'});
+  }
+  let yielded;
+  const original=t.plugin.app.vault.getMarkdownFiles;
+  // The scan itself yields after the first small batch.
+  const promise=t.plugin.repo.scan(ws,16,()=>{},()=>false);
+  t.files.delete('摘录');folder.path='迁移';t.files.set('迁移',{file:folder});
+  await assert.rejects(promise,/文件夹已移动|不存在/);
+  t.plugin.app.vault.getMarkdownFiles=original;
+  await t.close();
+});
+
+test('new folder tab is detached when view-state load throws',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  let detached=0, reveal=0;
+  const original=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=(mode)=>{
+    if(mode!=='tab') return original(mode);
+    return {view:null,async setViewState(){throw Error('view state failed');},
+      detach(){detached++;}};
+  };
+  t.plugin.app.workspace.revealLeaf=async()=>{reveal++;};
+  await assert.rejects(t.plugin.openFolder(folder),/view state failed/);
+  assert.equal(detached,1);
+  assert.equal(reveal,0);
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  await t.close();
+});
+
+test('new folder tab is detached if its folder moves while setting view state',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  let release, detached=0;
+  const original=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>{
+    if(mode!=='tab')return original(mode);
+    return {view:null,async setViewState(){await new Promise(done=>{release=done;});},
+      detach(){detached++;}};
+  };
+  const pending=t.plugin.openFolder(folder);
+  await waitFor(()=>typeof release==='function','folder state load blocked');
+  t.files.delete('摘录');folder.path='其他目录';t.files.set('其他目录',{file:folder});
+  release();
+  await assert.rejects(pending,/文件夹位置已变化/);
+  assert.equal(detached,1);
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  await t.close();
+});
