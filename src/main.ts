@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, Workspace } from "./model";
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
@@ -36,13 +36,13 @@ export default class ExcerptsPlugin extends Plugin {
     this.addCommand({ id: "open-home", name: "打开摘录首页", callback: () => void this.openHome().catch(showError) });
     this.addCommand({ id: "refresh-home", name: "刷新摘录", callback: () => this.refreshViews(true) });
     this.registerEvent(this.app.vault.on("modify", file => this.onFileChange(file.path)));
-    this.registerEvent(this.app.vault.on("create", file => this.onFileChange(file.path)));
+    this.registerEvent(this.app.vault.on("create", file => this.onFileChange(file.path, file instanceof TFolder)));
     this.registerEvent(this.app.vault.on("delete", file => {
       if (file.path === this.settings.defaultHome) {
         this.settings.defaultHome = "";
         void this.saveSettings();
       }
-      this.onFileChange(file.path);
+      this.onFileChange(file.path, file instanceof TFolder);
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       if (oldPath === this.settings.defaultHome) {
@@ -52,8 +52,8 @@ export default class ExcerptsPlugin extends Plugin {
         this.settings.defaultHome = file.path + this.settings.defaultHome.slice(oldPath.length);
         void this.saveSettings();
       }
-      this.onFileChange(oldPath);
-      this.onFileChange(file.path);
+      this.onFileChange(oldPath, file instanceof TFolder);
+      this.onFileChange(file.path, file instanceof TFolder);
       // Vault updates TFile paths in-place; existing renderers still hold their old scope.
       for (const child of this.rendered) {
         const home = child.workspace.homePath;
@@ -125,10 +125,15 @@ export default class ExcerptsPlugin extends Plugin {
       this.editorCleanupRunning = false;
     }
   }
-  private onFileChange(path: string): void {
-    // Vault events invalidate cached content without triggering a feed scan.
+  private onFileChange(path: string, folder = false): void {
+    // Vault events only invalidate the visible index; they never launch a scan.
     this.repo.invalidate(path);
-    for (const child of this.rendered) child.markStale(path);
+    for (const child of this.rendered) {
+      if (!folder) { child.markStale(path); continue; }
+      const root = child.workspace.rootFolder;
+      if (root === "/" || path === root || path.startsWith(root + "/") ||
+          root.startsWith(path + "/")) child.markStale();
+    }
   }
   isBusy(except?: ExcerptsRenderChild): boolean {
     return [...this.rendered].some(child => child !== except && child.isBusy());
