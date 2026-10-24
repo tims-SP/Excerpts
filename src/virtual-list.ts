@@ -72,6 +72,7 @@ export class VirtualTimeline {
   setRows(rows: readonly TimelineRow[], policy: ScrollPolicy): void {
     if (this.disposed) return;
     const anchor = policy === "anchor" ? this.captureAnchor() : null;
+    const anchorTarget = anchor ? this.resolveAnchorTarget(anchor, this.rows, rows) : null;
     const priorScroll = this.viewport.scrollTop;
     // Prevent a momentary shrink to empty DOM from clamping the native scroll position.
     const oldHeight = this.heights.total();
@@ -83,8 +84,8 @@ export class VirtualTimeline {
     this.updateSpacers();
     if (policy === "top" || (policy === "anchor" && !rows.length)) {
       this.viewport.scrollTop = 0;
-    } else if (policy === "anchor" && anchor) {
-      this.restoreAnchor(anchor);
+    } else if (policy === "anchor" && anchor && anchorTarget !== null) {
+      this.restoreAnchor(anchor, anchorTarget);
     } else {
       this.viewport.scrollTop = priorScroll;
     }
@@ -92,7 +93,7 @@ export class VirtualTimeline {
     this.firstVisible = 0;
     this.render();
     this.host.style.removeProperty("min-height");
-    if (policy === "anchor" && anchor && rows.length) this.restoreAnchor(anchor);
+    if (policy === "anchor" && anchor && anchorTarget !== null) this.restoreAnchor(anchor, anchorTarget);
     this.lastAllowedScroll = this.viewport.scrollTop;
     this.schedule();
   }
@@ -139,11 +140,31 @@ export class VirtualTimeline {
     return { path: row.path, index, offset };
   }
 
-  private restoreAnchor(anchor: ScrollAnchor): void {
+  private resolveAnchorTarget(
+    anchor: ScrollAnchor, previous: readonly TimelineRow[], next: readonly TimelineRow[]
+  ): number | null {
+    if (!next.length) return null;
+    const nextByPath = new Map(next.map((row, index) => [row.path, index]));
+    const exact = nextByPath.get(anchor.path);
+    if (exact !== undefined) return exact;
+    // Resolve using the OLD order, not the old numeric index in the new array.
+    for (let i = anchor.index + 1; i < previous.length; i++) {
+      const found = nextByPath.get(previous[i].path);
+      if (found !== undefined) return found;
+    }
+    for (let i = anchor.index - 1; i >= 0; i--) {
+      const found = nextByPath.get(previous[i].path);
+      if (found !== undefined) return found;
+    }
+    // If a filter replaced the whole feed, no neighbor has the same identity.
+    return null;
+  }
+
+  private restoreAnchor(anchor: ScrollAnchor, resolvedIndex?: number): void {
     if (!this.rows.length) { this.viewport.scrollTop = 0; return; }
-    // If the original card was deleted, use the next row, then the previous row.
     const found = this.rows.findIndex(row => row.path === anchor.path);
-    const index = found >= 0 ? found : Math.min(anchor.index, this.rows.length - 1);
+    const index = resolvedIndex ?? (found >= 0 ? found : null);
+    if (index === null) return;
     this.viewport.scrollTop = Math.max(0,
       this.hostStart() + this.heights.prefix(index) - anchor.offset);
   }

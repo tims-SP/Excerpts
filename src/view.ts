@@ -218,6 +218,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return !this.disposed && !this.homeInvalid &&
       !this.searchWrap.hidden && !this.searchText;
   }
+  /**
+   * Search typing is not an indexed file operation. An in-flight search must not
+   * disable its own input; all destructive and cross-page operation locks remain.
+   */
+  private searchQueryBlockReason(): string | null {
+    if (this.disposed) return "页面已关闭";
+    if (this.homeInvalid) return "摘录页已失效，请重新打开";
+    if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
+    if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
+    if (this.saveBusy) return "正在保存，请完成后再操作";
+    if (this.deleteBusy) return "正在删除，请完成后再操作";
+    if (this.selectionMode !== "normal" || this.selectionBusy) return "请先退出批量选择";
+    if (this.pendingTags.size || this.openTagEditors.size) return "请先完成或取消标签编辑";
+    if (this.scanStatus !== "done") return "摘录索引需要刷新，请先手动刷新";
+    return null;
+  }
   private canClearSearch(): boolean {
     return Boolean(this.searchText) &&
       (!this.searchReady || this.scanStatus === "stale" || this.scanStatus === "error") &&
@@ -228,7 +244,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private updateAvailability(broadcast = true): void {
     if (this.disposed || !this.searchButton) return;
     const searching = !this.searchReady;
-    this.searchInput.disabled = Boolean(this.reason("search")) || searching;
+    this.searchInput.disabled = Boolean(this.searchQueryBlockReason());
     const canClear = this.canClearSearch();
     const canCloseEmpty = this.canCloseEmptySearch();
     this.searchButton.disabled = !canClear && !canCloseEmpty && Boolean(this.reason("search"));
@@ -637,7 +653,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchButton = searchButton;
     searchButton.setAttribute("aria-expanded", String(!this.searchWrap.hidden));
     this.searchInput.addEventListener("input", () => {
-      if (!this.guard("search")) { this.searchInput.value = this.searchText; return; }
+      const blocked = this.searchQueryBlockReason();
+      if (blocked) {
+        this.searchInput.value = this.searchText;
+        new Notice(blocked);
+        return;
+      }
       this.searchText = this.searchInput.value.trim();
       this.scheduleSearch();
     });
@@ -651,7 +672,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         searchButton.focus();
         return;
       }
-      if (!this.canClearSearch() && !this.guard("search")) return;
+      if (!this.canClearSearch()) {
+        const blocked = this.searchQueryBlockReason();
+        if (blocked) { new Notice(blocked); return; }
+      }
       this.searchText = ""; this.searchInput.value = "";
       this.searchWrap.hidden = true; searchButton.setAttribute("aria-expanded", "false");
       this.scheduleSearch(); searchButton.focus();
