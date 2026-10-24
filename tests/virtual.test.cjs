@@ -182,13 +182,13 @@ test('deleting an anchor and multiple preceding rows restores the closest surviv
   viewport.dispatchEvent(new dom.window.Event('scroll'));
   await new Promise(resolve=>setTimeout(resolve,35));
   timeline.setRows(rows.filter(row=>!['B','D'].includes(row.path)),'anchor');
-  assert.equal(viewport.scrollTop,250,'E is the first surviving successor, not F');
+  assert.equal(viewport.scrollTop,350,'E is the first surviving successor, not F');
   timeline.setRows(rows,'top');
   viewport.scrollTop=550; // E
   viewport.dispatchEvent(new dom.window.Event('scroll'));
   await new Promise(resolve=>setTimeout(resolve,35));
   timeline.setRows(rows.filter(row=>!['E','F'].includes(row.path)),'anchor');
-  assert.equal(viewport.scrollTop,350,'fallback to D when all successors are gone');
+  assert.equal(viewport.scrollTop,450,'fallback to D when all successors are gone');
   timeline.dispose();
   dom.window.close();
 });

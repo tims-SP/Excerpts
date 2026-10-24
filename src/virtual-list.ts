@@ -87,7 +87,7 @@ export class VirtualTimeline {
     this.rows = [...rows];
     this.heights = new HeightIndex(rows.map(row => {
       const measured = this.heightCache.get(row.path);
-      return measured?.layoutKey === row.layoutKey ? measured.height : row.estimatedHeight;
+      return measured && measured.layoutKey === row.layoutKey ? measured.height : row.estimatedHeight;
     }));
     this.host.style.minHeight = Math.max(oldHeight, this.heights.total()) + "px";
     this.updateSpacers();
