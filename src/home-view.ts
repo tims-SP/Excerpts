@@ -26,7 +26,7 @@ export class ExcerptsHomeFileView extends FileView {
       raw = await this.plugin.app.vault.cachedRead(file);
       filter = parsePageFilter(raw);
     } catch (error) {
-      root.setText(error instanceof Error ? error.message : String(error));
+      root.textContent = error instanceof Error ? error.message : String(error);
       root.addClass("ex-page-error");
       return;
     }
