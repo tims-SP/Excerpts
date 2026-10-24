@@ -17,18 +17,18 @@ test('composer remains a single-surface textarea with theme-native focus and res
   assert.match(css,/border-radius:\s*0\s*!important/);
   assert.match(css,/background-image:\s*none\s*!important/);
   assert.match(css,/appearance:\s*none/);
-  assert.match(css,/min-height:\\s*84px; height: auto; max-height: 320px/);
-  assert.match(css,/min-height:\\s*78px; max-height: min\\(240px, 34dvh\\)/);
+  assert.match(css,/min-height:\s*84px; height: auto; max-height: 320px/);
+  assert.match(css,/min-height:\s*78px; max-height: min\(240px, 34dvh\)/);
   assert.match(css,/--ex-compose-pad-x: 20px/);
   assert.match(css,/--ex-compose-pad-top: 16px/);
   assert.match(css,/--ex-compose-pad-bottom: 12px/);
   assert.match(css,/--ex-compose-pad-x: 16px/);
   assert.match(css,/--ex-compose-pad-top: 14px/);
   assert.match(css,/--ex-compose-pad-bottom: 10px/);
-  assert.match(css,/\\.ex-compose-body/);
-  assert.match(css,/\\.ex-capture-overflow/);
-  assert.match(css,/\\.ex-capture-tag-toggle/);
-  assert.doesNotMatch(css,/\\.ex-capture-selected button\\.ex-tag-remove/);
+  assert.match(css,/\.ex-compose-body/);
+  assert.match(css,/\.ex-capture-overflow/);
+  assert.match(css,/\.ex-capture-tag-toggle/);
+  assert.doesNotMatch(css,/\.ex-capture-selected button\.ex-tag-remove/);
   assert.match(css,/--interactive-accent/);
 });
 
