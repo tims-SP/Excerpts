@@ -4,6 +4,7 @@ import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
 import { EXCERPTS_HOME_VIEW, ExcerptsHomeFileView } from "./home-view";
+import { PageFilter, pageNameError, serializePageFilter } from "./page-config";
 
 /** A .excerpts file is a real entrypoint; no independent collection IDs or navigation view. */
 export default class ExcerptsPlugin extends Plugin {
@@ -71,6 +72,7 @@ export default class ExcerptsPlugin extends Plugin {
   workspaceForHome(home: TFile): Workspace {
     return { homePath: home.path, rootFolder: home.parent?.path ?? "/", recursive: this.settings.recursive };
   }
+  /** Only 首页.excerpts is a default entrypoint; opening a filtered page never replaces it. */
   async rememberHome(path: string): Promise<void> {
     if (this.settings.defaultHome === path) return;
     this.settings.defaultHome = path;
@@ -84,10 +86,46 @@ export default class ExcerptsPlugin extends Plugin {
     if (current) throw new Error("首页路径已经被其他文件占用");
     return this.app.vault.create(path, "");
   }
+  private savedPagePath(homePath: string, name: string): string {
+    const home = this.app.vault.getAbstractFileByPath(homePath);
+    if (!(home instanceof TFile) || home.extension !== "excerpts")
+      throw new Error("当前摘录页文件不存在");
+    const prefix = home.parent?.path && home.parent.path !== "/" ? home.parent.path + "/" : "";
+    return prefix + name.trim().normalize("NFC") + ".excerpts";
+  }
+  savedPageNameIssue(homePath: string, name: string): string | null {
+    const error = pageNameError(name);
+    if (error) return error;
+    const path = this.savedPagePath(homePath, name);
+    const key = path.normalize("NFC").toLocaleLowerCase("en-US");
+    return this.app.vault.getAllLoadedFiles().some(file =>
+      file.path.normalize("NFC").toLocaleLowerCase("en-US") === key)
+      ? "已存在同名文件，请更换名称" : null;
+  }
+  async createSavedPage(homePath: string, name: string, filter: PageFilter): Promise<TFile> {
+    const issue = this.savedPageNameIssue(homePath, name);
+    if (issue) throw new Error(issue);
+    const path = this.savedPagePath(homePath, name);
+    // Vault.create rejects a concurrent duplicate; never overwrite an existing page.
+    return this.app.vault.create(path, serializePageFilter(filter));
+  }
+  async updateSavedPage(path: string, expectedRaw: string, filter: PageFilter): Promise<string> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension !== "excerpts" || !expectedRaw.trim())
+      throw new Error("无法更新当前摘录页");
+    const content = serializePageFilter(filter);
+    await this.app.vault.process(file, current => {
+      if (current !== expectedRaw) throw new Error("摘录页已被其他操作修改，请重新打开");
+      return content;
+    });
+    return content;
+  }
   async openHome(path?: string): Promise<void> {
     const homes = this.getHomeFiles();
-    const file = (path ? homes.find(item => item.path === path) : null) ??
-      homes.find(item => item.path === this.settings.defaultHome) ?? homes[0];
+    const file = path
+      ? homes.find(item => item.path === path)
+      : homes.find(item => item.path === this.settings.defaultHome && item.basename === "首页") ??
+        homes.find(item => item.basename === "首页");
     if (!file) { new Notice("没有首页.excerpts，请在插件设置中创建首页入口"); return; }
     const leaf = this.app.workspace.getLeaf(false);
     await leaf.openFile(file);
