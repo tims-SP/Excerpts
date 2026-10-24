@@ -21,7 +21,7 @@ class Notice {constructor(message){Notice.last=message;}}
 class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},setWarning(){this.warning=true;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}addSeparator(){}showAtPosition(){Menu.last=this;}}
 class Modal {
   constructor(){this.modalEl=document.createElement('section');this.contentEl=document.createElement('div');this.modalEl.append(this.contentEl);}
-  open(){document.body.append(this.modalEl);this.onOpen?.();return this;}
+  open(){document.body.append(this.modalEl);this.onOpen?.();Modal.last=this;return this;}
   close(){this.onClose?.();this.modalEl.remove();}
 }
 const renders=[];
@@ -676,7 +676,7 @@ test('selection mode toggles cards without reopening Markdown or changing tags',
   const t=await fixture();const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');
   Menu.last.items[0].handler();
-  assert.ok(root.classList.contains('ex-is-selecting'));
+  assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   assert.equal(root.querySelector('.ex-composer').isConnected,true);
   const card=root.querySelector('.ex-card');
   assert.equal(card.getAttribute('role'),'checkbox');
@@ -688,7 +688,7 @@ test('selection mode toggles cards without reopening Markdown or changing tags',
   assert.equal(card.getAttribute('aria-checked'),'false','nested tag action selects instead');
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   root.querySelector('.ex-select-done').click();
-  assert.equal(root.classList.contains('ex-is-selecting'),false);
+  assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false);
   assert.equal(t.files.has(t.md.path),true);
   await t.close();
 });
@@ -726,8 +726,10 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
   await wait();
   assert.ok(t.files.has(t.md.path),'modified original remains intact');
   assert.equal(t.files.has(second.path),false,'unmodified peer is trashed');
-  assert.ok(root.classList.contains('ex-is-selecting'));
+  assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0/);
+  assert.match(document.querySelector('.ex-delete-modal .ex-delete-progress-summary').textContent,/2 \/ 2/);
+  document.querySelector('.ex-delete-modal .ex-delete-submit').click();
   root.querySelector('.ex-select-done').click();
   await t.plugin.openMarkdown(t.md.path);await wait();
   clickByLabel(root,'卡片选项');await wait();
@@ -754,5 +756,93 @@ test('select all respects a tag filter and never includes out-of-scope Markdown'
   assert.equal(t.files.has(t.md.path),false);
   assert.equal(t.files.has(unrelated.path),true);
   assert.equal(t.files.has(t.home.path),true);
+  await t.close();
+});
+
+test('single deletion shows a spinner and blocks native modal close while file trash is pending',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  let finishTrash;
+  t.plugin.app.fileManager.trashFile=file=>new Promise(resolve=>{
+    finishTrash=()=>{t.files.delete(file.path);resolve();};
+  });
+  clickByLabel(root,'卡片选项');await wait();
+  Menu.last.items.at(-1).handler();
+  const modal=Modal.last;
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').textContent,'删除中…');
+  assert.ok(modal.modalEl.querySelector('.ex-delete-spinner'));
+  modal.close();
+  assert.ok(modal.modalEl.isConnected,'the native close action must be ignored while busy');
+  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').disabled,true);
+  finishTrash();await wait();
+  assert.equal(t.files.has(t.md.path),false);
+  assert.equal(modal.modalEl.isConnected,false);
+  await t.close();
+});
+
+test('bulk deletion reports actual processed counts and requires Done after completion',async()=>{
+  const t=await fixture();
+  const other=await t.plugin.app.vault.create('摘录/其他.md','其他正文');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  const original=t.plugin.app.fileManager.trashFile;
+  t.plugin.app.fileManager.trashFile=async file=>{
+    await new Promise(resolve=>setTimeout(resolve,2));
+    await original(file);
+  };
+  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  root.querySelector('.ex-select-all').click();
+  root.querySelector('.ex-delete-selected').click();
+  const modal=Modal.last;
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  assert.equal(modal.modalEl.querySelector('.ex-delete-progress').hidden,false);
+  assert.equal(modal.modalEl.querySelector('progress').max,2);
+  modal.close();
+  assert.equal(modal.modalEl.isConnected,true,'bulk deletion modal must remain open while working');
+  await wait();
+  assert.equal(modal.modalEl.querySelector('progress').value,2);
+  assert.equal(modal.modalEl.querySelector('.ex-delete-progress-summary').textContent,'2 / 2');
+  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').textContent,'完成');
+  assert.equal(t.files.has(t.md.path),false);
+  assert.equal(t.files.has(other.path),false);
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  assert.equal(modal.modalEl.isConnected,false);
+  await t.close();
+});
+
+test('select-all over 200 entries yields to UI and disables destructive actions until complete',async()=>{
+  const t=await fixture();
+  for(let i=0;i<425;i++) await t.plugin.app.vault.create('摘录/测试批量-'+i+'.md','摘录');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/正在选择 200 \/ 426/);
+  assert.equal(root.querySelector('.ex-select-all').disabled,true);
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  await wait();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 426 \/ 426/);
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,false);
+  assert.equal(root.querySelectorAll('.ex-card').length,40);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false);
+  await t.close();
+});
+
+test('clear filter during a canceled search restores bulk selection availability',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const search=root.querySelector('.ex-search');
+  search.value='不存在的搜索条件';
+  search.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items[0].disabled,true);
+  const clear=Menu.last.items.find(item=>item.title==='清除筛选');
+  clear.handler();
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items[0].disabled,false);
+  Menu.last.items[0].handler();
+  assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
+  root.querySelector('.ex-select-done').click();
   await t.close();
 });
