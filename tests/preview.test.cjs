@@ -30,3 +30,12 @@ test('preview heights and full-reading safety are deterministic',()=>{
   assert.equal(previewAction(Infinity,desktop),'read');
   assert.equal(previewPolicy('multimedia',true).limit,320);
 });
+
+test('fenced, indented, and inline code media syntax never changes card classification',()=>{
+  const fenced='\x60\x60\x60md\n![[hidden.png]]\n\x60\x60\x60\n正常文字';
+  assert.equal(classifyPreview(parsed(fenced)),'text');
+  assert.equal(classifyPreview(parsed('~~~md\n![[hidden.mp4]]\n~~~')),'text');
+  assert.equal(classifyPreview(parsed('    ![[not-real.png]]')),'text');
+  assert.equal(classifyPreview(parsed('示例：\x60![[inline.jpg]]\x60 是代码')),'text');
+  assert.equal(classifyPreview(parsed(fenced+'\n![[real.mp4]]')),'video');
+});

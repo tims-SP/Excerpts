@@ -497,6 +497,45 @@ test('virtual timeline keeps a single date rail and recycles offscreen cards',as
   await t.close();
 });
 
+
+test('render failures offer native reading without inventing truncated Markdown',async()=>{
+  const original=mocks.MarkdownRenderer.render;
+  mocks.MarkdownRenderer.render=async (app,content,target,path)=>{
+    if(content.includes('故障'))throw new Error('synthetic render failure');
+    return original(app,content,target,path);
+  };
+  try{
+    const t=await fixture(false,'# 标题\n\n故障');
+    const card=t.pane.contentEl.querySelector('.ex-card');
+    await waitFor(()=>card.querySelector('.ex-expand-body')?.dataset.action==='read','failure reading action');
+    assert.match(card.textContent,/内容预览失败/);
+    assert.equal(card.querySelectorAll('.ex-native-markdown').length,0,
+      'partial renderer output is removed');
+    card.querySelector('.ex-expand-body').click();await wait();
+    assert.equal(t.leaf.state.state.mode,'preview');
+    await t.close();
+    const sec=await fixture(false,'# 标题\n\n正文\n\n## 来源\n\n故障分组');
+    const card2=sec.pane.contentEl.querySelector('.ex-card');
+    card2.querySelector('.ex-group-trigger').click();
+    await waitFor(()=>card2.querySelector('.ex-preview-error')!==null,'section error');
+    assert.match(card2.textContent,/分组预览失败/);
+    assert.equal(card2.querySelector('.ex-group-read').hidden,false);
+    await sec.close();
+  }finally{mocks.MarkdownRenderer.render=original;}
+});
+
+test('mounted previews recalculate safety rules after switching viewport width',async()=>{
+  const t=await fixture(false,'正文'.repeat(185));
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  const action=card.querySelector('.ex-expand-body');
+  assert.equal(action.hidden,true,'desktop 200px cap covers estimated 185px');
+  Object.defineProperty(t.pane.contentEl,'clientWidth',{configurable:true,value:390});
+  t.pane.renderer.previewUpdates.get(t.md.path)();
+  assert.equal(action.dataset.action,'expand','mobile 160px cap requires expansion');
+  assert.equal(action.hidden,false);
+  await t.close();
+});
+
 test('H2 disclosure toggles its own region without rebuilding the main Markdown',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const card=root.querySelector('.ex-card');

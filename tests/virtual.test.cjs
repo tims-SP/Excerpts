@@ -127,3 +127,70 @@ test('height changes above the reading anchor compensate the scroll position',as
   delete global.ResizeObserver;
   dom.window.close();
 });
+
+test('explicit scroll policies preserve the composer and restore an existing or next row',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:800});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,width:700,height:100});
+  const rows=Array.from({length:100},(_,i)=>({
+    path:'p-'+i,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100
+  }));
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>32,
+    mount:()=>{const element=document.createElement('article');
+      element.getBoundingClientRect=()=>({height:100,width:700});return element;},
+    unmount:()=>{}
+  });
+  timeline.setRows(rows,'keep');
+  assert.equal(viewport.scrollTop,0,'opening the homepage must not skip the composer');
+  viewport.scrollTop=2350;
+  viewport.dispatchEvent(new dom.window.Event('scroll'));
+  await new Promise(resolve=>setTimeout(resolve,35));
+  timeline.setRows(rows.slice(5),'anchor');
+  assert.equal(viewport.scrollTop,1850,'deleting five earlier rows keeps p-20 anchored');
+  timeline.setRows(rows.filter(row=>row.path!=='p-20').slice(5),'anchor');
+  assert.equal(viewport.scrollTop,1850,'deleted anchor falls forward to the next row');
+  timeline.setRows(rows,'top');
+  assert.equal(viewport.scrollTop,0,'changing filters returns to homepage top');
+  viewport.scrollTop=24;
+  timeline.setRows(rows,'keep');
+  assert.equal(viewport.scrollTop,24,'silent metadata refresh does not scroll the page');
+  timeline.setRows([],'anchor');
+  assert.equal(viewport.scrollTop,0,'an empty feed returns to page top');
+  timeline.dispose();
+  dom.window.close();
+});
+
+test('width changes remeasure retained rows before restoring the reading anchor',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:800});
+  let width=700;
+  Object.defineProperty(host,'clientWidth',{configurable:true,get(){return width;}});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,width,height:100});
+  let rowHeight=100,unmounts=0,mounts=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>32,
+    mount:()=>{mounts++;const el=document.createElement('article');
+      el.getBoundingClientRect=()=>({height:rowHeight,width});return el;},
+    unmount:()=>{unmounts++;}
+  });
+  const rows=Array.from({length:100},(_,i)=>({
+    path:String(i),firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100
+  }));
+  timeline.setRows(rows,'keep');
+  viewport.scrollTop=1300;
+  viewport.dispatchEvent(new dom.window.Event('scroll'));
+  await new Promise(resolve=>setTimeout(resolve,35));
+  const before=viewport.scrollTop,beforeMounts=mounts;
+  width=390;rowHeight=120;
+  timeline.resize();
+  assert.equal(viewport.scrollTop,before+40,'two buffered rows above the anchor grew by 20');
+  assert.equal(unmounts,0,'width recalculation itself does not unmount Markdown cards');
+  assert.equal(mounts,beforeMounts,'width recalculation itself does not mount Markdown cards');
+  timeline.dispose();
+  dom.window.close();
+});
