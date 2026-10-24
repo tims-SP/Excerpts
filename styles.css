@@ -452,3 +452,65 @@
 @media (prefers-reduced-motion: reduce) {
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
 }
+
+/* Saved-filter dialog is a native Obsidian Modal, not part of the scrolling feed. */
+.ex-save-page-modal { --ex-modal-gap: 20px; }
+.ex-save-page-modal .modal-content { max-width: 420px; }
+.ex-save-page-modal .ex-save-page-title {
+  margin: 0; font-size: 16px; font-weight: 600; line-height: 24px;
+  color: var(--text-normal);
+}
+.ex-save-page-modal .ex-save-page-description {
+  margin: 4px 0 var(--ex-modal-gap); color: var(--text-muted);
+  font-size: var(--font-ui-small, 13px); line-height: 1.5;
+}
+.ex-save-page-modal .ex-save-page-field { display: flex; flex-direction: column; gap: 6px; }
+.ex-save-page-modal .ex-save-page-label { font-size: var(--font-ui-small, 13px); font-weight: 500; }
+.ex-save-page-modal input.ex-save-page-input,
+.ex-save-page-modal input.ex-save-page-input:is(:hover,:focus) {
+  display: block; box-sizing: border-box; width: 100%; min-height: 40px;
+  padding: 8px 12px; border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px); background: var(--background-primary);
+  background-image: none; box-shadow: none;
+  color: var(--text-normal); font-size: 14px; line-height: 1.5;
+}
+.ex-save-page-modal input.ex-save-page-input:focus {
+  border-color: var(--background-modifier-border-focus, var(--interactive-accent));
+}
+.ex-save-page-modal .ex-save-page-hint {
+  min-height: 18px; color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px); line-height: 1.5; overflow-wrap: anywhere;
+}
+.ex-save-page-modal .ex-save-page-hint.ex-is-error { color: var(--text-error); }
+.ex-save-page-modal .ex-save-page-summary {
+  margin-top: 20px; color: var(--text-muted); background: var(--background-secondary);
+  border-radius: var(--radius-m, 8px); padding: 12px;
+  font-size: var(--font-ui-small, 13px); line-height: 1.5; overflow-wrap: anywhere;
+}
+.ex-save-page-modal .ex-save-page-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; margin-top: 24px;
+}
+.ex-save-page-modal .ex-save-page-footer button {
+  min-height: 36px; min-width: 80px; padding: 6px 14px;
+  border-radius: var(--radius-m, 8px); font-size: var(--font-ui-small, 13px);
+}
+.ex-save-page-modal .ex-save-page-cancel {
+  background: transparent; color: var(--text-muted);
+}
+.ex-save-page-modal .ex-save-page-cancel:hover { background: var(--background-modifier-hover); }
+.ex-save-page-modal .ex-save-page-submit:disabled { opacity: .5; cursor: not-allowed; }
+.ex-save-page-modal :is(button,input):focus-visible {
+  outline: 2px solid var(--interactive-accent); outline-offset: 2px;
+}
+.ex-page-error { padding: 24px; color: var(--text-error); font-size: var(--font-ui-small, 13px); }
+
+@media (pointer: coarse) {
+  .ex-save-page-modal input.ex-save-page-input { min-height: 44px; font-size: 16px; }
+  .ex-save-page-modal .ex-save-page-footer button { min-height: 44px; }
+}
+@media (max-width: 500px) {
+  .ex-save-page-modal .modal-content { padding: 16px; }
+  .ex-save-page-modal .ex-save-page-summary { margin-top: 16px; }
+  .ex-save-page-modal .ex-save-page-footer { margin-top: 20px; }
+}
