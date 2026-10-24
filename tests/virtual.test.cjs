@@ -185,7 +185,7 @@ test('width changes remeasure retained rows before restoring the reading anchor'
   viewport.scrollTop=1300;
   viewport.dispatchEvent(new dom.window.Event('scroll'));
   await new Promise(resolve=>setTimeout(resolve,35));
-  const before=viewport.scrollTop,beforeMounts=mounts;
+  const before=viewport.scrollTop,beforeMounts=mounts,beforeUnmounts=unmounts;
   const upperBufferedRows=Array.from(host.querySelectorAll('[data-virtual-index]'))
     .filter(row=>Number(row.dataset.virtualIndex)<10).length;
   assert.equal(upperBufferedRows,8,'one screen of upper buffer was mounted');
@@ -193,7 +193,7 @@ test('width changes remeasure retained rows before restoring the reading anchor'
   timeline.resize();
   assert.equal(viewport.scrollTop,before+upperBufferedRows*20,
     'all buffered rows above the reading anchor are compensated');
-  assert.equal(unmounts,0,'width recalculation itself does not unmount Markdown cards');
+  assert.equal(unmounts,beforeUnmounts,'width recalculation itself does not unmount Markdown cards');
   assert.equal(mounts,beforeMounts,'width recalculation itself does not mount Markdown cards');
   timeline.dispose();
   dom.window.close();
