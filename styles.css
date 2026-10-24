@@ -51,6 +51,12 @@
 .excerpts-root .ex-scan-icon svg { width: 12px; height: 12px; }
 .excerpts-root .ex-scan-status[data-state="scanning"] .ex-scan-icon svg { animation: ex-scan-rotate 900ms linear infinite; }
 .excerpts-root .ex-scan-status:is([data-state="error"], [data-state="invalid"]) { color: var(--text-error); }
+.excerpts-root .ex-page-hint {
+  margin: calc(-1 * var(--ex-space-2)) 0 var(--ex-space-3);
+  color: var(--text-muted); font-size: 12px; line-height: 1.5;
+}
+.excerpts-root .ex-page-hint[hidden] { display: none !important; }
+.excerpts-root .ex-scan-status[data-state="invalid"] ~ .ex-page-hint { color: var(--text-error); }
 .excerpts-root .ex-scan-progress { width: 112px; height: 2px; overflow: hidden; border-radius: 999px; background: var(--background-modifier-hover); }
 .excerpts-root .ex-scan-progress[hidden] { display: none !important; }
 .excerpts-root .ex-scan-progress-fill { height: 100%; width: 0; border-radius: inherit; background: var(--text-muted); }
@@ -376,10 +382,8 @@
 .excerpts-root button.ex-tag-done:hover { color: var(--text-on-accent); background: var(--interactive-accent-hover); }
 .excerpts-root button.ex-tag-done:disabled { opacity: .55; }
 .excerpts-root .ex-tag-inline-hint {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   color: var(--text-muted); font-size: var(--font-ui-smaller,12px); line-height: 1.4;
 }
-.excerpts-root button.ex-tag-source { padding: 4px 6px; min-height: 28px; font-size: 12px; }
 
 
 /* Micro pills: tiny *visual* surface, sufficient independent touch target. */
