@@ -237,7 +237,8 @@ test('internal save inserts one visible card and updates metadata without scanni
   assert.equal(root.querySelector('.ex-count').textContent,'2 / 2');
   assert.equal(scans,0,'save must not reindex entire vault');
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
-  assert.ok(root.querySelector('.ex-card[data-path="'+created.file.path+'"] .ex-chips').textContent.includes('哲学'));
+  await waitFor(()=>root.querySelector('.ex-card[data-path="'+created.file.path+'"] .ex-chips')
+    ?.textContent.includes('哲学'),'saved tag shown');
   // Delayed metadata event for the same newly created file is reconciled locally.
   t.tagState.set(created.file.path,['哲学','新标签']);
   t.metadataEvents.get('changed')?.(created.file);
@@ -248,6 +249,44 @@ test('internal save inserts one visible card and updates metadata without scanni
   // An external modification of that same file must NOT be hidden by ownership.
   t.vaultEvents.get('modify')?.(created.file);
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  await t.close();
+});
+
+test('failed save retains draft and incremental updates never clear existing stale status',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const input=root.querySelector('.ex-compose-text');
+  input.value='写入失败时保留草稿';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  const original=t.plugin.app.vault.create;
+  t.plugin.app.vault.create=async()=>{throw new Error('模拟写入失败');};
+  [...root.querySelectorAll('.ex-compose-actions button')]
+    .find(x=>x.textContent==='保存').click();
+  await waitFor(()=>Notice.last==='模拟写入失败','failed write notification');
+  assert.equal(input.value,'写入失败时保留草稿');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  t.plugin.app.vault.create=original;
+  t.vaultEvents.get('modify')?.(t.md);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  input.value='待刷新状态下创建';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')]
+    .find(x=>x.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2','save in stale state');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale',
+    'saving must not erase unrelated external change');
+  await t.close();
+});
+
+test('blank native editor does not insert a blank card into the feed',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const input=root.querySelector('.ex-compose-text');
+  input.value='';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'编辑文档');
+  await waitFor(()=>t.leaf.lastFile?.extension==='md' && t.leaf.lastFile!==t.md);
+  assert.equal(root.querySelector('.ex-count').textContent,'1 / 1');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
   await t.close();
 });
 
