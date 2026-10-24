@@ -23,7 +23,7 @@ test('ex-prefixed UI identifiers are reviewed; new/removed components need expli
 test('all CSS pixel, color, and spacing modifications require approval against screenshots', () => {
   const bytes = readFileSync(path.join(ROOT, 'styles.css'));
   const gitBlob = createHash('sha1').update(Buffer.concat([
-    Buffer.from('blob ' + bytes.length + '\\0'), bytes
+    Buffer.from('blob ' + bytes.length + '\0'), bytes
   ])).digest('hex');
   assert.equal(gitBlob, contract.stylesheet_git_blob_sha,
     'CSS changed: first inspect all affected Screenshot QA images, then explicitly approve the new style blob SHA');
