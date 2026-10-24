@@ -30,22 +30,32 @@ const Excerpts=require('../main.js');Module._load=old;
 const wait=()=>new Promise(resolve=>setTimeout(resolve,70));
 function clickByLabel(container,label){const el=container.querySelector(`button[aria-label="${label}"]`);assert.ok(el,'Missing button: '+label);el.click();return el;}
 
-async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记'){
+async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记',inlineTags=[]){
   const files=new Map();
   const dir=new TFolder('摘录'); files.set('摘录',{file:dir});
   const home=new TFile('摘录/首页.excerpts'); files.set(home.path,{file:home,data:''});
   const md=new TFile('摘录/测试.md'); files.set(md.path,{file:md,data:markdown});
+  const tagState=new Map([[md.path,noTags?[]:['哲学']]]);
+  let tagWrites=0;
   const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
     async cachedRead(file){return files.get(file.path).data;},
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
   const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();},async setViewState(state){this.state=state;if(this.view)this.view.mode=state.state.mode;}};
-  plugin.app={vault,metadataCache:{getFileCache(){return {tags:[],frontmatter:{tags:noTags?[]:['哲学']}};},on(){return {};}}
-    ,fileManager:{async processFrontMatter(f,fn){fn({tags:['哲学']});}},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
+  plugin.app={vault,metadataCache:{getFileCache(f){return {
+    tags:f.path===md.path?inlineTags.map(tag=>({tag:'#'+tag})):[],
+    frontmatter:{tags:tagState.get(f.path)||[]}
+  };},on(){return {};}}
+    ,fileManager:{async processFrontMatter(f,fn){
+      const fm={tags:[...(tagState.get(f.path)||[])]};
+      fn(fm);
+      tagState.set(f.path,fm.tags||[]);
+      tagWrites++;
+    }},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
   await pane.openFile(home);await wait();
-  return {files,plugin,pane,leaf,md,home,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
+  return {files,plugin,pane,leaf,md,home,tagState,getTagWrites:()=>tagWrites,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
 }
 
 test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
@@ -75,11 +85,11 @@ test('quick composer saves normal Markdown with native tags and restores continu
   const t=await fixture();const root=t.pane.contentEl;
   const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'添加标签');assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
-  const choice=[...root.querySelectorAll('.ex-capture-tags .ex-tag-option')].find(x=>x.textContent.includes('#哲学'));
+  const choice=[...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent.includes('哲学'));
   assert.ok(choice);choice.click();
   const tagSearch=root.querySelector('.ex-tags-input');
   tagSearch.value='札记';tagSearch.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
-  const create=[...root.querySelectorAll('.ex-capture-tags .ex-tag-create')].find(x=>x.textContent.includes('札记'));
+  const create=[...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent.includes('创建 #札记'));
   assert.ok(create);create.click();
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,2);
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
@@ -136,15 +146,19 @@ test('H2 menu targets the correct source line including repeated section names',
   assert.equal(t.files.get(t.md.path).data,source);
   await t.close();
 });
-test('tag changes preserve expanded selection panel',async()=>{
-  const t=await fixture();const root=t.pane.contentEl;
-  root.querySelector('.ex-add-tag').click();
-  const input=root.querySelector('.ex-tag-custom');
+test('card tag edit stays open and preserves the SAME input when selecting several options',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
   input.value='札记';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
-  await wait();
-  assert.equal(root.querySelector('.ex-tag-editor').hidden,false);
-  assert.equal(root.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
+  assert.equal(card.querySelector('.ex-tag-custom'),input);
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
+  assert.equal(t.getTagWrites(),0,'selection must not write the file');
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2');
+  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.deepEqual(t.tagState.get(t.md.path),['哲学']);
   await t.close();
 });
 
@@ -166,7 +180,7 @@ test('cards without tags use a single compact footer add action, then expand edi
 test('quick tags toggle without comma parsing and persist only the selected chips',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   clickByLabel(root,'添加标签');
-  const tag=root.querySelector('.ex-capture-tags .ex-tag-option');
+  const tag=root.querySelector('.ex-capture-tags .ex-tag-choice');
   assert.ok(tag);tag.click();
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,1);
   clickByLabel(root,'移除标签：哲学');
@@ -183,17 +197,69 @@ test('quick tags toggle without comma parsing and persist only the selected chip
   assert.doesNotMatch(entry.data,/  - "哲学"/);
   await t.close();
 });
-test('card tag picker allows explicit removal while ordinary chips still filter',async()=>{
+test('card picker stages removals and saves all YAML tag changes only on Done',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const picker=card.querySelector('.ex-tag-custom');
+  const selectedRow=[...card.querySelectorAll('.ex-tag-choice')].find(row=>row.textContent==='哲学');
+  assert.ok(selectedRow);selectedRow.click();
+  assert.deepEqual(t.tagState.get(t.md.path),['哲学']);
+  assert.equal(t.getTagWrites(),0);
+  picker.value='札记';picker.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  const create=[...card.querySelectorAll('.ex-tag-choice')].find(row=>row.textContent.includes('创建 #札记'));
+  assert.ok(create);create.click();
+  assert.equal(card.querySelector('.ex-tag-custom'),picker);
+  card.querySelector('.ex-tag-done').click();await wait();
+  assert.equal(t.getTagWrites(),1,'only one frontmatter write is expected');
+  assert.deepEqual(t.tagState.get(t.md.path),['札记']);
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.ok(card.querySelector('.ex-chips').textContent.includes('#札记'));
+  await t.close();
+});
+
+test('Escape cancels card tag edits while capture tag panel keeps its draft and toggles shut',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const card=root.querySelector('.ex-card');
   card.querySelector('.ex-add-tag').click();
+  card.querySelector('.ex-tag-custom').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(t.getTagWrites(),0);
+  const top=clickByLabel(root,'添加标签');
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(row=>row.textContent.includes('哲学')).click();
+  top.click();
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,1);
+  top.click();
+  root.querySelector('.ex-tags-input').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,1);
+  await t.close();
+});
+
+test('inline Markdown tags remain visible but cannot be removed from frontmatter picker',async()=>{
+  const t=await fixture(false,'普通正文 #正文', ['正文']);
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const protectedRow=[...card.querySelectorAll('.ex-tag-choice')].find(row=>row.textContent.includes('正文'));
+  assert.ok(protectedRow);
+  assert.equal(protectedRow.disabled,true);
+  assert.ok(card.querySelector('.ex-tag-inline-hint').textContent.includes('Markdown'));
+  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(t.getTagWrites(),0);
+  await t.close();
+});
+
+test('IME composition does not create a tag on Enter',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
   const input=card.querySelector('.ex-tag-custom');
-  assert.equal(input.type,'search');
-  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
-  const remove=card.querySelector('button[aria-label="移除标签：哲学"]');
-  assert.ok(remove);remove.click();await wait();
-  assert.equal(root.querySelector('.ex-tag-editor').hidden,false);
-  assert.equal(root.querySelector('.ex-card').querySelectorAll('.ex-tag').length,0);
+  input.value='新标签';
+  input.dispatchEvent(new dom.window.CompositionEvent('compositionstart',{bubbles:true}));
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 1');
+  input.dispatchEvent(new dom.window.CompositionEvent('compositionend',{bubbles:true}));
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 1');
   await t.close();
 });
 
