@@ -77,6 +77,17 @@ export class EntryRepository {
     this.assertFolderSource(ws);
     return cards;
   }
+  /** Index one newly created Markdown file without scanning the vault.
+   * Explicit save tags bridge the interval before Obsidian's metadata cache catches up. */
+  indexCreatedFile(file: TFile, savedTags: readonly string[]): CardIndex {
+    const card = this.indexFile(file);
+    const tags = [...new Set(savedTags.map(t => t.replace(/^#/, "").trim()).filter(Boolean))];
+    return {
+      ...card,
+      tags: [...new Set([...card.tags, ...tags])],
+      frontmatterTags: [...new Set([...card.frontmatterTags, ...tags])]
+    };
+  }
   private indexFile(file: TFile): CardIndex {
     const cache = this.app.metadataCache.getFileCache(file);
     const all = getAllTags(cache ?? {}) ?? [];
@@ -189,7 +200,8 @@ export class EntryRepository {
     }
     return matches;
   }
-  async create(ws: Workspace, markdown = "", tags: string[] = []): Promise<TFile> {
+  async create(ws: Workspace, markdown = "", tags: string[] = [],
+    onAttempt?: (path: string) => (file?: TFile) => void): Promise<TFile> {
     this.assertFolderSource(ws);
     if (ws.kind === "file" && ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
     const base = excerptFileStem(markdown);
@@ -209,10 +221,17 @@ export class EntryRepository {
       const key = filenameKey(path);
       if (occupied.has(key) || this.reservedPaths.has(key) || this.app.vault.getAbstractFileByPath(path)) continue;
       this.reservedPaths.add(key);
+      let settle: ((file?: TFile) => void) | undefined;
       try {
+        settle = onAttempt?.(path);
         this.assertFolderSource(ws);
-        return await this.app.vault.create(path, content);
+        const file = await this.app.vault.create(path, content);
+        // Record the file identity before returning to the caller. Vault events
+        // may arrive either before or after the create promise resolves.
+        settle?.(file);
+        return file;
       } catch (error) {
+        settle?.();
         // Retry only when another writer really created the path, not on unrelated IO errors.
         const conflict = this.app.vault.getAllLoadedFiles()
           .some(file => filenameKey(file.path) === key);
