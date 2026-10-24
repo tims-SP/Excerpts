@@ -50,7 +50,7 @@
 .excerpts-root .ex-scan-icon { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; flex: 0 0 12px; }
 .excerpts-root .ex-scan-icon svg { width: 12px; height: 12px; }
 .excerpts-root .ex-scan-status[data-state="scanning"] .ex-scan-icon svg { animation: ex-scan-rotate 900ms linear infinite; }
-.excerpts-root .ex-scan-status[data-state="error"] { color: var(--text-error); }
+.excerpts-root .ex-scan-status:is([data-state="error"], [data-state="invalid"]) { color: var(--text-error); }
 .excerpts-root .ex-scan-progress { width: 112px; height: 2px; overflow: hidden; border-radius: 999px; background: var(--background-modifier-hover); }
 .excerpts-root .ex-scan-progress[hidden] { display: none !important; }
 .excerpts-root .ex-scan-progress-fill { height: 100%; width: 0; border-radius: inherit; background: var(--text-muted); }
