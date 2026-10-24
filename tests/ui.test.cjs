@@ -18,9 +18,21 @@ class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,
 class PluginSettingTab {constructor(){}}
 class Setting {}
 class Notice {constructor(message){Notice.last=message;}}
-class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}showAtPosition(){Menu.last=this;}}
+class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}showAtPosition(){Menu.last=this;}}
+class Modal {
+  constructor(){this.modalEl=document.createElement('section');this.contentEl=document.createElement('div');this.modalEl.append(this.contentEl);}
+  open(){document.body.append(this.modalEl);this.onOpen?.();return this;}
+  close(){this.onClose?.();this.modalEl.remove();}
+}
 const renders=[];
-const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,
+const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,
+  parseYaml(raw){
+    const version=raw.match(/^version:\\s*(\\d+)$/m);
+    const tag=raw.match(/^\\s*tag:\\s*(.+)$/m);
+    const query=raw.match(/^\\s*query:\\s*(.+)$/m);
+    return {version:version?Number(version[1]):null,
+      filter:{tag:tag?JSON.parse(tag[1]):null,query:query?JSON.parse(query[1]):null}};
+  },
   setIcon(el,name){el.setAttribute('data-icon',name);},
   getAllTags(cache){return [...(cache.tags||[]).map(t=>t.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)];},
   MarkdownRenderer:{async render(app,content,target,path){renders.push({content,path});target.append(document.createTextNode(content));}}
@@ -425,5 +437,92 @@ test('tag search clear only clears the query, not the picker or selected tags',a
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,before+(active?-1:1));
   assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
   if(!active) [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(row=>row.textContent==='哲学').click();
+  await t.close();
+});
+
+
+test('page actions appear only in the timeline toolbar and disabled actions have no filter',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const more=clickByLabel(root,'页面选项');
+  assert.ok(more.closest('.ex-toolbar-actions'));
+  assert.equal(root.querySelectorAll('.ex-page-options').length,1);
+  assert.equal(root.querySelectorAll('.ex-card-options').length,1);
+  assert.deepEqual(Menu.last.items.map(item=>item.title),['保存当前筛选…','清除筛选']);
+  assert.equal(Menu.last.items[0].disabled,true);
+  assert.equal(Menu.last.items[1].disabled,true);
+  await t.close();
+});
+
+test('save current filter creates a reusable .excerpts file without replacing the default home',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'筛选标签');
+  [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='#哲学').click();
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items[0].disabled,false);
+  Menu.last.items[0].handler();
+  const dialog=document.querySelector('.ex-save-page-modal');
+  assert.ok(dialog);
+  assert.equal(dialog.querySelector('.ex-save-page-input').value,'哲学摘录');
+  assert.match(dialog.querySelector('.ex-save-page-hint').textContent,/哲学摘录.excerpts/);
+  dialog.querySelector('.ex-save-page-submit').click();
+  await wait();
+  const saved=t.files.get('摘录/哲学摘录.excerpts');
+  assert.ok(saved);
+  assert.match(saved.data,/version: 1/);
+  assert.match(saved.data,/tag: "哲学"/);
+  assert.equal(t.plugin.settings.defaultHome,t.home.path);
+  assert.equal(t.leaf.lastFile,saved.file);
+  assert.equal(document.querySelector('.ex-save-page-modal'),null);
+  await t.close();
+});
+
+test('saved page restores filters and can update only after explicit confirmation',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'文学摘录',{tag:'哲学',query:''});
+  const initial=t.files.get(saved.path).data;
+  await t.pane.openFile(saved);await wait();
+  const root=t.pane.contentEl;
+  assert.equal(root.querySelector('.ex-title').textContent,'文学摘录');
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,false);
+  assert.equal(root.querySelector('.ex-selected').textContent,'#哲学');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(t.plugin.settings.defaultHome,t.home.path,'opening a saved page must not become default');
+  [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='全部').click();
+  assert.equal(t.files.get(saved.path).data,initial,'temporary filter changes must not rewrite file');
+  clickByLabel(root,'页面选项');
+  assert.deepEqual(Menu.last.items.map(item=>item.title),
+    ['更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
+  Menu.last.items[2].handler();
+  assert.equal(root.querySelector('.ex-selected').textContent,'#哲学');
+  [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='全部').click();
+  clickByLabel(root,'页面选项');
+  Menu.last.items[0].handler();await wait();
+  assert.match(t.files.get(saved.path).data,/tag: ""/);
+  assert.equal(root.querySelector('.ex-title').textContent,'文学摘录');
+  await t.pane.openFile(t.home);await wait();
+  assert.equal(t.pane.contentEl.querySelector('.ex-title').textContent,'摘录');
+  await t.close();
+});
+
+test('saved query restores search UI; invalid or duplicate save names are blocked',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'检索摘录',{tag:'',query:'测试标题'});
+  await t.pane.openFile(saved);await wait();
+  const root=t.pane.contentEl;
+  assert.equal(root.querySelector('.ex-search').value,'测试标题');
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(t.plugin.savedPageNameIssue(saved.path,'首页')!==null,true);
+  assert.equal(t.plugin.savedPageNameIssue(saved.path,'检索摘录')!==null,true);
+  assert.equal(t.plugin.savedPageNameIssue(saved.path,'异常/名称')!==null,true);
+  clickByLabel(root,'页面选项');
+  Menu.last.items[1].handler();
+  const dialog=document.querySelector('.ex-save-page-modal');
+  assert.ok(dialog);
+  const input=dialog.querySelector('.ex-save-page-input');
+  input.value='首页';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(dialog.querySelector('.ex-save-page-submit').disabled,true);
+  dialog.querySelector('.ex-save-page-cancel').click();
+  assert.equal(document.querySelector('.ex-save-page-modal'),null);
   await t.close();
 });
