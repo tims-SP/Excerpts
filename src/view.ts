@@ -884,8 +884,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         void this.openSection(item.path, index).catch(notify)));
     }
     menu.addSeparator();
-    menu.addItem(entry => entry.setTitle("删除摘录").setIcon("trash-2").setWarning()
-      .onClick(() => this.confirmSingleDelete(item.path)));
+    menu.addItem(entry => {
+      entry.setTitle("删除摘录").setIcon("trash-2")
+        .onClick(() => this.confirmSingleDelete(item.path));
+      // Obsidian's warning styling exists in some releases but is not part of the public MenuItem API.
+      (entry as typeof entry & { setWarning?: (warning: boolean) => void }).setWarning?.(true);
+    });
     const rect = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
   }
