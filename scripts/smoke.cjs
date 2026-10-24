@@ -7,7 +7,8 @@ class TFile extends TAbstractFile {
   constructor(p) { super(p); const name=p.split('/').pop(); this.basename=name.replace(/\.[^.]+$/,''); this.extension=name.split('.').pop(); this.stat={mtime:100,ctime:50,size:0}; this.parent={path:p.split('/').slice(0,-1).join('/') || '/'}; }
 }
 class TFolder extends TAbstractFile {}
-class FileView { constructor(leaf) { this.leaf=leaf; this.contentEl={empty(){},addClass(){},createDiv(){return {}}}; } }
+class ItemView { constructor(leaf) { this.leaf=leaf; this.contentEl={empty(){},addClass(){},createDiv(){return {}}}; } async setState(){} }
+class FileView extends ItemView {}
 class MarkdownRenderChild { constructor(el) { this.containerEl=el; } load(){this.onload?.();} unload(){this.onunload?.();} addChild(){} removeChild(){} }
 class Plugin {
   async loadData(){return null;} async saveData(settings){this.saved=settings;}
@@ -20,7 +21,7 @@ class PluginSettingTab { constructor(app,plugin){this.app=app;this.plugin=plugin
 class Setting {}
 class Notice { constructor(text){Notice.last=text;} }
 class Modal { constructor(){this.modalEl={addClass(){}};this.contentEl={empty(){}};} open(){} close(){} }
-const mocks={TAbstractFile,TFile,TFolder,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice,Modal,
+const mocks={TAbstractFile,TFile,TFolder,ItemView,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice,Modal,
   MarkdownRenderer:{async render(){}},setIcon(){},Menu:class {},
   getAllTags(cache){return [...(cache.tags||[]).map(x=>x.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)];}
 };
