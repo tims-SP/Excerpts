@@ -208,6 +208,10 @@ export class EntryRepository {
         processed++;
         onProgress?.({ processed, total, deleted: result.deleted.length, failed: result.failed.length });
       }
+      // Yield after the first file and every 16 files so a fast bulk delete
+      // can paint real progress without a timer delay for every item.
+      if (processed < total && (processed === 1 || processed % 16 === 0))
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
     }
     return result;
   }
