@@ -8,7 +8,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
   private listBatchDropdown: DropdownComponent | null = null;
   private homeButtons: ButtonComponent[] = [];
   syncBusy(): void {
-    const busy = this.plugin.isBusy();
+    const busy = !this.plugin.canOpenHome();
     this.scopeToggle?.setDisabled(busy);
     this.batchDropdown?.setDisabled(busy);
     this.listModeDropdown?.setDisabled(busy);

@@ -28,9 +28,11 @@ export class ExcerptsHomeFileView extends FileView {
       raw = await this.plugin.app.vault.cachedRead(file);
       filter = parsePageFilter(raw);
     } catch (error) {
-      root.textContent = error instanceof Error ? error.message : String(error);
+      const failure = error instanceof Error ? error : new Error(String(error));
+      root.textContent = failure.message;
       root.addClass("ex-page-error");
-      return;
+      // Keep a visible native error, but never report a failed load as a successful navigation.
+      throw failure;
     }
     this.renderer = new ExcerptsRenderChild(root, this.plugin, this.plugin.workspaceForHome(file),
       this.repo, filter, filter ? raw : null);

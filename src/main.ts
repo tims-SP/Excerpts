@@ -15,6 +15,8 @@ export default class ExcerptsPlugin extends Plugin {
   private scanOwner: ExcerptsRenderChild | null = null;
   /** Only the initiating creation flow may navigate and release this lock. */
   private homeCreationOwner: symbol | null = null;
+  /** Navigation-only guard: never blocks the page's own initial index scan. */
+  private homeNavigationBusy = false;
   private settingsTab: ExcerptsSettingTab | null = null;
   /** Session-only candidates: never sweep unrelated or pre-existing notes. */
   private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
@@ -159,10 +161,10 @@ export default class ExcerptsPlugin extends Plugin {
           root.startsWith(path + "/")) child.markStale();
     }
   }
-  canOpenHome(): boolean { return !this.isBusy(); }
+  canOpenHome(): boolean { return !this.homeNavigationBusy && !this.isBusy(); }
   /** Start creation synchronously. The token is the sole authority to release the lock. */
   private tryBeginHomeCreation(): symbol | null {
-    if (this.isBusy()) return null;
+    if (!this.canOpenHome()) return null;
     const owner = Symbol("home-creation");
     this.homeCreationOwner = owner;
     this.notifyActivityChange();
@@ -293,13 +295,21 @@ export default class ExcerptsPlugin extends Plugin {
     if (!file) throw new Error(path
       ? "摘录页文件不存在：" + path
       : "没有首页.excerpts，请在插件设置中创建首页入口");
-    await this.openHomeFile(file);
+    // The synchronous flag rejects a second openHome before native navigation yields.
+    this.homeNavigationBusy = true;
+    this.notifyActivityChange();
+    try {
+      await this.openHomeFile(file);
+    } finally {
+      this.homeNavigationBusy = false;
+      this.notifyActivityChange();
+    }
   }
   /** Owner-restricted navigation; only createAndOpenHome may pass the owner token. */
   private async openHomeFile(file: TFile, owner?: symbol): Promise<void> {
     if (owner !== undefined) {
       if (this.homeCreationOwner !== owner) throw new Error("首页创建操作已失效");
-    } else if (!this.canOpenHome()) {
+    } else if (!this.homeNavigationBusy || this.homeCreationOwner !== null) {
       throw new Error("另一项摘录操作尚未完成，请结束后再打开摘录页");
     }
     const leaf = this.app.workspace.getLeaf(false);

@@ -2265,3 +2265,110 @@ test('old creation flow cannot release newer owner, and failed navigation keeps 
   await assert.rejects(t.plugin.openHome('不存在的文件.excerpts'),/摘录页文件不存在/);
   await t.close();
 });
+
+test('saved filter file remains saved and modal closes when its native open fails',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'筛选标签');
+  [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='#哲学').click();
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(x=>x.title==='保存当前筛选…').handler();
+  const dialog=document.querySelector('.ex-save-page-modal');
+  assert.ok(dialog);
+  t.leaf.openFile=async()=>{throw new Error('模拟筛选页导航失败');};
+  dialog.querySelector('.ex-save-page-submit').click();
+  await waitFor(()=>!document.querySelector('.ex-save-page-modal'),'modal closes after the file is saved');
+  const path='摘录/哲学摘录.excerpts';
+  assert.ok(t.files.has(path),'navigation does not undo a successful file save');
+  assert.match(Notice.last,/摘录页已保存，但打开失败.*文件列表.*模拟筛选页导航失败/);
+  assert.equal(t.files.get(path).data.includes('tag: "哲学"'),true);
+  assert.equal([...t.files.keys()].filter(x=>x===path).length,1);
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  await t.close();
+});
+
+test('invalid .excerpts config is visible and rejects FileView navigation',async()=>{
+  const t=await fixture();
+  const file=await t.plugin.createSavedPage(t.home.path,'无效配置',{tag:'',query:''});
+  t.files.get(file.path).data='version: 999\nfilter:\n  tag: ""\n  query: ""\n';
+  const pane=t.plugin.factory({});
+  document.body.append(pane.contentEl);
+  await assert.rejects(pane.openFile(file),/配置版本或筛选条件无效/);
+  assert.match(pane.contentEl.querySelector('.ex-page-error')?.textContent??'',/配置版本或筛选条件无效/);
+  assert.equal([...t.plugin.rendered].some(child=>child.workspace.homePath===file.path),false);
+  pane.contentEl.remove();
+
+  t.leaf.openFile=async chosen=>{await t.pane.openFile(chosen);};
+  await assert.rejects(t.plugin.openHome(file.path),/配置版本或筛选条件无效/);
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  assert.equal(t.plugin.canOpenHome(),true,'failed native load does not hold the navigation lock');
+  assert.match(t.pane.contentEl.querySelector('.ex-page-error')?.textContent??'',/配置版本或筛选条件无效/);
+  await t.close();
+});
+
+test('normal native open is exclusive until openFile and revealLeaf both settle',async()=>{
+  const t=await fixture();
+  Setting.instances=[];t.plugin.settingsTab.display();
+  const settingsOpen=Setting.instances.find(x=>x.name===t.home.path).button;
+  let leaveOpen,leaveReveal,opened=0,revealed=0;
+  t.leaf.openFile=async()=>{opened++;await new Promise(resolve=>{leaveOpen=resolve;});};
+  t.plugin.app.workspace.revealLeaf=async()=>{revealed++;await new Promise(resolve=>{leaveReveal=resolve;});};
+  const first=t.plugin.openHome(t.home.path);
+  await waitFor(()=>typeof leaveOpen==='function','first normal openFile pending');
+  assert.equal(opened,1);
+  assert.equal(t.plugin.homeNavigationBusy,true);
+  assert.equal(settingsOpen.disabled,true);
+  await assert.rejects(t.plugin.openHome(t.home.path),/操作尚未完成/);
+  await assert.rejects(t.plugin.createAndOpenHome('不应创建'),/操作尚未完成/);
+  assert.equal(t.files.has('不应创建/首页.excerpts'),false);
+  settingsOpen.handler();
+  t.plugin.ribbon.action();
+  await wait();
+  assert.equal(opened,1,'no second navigation starts from old settings or ribbon handlers');
+  leaveOpen();
+  await waitFor(()=>typeof leaveReveal==='function','native revealLeaf pending');
+  assert.equal(revealed,1);
+  assert.equal(t.plugin.homeNavigationBusy,true);
+  await assert.rejects(t.plugin.openHome(t.home.path),/操作尚未完成/);
+  leaveReveal();
+  await first;
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  assert.equal(settingsOpen.disabled,false);
+  assert.equal(t.plugin.canOpenHome(),true);
+  await t.close();
+});
+
+test('normal native navigation failure releases navigation restriction',async()=>{
+  const t=await fixture();
+  t.leaf.openFile=async()=>{throw new Error('本地导航失败');};
+  await assert.rejects(t.plugin.openHome(t.home.path),/本地导航失败/);
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  assert.equal(t.plugin.canOpenHome(),true);
+  const result=await t.plugin.createAndOpenHome('失败后可创建');
+  assert.ok(result.file);
+  assert.match(result.openError?.message??'',/本地导航失败/);
+  assert.equal(t.plugin.homeCreationOwner,null);
+  await t.close();
+});
+
+test('normal opening does not block the opened excerpt page initial scan',async()=>{
+  const t=await fixture();
+  const home=t.home;
+  let newPane,initial;
+  const real=t.plugin.repo.scan.bind(t.plugin.repo);
+  let scans=0;
+  t.plugin.repo.scan=async(...args)=>{scans++;return real(...args);};
+  t.leaf.openFile=async file=>{
+    newPane=t.plugin.factory({});
+    document.body.append(newPane.contentEl);
+    await newPane.openFile(file);
+    initial=[...t.plugin.rendered].find(x=>x.containerEl===newPane.contentEl.firstElementChild);
+    assert.ok(initial);
+    assert.notEqual(initial.scanStatus,'blocked','normal navigation does not steal index mutex');
+    assert.equal(t.plugin.homeNavigationBusy,true);
+  };
+  await t.plugin.openHome(home.path);
+  await waitFor(()=>initial.scanStatus==='done' && scans===1,'normal first scan');
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  await newPane.onUnloadFile(home);newPane.contentEl.remove();
+  await t.close();
+});

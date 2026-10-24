@@ -779,8 +779,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       async name => {
         if (!this.guard("page")) throw new Error("摘录页已失效，请重新打开");
         const file = await this.plugin.createSavedPage(this.workspace.homePath, name, current);
-        new Notice("已创建摘录页：" + file.basename);
-        await this.plugin.openHome(file.path);
+        // The file is already saved; a navigation failure must not leave the save modal in error mode.
+        try {
+          await this.plugin.openHome(file.path);
+          new Notice("已创建摘录页：" + file.basename);
+        } catch (error) {
+          new Notice("摘录页已保存，但打开失败。请从文件列表重新打开：" +
+            file.path + "（" + (error instanceof Error ? error.message : String(error)) + "）");
+        }
       }, summary).open();
   }
   private async updateCurrentPage(): Promise<void> {
