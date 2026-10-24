@@ -6,6 +6,8 @@ import { DeleteExcerptModal, DeleteOutcome } from "./delete-modal";
 import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath } from "./model";
 import { PageFilter, isFiltered } from "./page-config";
+import { classifyPreview, previewAction, previewPolicy } from "./card-preview";
+import { TimelineRow, VirtualTimeline } from "./virtual-list";
 import { SavePageModal } from "./page-modal";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
@@ -86,11 +88,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private saveBusy = false;
   private updateComposerControls: () => void = () => {};
   private renderToken = 0;
-  private pageSize = 40;
+  private timeline: VirtualTimeline | null = null;
+  private itemByPath = new Map<string, CardIndex>();
   private observer: IntersectionObserver | null = null;
-  private queue: Array<() => Promise<void>> = [];
+  private queue: Array<{ path: string; task: () => Promise<void> }> = [];
   private reading = 0;
-  private markdownChildren = new Map<string, MarkdownRenderChild[]>();
+  private markdownChildren = new Map<string, Array<{ mount: HTMLElement; child: MarkdownRenderChild }>>();
+  private previewObservers = new Map<string, ResizeObserver>();
   private sectionsShown = new Map<string, Set<number>>();
   private expandedBodies = new Set<string>();
   private expandedTagRows = new Set<string>();
@@ -124,12 +128,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   onload(): void {
     this.build();
+    const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
+    if (!viewport) throw new Error("缺少摘录页面滚动容器");
+    this.timeline = new VirtualTimeline(this.listEl, viewport, {
+      batchSize: () => this.listBatchSize(viewport),
+      mount: (row, index) => this.mountTimelineRow(row, index),
+      unmount: (row, element) => this.unmountTimelineRow(row, element),
+      pinnedPath: () => this.openTagEditors.values().next().value ?? null,
+      onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动")
+    });
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
         this.reflowVisibleTags();
         this.reflowCaptureTags();
+        this.timeline?.resize();
       });
-      this.tagResizeObserver.observe(this.containerEl);
+      this.tagResizeObserver.observe(viewport);
     }
     void this.reload();
   }
@@ -140,6 +154,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
     this.tagResizeObserver?.disconnect();
+    this.timeline?.dispose();
+    this.timeline = null;
     this.selectedPaths.clear(); this.selectedCandidates.clear(); this.selectionScope.clear();
     this.unmountMarkdown();
     this.plugin.notifyActivityChange(this);
@@ -667,7 +683,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchTimer = null;
     this.matches = null;
     this.searchReady = !filter.query;
-    this.pageSize = 40;
     this.tagFilter = filter.tag;
     this.searchText = filter.query;
     this.filterOpen = Boolean(filter.tag);
@@ -997,6 +1012,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (cancelled() || !cards) return;
       cards.sort((a, b) => b.ctime - a.ctime);
       this.items = cards;
+      this.itemByPath = new Map(cards.map(card => [card.path, card]));
       this.lastScanCount = cards.length;
       this.scanStatus = this.scanDirty ? "stale" : "done";
       this.showSuggestions();
@@ -1050,7 +1066,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.disposed || token !== this.searchToken) return;
       this.matches = matches;
       this.searchReady = true;
-      this.pageSize = 40;
       this.drawCards();
       this.updateAvailability();
     } catch (error) {
@@ -1103,9 +1118,78 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private unmountMarkdown(path?: string): void {
     const paths = path ? [path] : [...this.markdownChildren.keys()];
     for (const current of paths) {
-      for (const child of this.markdownChildren.get(current) ?? []) this.removeChild(child);
+      this.previewObservers.get(current)?.disconnect();
+      this.previewObservers.delete(current);
+      for (const { child } of this.markdownChildren.get(current) ?? []) this.removeChild(child);
       this.markdownChildren.delete(current);
     }
+  }
+  private unmountMarkdownIn(container: HTMLElement, path: string): void {
+    const existing = this.markdownChildren.get(path) ?? [];
+    this.markdownChildren.set(path, existing.filter(({ mount, child }) => {
+      if (!container.contains(mount)) return true;
+      this.removeChild(child);
+      return false;
+    }));
+  }
+  private compactLayout(): boolean {
+    return this.containerEl.clientWidth > 0 ? this.containerEl.clientWidth <= 700 :
+      document.body.classList.contains("is-mobile");
+  }
+  private listBatchSize(viewport: HTMLElement): number {
+    const { listBatchMode, listBatchSize } = this.plugin.settings;
+    if (listBatchMode === "fixed") return listBatchSize;
+    const mounted = [...this.listEl.querySelectorAll<HTMLElement>(".ex-virtual-row")];
+    const heights = mounted.map(row => row.getBoundingClientRect().height).filter(value => value > 0);
+    const average = heights.length
+      ? heights.reduce((sum, value) => sum + value, 0) / heights.length : 240;
+    const suggested = 8 * Math.ceil(3 * Math.max(1, viewport.clientHeight || 800) / average / 8);
+    return Math.max(16, Math.min(96, suggested));
+  }
+  private timelineRows(items: CardIndex[]): TimelineRow[] {
+    let previous = "";
+    const compact = this.compactLayout();
+    return items.map((item, index) => {
+      const day = dayKey(item.ctime);
+      const firstOfDay = day !== previous;
+      previous = day;
+      const label = dayLabel(item.ctime);
+      const gap = index === 0 ? 0 : firstOfDay ? (compact ? 24 : 32) : 16;
+      return {
+        path: item.path, firstOfDay,
+        dayTitle: firstOfDay ? label.title : "",
+        daySubtitle: firstOfDay ? label.subtitle : "",
+        estimatedHeight: 104 + Math.min(320, Math.max(60, Math.ceil(item.size / 5))) + gap +
+          (firstOfDay && compact ? 26 : 0)
+      };
+    });
+  }
+  private mountTimelineRow(row: TimelineRow, index: number): HTMLElement {
+    const item = this.itemByPath.get(row.path);
+    if (!item) throw new Error("摘录索引已失效，请手动刷新");
+    const wrapper = node("section", "ex-virtual-row");
+    const compact = this.compactLayout();
+    const gap = index === 0 ? 0 : row.firstOfDay ? (compact ? 24 : 32) : 16;
+    wrapper.style.paddingTop = gap + "px";
+    const rail = node("header", "ex-day-rail");
+    if (row.firstOfDay) {
+      rail.append(node("h4", "ex-day-title", row.dayTitle));
+      if (row.daySubtitle) rail.append(node("span", "ex-day-subtitle", row.daySubtitle));
+    } else rail.setAttribute("aria-hidden", "true");
+    const slot = node("div", "ex-virtual-card-slot");
+    const card = this.createCard(item);
+    slot.append(card);
+    wrapper.append(rail, slot);
+    if (this.observer) this.observer.observe(card);
+    else this.enqueue(item.path, () => this.hydrate(item, card, this.renderToken));
+    this.scheduleTagReflow(card.querySelector<HTMLElement>(".ex-chips")!);
+    return wrapper;
+  }
+  private unmountTimelineRow(row: TimelineRow, wrapper: HTMLElement): void {
+    const card = wrapper.querySelector<HTMLElement>(".ex-card");
+    if (card && this.observer) this.observer.unobserve(card);
+    this.queue = this.queue.filter(task => task.path !== row.path);
+    this.unmountMarkdown(row.path);
   }
   private drawCards(): void {
     const token = ++this.renderToken;
@@ -1113,83 +1197,39 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.observer = null;
     this.queue = [];
     this.unmountMarkdown();
-    this.listEl.replaceChildren();
-    const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
-      (this.scanStatus === "stale" || (this.scanStatus === "scanning" && this.scanDirty));
-    if (resultsUnavailable) {
-      this.countEl.textContent = "搜索结果暂不可用";
-      const empty = node("section", "ex-empty");
-      empty.append(node("div", "ex-empty-title", "搜索结果暂不可用"));
-      empty.append(node("p", "ex-empty-description",
-        "摘录内容在扫描期间发生变化。请清除搜索词，然后手动刷新。"));
-      this.listEl.append(empty);
-      this.updateAvailability();
-      return;
-    }
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
+    if (visible.length && typeof IntersectionObserver !== "undefined") {
+      this.observer = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          this.observer?.unobserve(entry.target);
+          const card = entry.target as HTMLElement;
+          const item = this.itemByPath.get(card.dataset.path ?? "");
+          if (item) this.enqueue(item.path, () => this.hydrate(item, card, token));
+        }
+      }, { root: this.containerEl.closest(".excerpts-native-host"), rootMargin: "350px 0px" });
+    }
+    this.timeline?.setRows(this.timelineRows(visible));
     if (!visible.length) {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
       empty.append(node("p", "ex-empty-description", this.items.length ?
         "试试其他关键词，或清除筛选条件。" : "写下喜欢的句子，未来的某一天再读到它。"));
       this.listEl.append(empty);
-      if (this.selectionMode !== "normal") this.updateSelectionControls();
-      this.updateAvailability();
-      return;
     }
-    if (typeof IntersectionObserver !== "undefined") {
-      this.observer = new IntersectionObserver(entries => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          this.observer?.unobserve(entry.target);
-          const card = entry.target as HTMLElement;
-          const item = this.items.find(candidate => candidate.path === card.dataset.path);
-          if (item) this.enqueue(() => this.hydrate(item, card, token));
-        }
-      }, { rootMargin: "350px 0px" });
-    }
-    this.appendPage(visible, 0, Math.min(this.pageSize, visible.length), token);
     if (this.selectionMode !== "normal") this.updateSelectionControls();
     this.updateAvailability();
   }
-  private appendPage(visible: CardIndex[], start: number, end: number, token: number): void {
-    if (this.disposed || token !== this.renderToken) return;
-    this.listEl.querySelector(".ex-loadmore")?.remove();
-    let group = this.listEl.lastElementChild as HTMLElement | null;
-    for (const item of visible.slice(start, end)) {
-      const key = dayKey(item.ctime);
-      if (!group || group.dataset.day !== key) {
-        group = node("section", "ex-day-group");
-        group.dataset.day = key;
-        const label = dayLabel(item.ctime);
-        const rail = node("header", "ex-day-rail");
-        rail.append(node("h4", "ex-day-title", label.title));
-        if (label.subtitle) rail.append(node("span", "ex-day-subtitle", label.subtitle));
-        const cards = node("div", "ex-day-cards");
-        group.append(rail, cards);
-        this.listEl.append(group);
-      }
-      const card = this.createCard(item);
-      group.querySelector(".ex-day-cards")!.append(card);
-      if (this.observer) this.observer.observe(card);
-      else this.enqueue(() => this.hydrate(item, card, token));
-    }
-    this.reflowVisibleTags();
-    if (end < visible.length) {
-      const load = button("加载更多 · 剩余 " + (visible.length - end) + " 条", () => {
-        this.pageSize = end + 40;
-        this.appendPage(visible, end, Math.min(end + 40, visible.length), token);
-      }, "ex-loadmore");
-      this.listEl.append(load);
-    }
+  private enqueue(path: string, task: () => Promise<void>): void {
+    this.queue.push({ path, task });
+    this.pump();
   }
-  private enqueue(task: () => Promise<void>): void { this.queue.push(task); this.pump(); }
   private pump(): void {
     while (this.reading < 4 && this.queue.length) {
-      const task = this.queue.shift()!;
+      const job = this.queue.shift()!;
       this.reading++;
-      void task().catch(error => { if (!this.disposed) notify(error); }).finally(() => {
+      void job.task().catch(error => { if (!this.disposed) notify(error); }).finally(() => {
         this.reading--; this.pump();
       });
     }
@@ -1242,6 +1282,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     try { parsed = await this.repo.read(item.path); } catch { /* Deletion remains available if parsing fails. */ }
     if (this.disposed || !anchor.isConnected || !this.guard("page")) return;
     const menu = new Menu();
+    menu.addItem(entry => entry.setTitle("阅读原文").setIcon("book-open").onClick(() => {
+      if (!this.guard("page")) return;
+      void this.plugin.openMarkdownPreview(item.path).catch(notify);
+    }));
     menu.addItem(entry => entry.setTitle("编辑原文").onClick(() => {
       if (!this.guard("page")) return;
       void this.plugin.openMarkdown(item.path).catch(notify);
@@ -1292,41 +1336,71 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
     body.replaceChildren();
-    // Only a standalone leading embed gains the media-first card treatment.
-    // Complex/mixed content retains the original Markdown flow.
     const mediaFirst = !parsed.title &&
-      /^\s*(?:!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>|<video\b[^>]*>)(?:\s*\n\s*\n|\s*$)/.test(parsed.body);
+      /^\\s*(?:!\\[\\[[^\\]]+\\]\\]|!\\[[^\\]]*\\]\\([^)]+\\)|<img\\b[^>]*>|<video\\b[^>]*>)(?:\\s*\\n\\s*\\n|\\s*$)/.test(parsed.body);
     card.classList.toggle("ex-media-first", mediaFirst);
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
     const content = node("div", "ex-content-viewport");
-    const plain = !/(?:!\[|\[\[|\[[^\]]+\]\(|^\s*(?:>|[-*+]\s|\d+\.\s|#{1,6}\s|`{3}|~{3}|\|)|<\w+)/m.test(parsed.body);
-    const eligible = plain && parsed.body.length > 280;
-    if (eligible && !this.expandedBodies.has(item.path)) content.classList.add("ex-content-clamped");
+    const policy = previewPolicy(classifyPreview(parsed), this.compactLayout());
+    card.dataset.previewKind = policy.kind;
+    content.style.setProperty("--ex-preview-limit", policy.limit + "px");
     body.append(content);
-    if (parsed.body) this.renderMarkdown(content, parsed.body, item.path);
+    const expand = button("", () => {
+      if (!this.guard("page")) return;
+      if (expand.dataset.action === "read") {
+        void this.plugin.openMarkdownPreview(item.path).catch(notify);
+        return;
+      }
+      if (expand.dataset.action !== "expand") return;
+      if (this.expandedBodies.has(item.path)) this.expandedBodies.delete(item.path);
+      else this.expandedBodies.add(item.path);
+      updatePreview();
+    }, "ex-expand-body");
+    expand.hidden = true;
+    body.append(expand);
+    const updatePreview = () => {
+      if (!card.isConnected || !content.isConnected) return;
+      const rendered = content.querySelector<HTMLElement>(".ex-native-markdown");
+      const measured = Math.max(rendered?.scrollHeight ?? 0, content.scrollHeight,
+        rendered?.getBoundingClientRect().height ?? 0);
+      const fallback = parsed.body.length > 280 ? Math.max(policy.limit + 2, parsed.body.length / 2) : 0;
+      const action = previewAction(measured > 0 ? measured : fallback, policy);
+      if (action !== "expand") this.expandedBodies.delete(item.path);
+      expand.hidden = action === "none";
+      expand.dataset.action = action;
+      const expanded = action === "expand" && this.expandedBodies.has(item.path);
+      content.classList.toggle("ex-content-clamped", action !== "none" && !expanded);
+      expand.textContent = action === "read" ? "阅读原文 ↗" : expanded ? "收起正文" : "展开正文";
+      expand.setAttribute("aria-expanded", String(expanded));
+    };
+    if (parsed.body) {
+      void this.renderMarkdown(content, parsed.body, item.path).then(() => {
+        if (!content.isConnected || this.disposed) return;
+        updatePreview();
+        const markdown = content.querySelector<HTMLElement>(".ex-native-markdown");
+        if (markdown && typeof ResizeObserver !== "undefined") {
+          this.previewObservers.get(item.path)?.disconnect();
+          const observer = new ResizeObserver(() => updatePreview());
+          observer.observe(markdown);
+          this.previewObservers.set(item.path, observer);
+        }
+      });
+      content.addEventListener("load", () => updatePreview(), true);
+    }
     if (!parsed.body && !parsed.title && !parsed.sections.length)
       body.append(node("span", "ex-empty-card", "（空白摘录）"));
-    if (eligible) {
-      const expand = button(this.expandedBodies.has(item.path) ? "收起正文" : "展开全文", () => {
-        const expanded = content.classList.toggle("ex-content-clamped");
-        if (expanded) this.expandedBodies.delete(item.path);
-        else this.expandedBodies.add(item.path);
-        expand.textContent = expanded ? "展开全文" : "收起正文";
-        expand.setAttribute("aria-expanded", String(!expanded));
-      }, "ex-expand-body");
-      expand.setAttribute("aria-expanded", String(!content.classList.contains("ex-content-clamped")));
-      body.append(expand);
-    }
     this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
   }
-  private renderMarkdown(container: HTMLElement, markdown: string, path: string): void {
+
+  private renderMarkdown(container: HTMLElement, markdown: string, path: string): Promise<void> {
     const mount = node("div", "ex-native-markdown markdown-rendered");
     container.append(mount);
     const child = new MarkdownRenderChild(mount);
     this.addChild(child);
     const list = this.markdownChildren.get(path) ?? [];
-    list.push(child); this.markdownChildren.set(path, list);
-    void MarkdownRenderer.render(this.plugin.app, markdown, mount, path, child).catch(error => {
+    list.push({ mount, child });
+    this.markdownChildren.set(path, list);
+    return MarkdownRenderer.render(this.plugin.app, markdown, mount, path, child).catch(error => {
       if (mount.isConnected) mount.append(node("p", "ex-warning", String(error)));
     });
   }
@@ -1334,6 +1408,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     mount.replaceChildren();
     if (!parsed.sections.length) return;
     const shown = this.sectionsShown.get(item.path) ?? new Set<number>();
+    const card = mount.closest<HTMLElement>(".ex-card");
     parsed.sections.forEach((section, index) => {
       const wrapper = node("section", "ex-section");
       const expanded = shown.has(index);
@@ -1346,8 +1421,27 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         setIcon(trigger.querySelector(".ex-group-chevron") as HTMLElement, opened ? "chevron-down" : "chevron-right");
         if (opened) {
           shown.add(index);
-          if (!region.childElementCount && section.markdown) this.renderMarkdown(region, section.markdown, item.path);
-        } else shown.delete(index);
+          if (!region.childElementCount && section.markdown) {
+            void this.renderMarkdown(region, section.markdown, item.path).then(() => {
+              if (!card?.isConnected || region.hidden) return;
+              const safe = previewPolicy(classifyPreview(parsed), this.compactLayout()).expandedLimit;
+              if (region.scrollHeight <= safe && card.getBoundingClientRect().height <= safe + 320) return;
+              shown.delete(index);
+              region.hidden = true;
+              trigger.setAttribute("aria-expanded", "false");
+              trigger.setAttribute("aria-label", "展开分组：" + section.name);
+              setIcon(trigger.querySelector(".ex-group-chevron") as HTMLElement, "chevron-right");
+              this.unmountMarkdownIn(region, item.path);
+              region.replaceChildren();
+              new Notice("分组超出卡片阅读上限，请使用阅读原文");
+              void this.plugin.openMarkdownPreview(item.path).catch(notify);
+            });
+          }
+        } else {
+          shown.delete(index);
+          this.unmountMarkdownIn(region, item.path);
+          region.replaceChildren();
+        }
         this.sectionsShown.set(item.path, shown);
       }, "ex-group-trigger");
       trigger.setAttribute("aria-expanded", String(expanded));
@@ -1357,7 +1451,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       trigger.append(chevron, node("span", "ex-group-name", section.name));
       const region = node("div", "ex-group-body");
       region.hidden = !expanded;
-      if (expanded && section.markdown) this.renderMarkdown(region, section.markdown, item.path);
+      if (expanded && section.markdown) void this.renderMarkdown(region, section.markdown, item.path);
       wrapper.append(trigger, region);
       mount.append(wrapper);
     });
@@ -1375,7 +1469,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const pill = button("", () => {
         if (editorOpen || !this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
-        this.pageSize = 40;
         this.renderTagsFilter(); this.drawCards();
       }, "ex-tag");
       pill.setAttribute("aria-label", "筛选标签：" + tag);
