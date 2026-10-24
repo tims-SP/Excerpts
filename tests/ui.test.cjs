@@ -550,7 +550,9 @@ test('empty composer enters native Markdown and safely trashes an unchanged blan
   assert.equal(t.leaf.view.editor.focused,true);
   t.leaf.view=null;
   await t.plugin.cleanupClosedEditors();
-  assert.equal(t.files.has(created[0]),false,'blank new file moved to trash');
+  assert.equal(t.files.has(created[0]),false,'blank new file moved to trash: '+
+    JSON.stringify({tracked:t.plugin.temporaryEditors.size,raw:t.files.get(created[0])?.data,
+      active:t.plugin.editorCleanupRunning,view:t.leaf.view,notice:Notice.last}));
   await t.close();
 });
 
@@ -758,8 +760,11 @@ test('select all respects a tag filter and never includes out-of-scope Markdown'
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
   root.querySelector('.ex-delete-selected').click();
-  document.querySelector('.ex-delete-modal .ex-delete-submit').click();await wait();
-  assert.equal(t.files.has(t.md.path),false);
+  const modal=document.querySelector('.ex-delete-modal');
+  modal.querySelector('.ex-delete-submit').click();await wait();
+  assert.equal(t.files.has(t.md.path),false,'tag delete state: '+
+    JSON.stringify({modal:modal.textContent,notice:Notice.last,
+      selected:[...root.querySelectorAll('.ex-card.ex-is-selected')].map(x=>x.dataset.path)}));
   assert.equal(t.files.has(unrelated.path),true);
   assert.equal(t.files.has(t.home.path),true);
   await t.close();
