@@ -132,6 +132,23 @@
   background: transparent; color: var(--text-muted); border-radius: var(--ex-radius-pill);
   font-size: 11px; font-weight: 400;
 }
+/* Secondary native Markdown entry beside Save, never over the text area. */
+.excerpts-root button.ex-open-editor {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  min-height: 36px; height: 36px; padding: 0 10px; gap: 6px;
+  border: 0; border-radius: var(--ex-radius-input);
+  background: transparent; color: var(--text-muted);
+  font-size: 12px; font-weight: 400; box-shadow: none;
+}
+.excerpts-root button.ex-open-editor:hover {
+  color: var(--text-normal); background: var(--background-modifier-hover);
+}
+.excerpts-root .ex-open-editor-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px;
+}
+.excerpts-root .ex-open-editor-icon svg { width: 16px; height: 16px; }
+.excerpts-root .ex-compose-actions { gap: 8px; }
 .excerpts-root .ex-compose-actions > button.ex-btn-primary {
   flex: 0 0 auto; width: 64px; min-width: 64px; min-height: 36px;
   padding: 0 12px; border-radius: var(--ex-radius-pill); border: 0; box-shadow: none;
@@ -427,7 +444,13 @@
     min-height: 78px; max-height: min(240px, 34dvh);
     font-size: max(16px, var(--font-text-size, 16px));
   }
-  .excerpts-root .ex-compose-actions { min-height: 44px; margin-top: 10px; gap: 10px; }
+  .excerpts-root .ex-compose-actions { min-height: 44px; margin-top: 10px; gap: 8px; }
+  .excerpts-root button.ex-open-editor {
+    width: 44px; min-width: 44px; min-height: 44px; height: 44px; padding: 0;
+  }
+  .excerpts-root .ex-open-editor-label { display: none; }
+  .excerpts-root .ex-open-editor-icon,
+  .excerpts-root .ex-open-editor-icon svg { width: 18px; height: 18px; }
   .excerpts-root .ex-capture-options { min-height: 44px; }
   .excerpts-root .ex-capture-selected { height: 44px; }
   .excerpts-root .ex-capture-tags { margin-top: 10px; padding-top: 10px; }
