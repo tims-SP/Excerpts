@@ -89,7 +89,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
       .addToggle(t => {
         this.scopeToggle = t;
         t.setValue(this.plugin.settings.recursive).onChange(async (v: boolean) => {
-          if (this.plugin.isBusy()) {
+          if (!this.plugin.canOpenHome()) {
             t.setValue(this.plugin.settings.recursive);
             new Notice("摘录操作尚未完成，请稍后修改文件范围");
             return;
@@ -107,7 +107,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
         for (const size of SCAN_BATCH_SIZES) dropdown.addOption(String(size), size + " 个");
         dropdown.setValue(String(this.plugin.settings.scanBatchSize))
           .onChange(async value => {
-            if (this.plugin.isBusy()) {
+            if (!this.plugin.canOpenHome()) {
               dropdown.setValue(String(this.plugin.settings.scanBatchSize));
               new Notice("摘录操作尚未完成，请稍后修改扫描设置");
               return;
@@ -126,7 +126,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
         this.listModeDropdown = dropdown;
         dropdown.addOption("auto", "自动适应屏幕").addOption("fixed", "固定数量");
         dropdown.setValue(this.plugin.settings.listBatchMode).onChange(async value => {
-          if (this.plugin.isBusy()) {
+          if (!this.plugin.canOpenHome()) {
             dropdown.setValue(this.plugin.settings.listBatchMode);
             new Notice("摘录操作尚未完成，请稍后修改列表设置");
             return;
@@ -142,7 +142,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
         this.listBatchDropdown = dropdown;
         for (const size of LIST_BATCH_SIZES) dropdown.addOption(String(size), size + " 条");
         dropdown.setValue(String(this.plugin.settings.listBatchSize)).onChange(async value => {
-          if (this.plugin.isBusy()) {
+          if (!this.plugin.canOpenHome()) {
             dropdown.setValue(String(this.plugin.settings.listBatchSize));
             new Notice("摘录操作尚未完成，请稍后修改列表设置");
             return;

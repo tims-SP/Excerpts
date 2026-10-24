@@ -2449,3 +2449,75 @@ test('normal opening does not block the opened excerpt page initial scan',async(
   await newPane.onUnloadFile(home);newPane.contentEl.remove();
   await t.close();
 });
+
+test('homepage creation uses the validated canonical folder for both folders and final file',async()=>{
+  const t=await fixture();
+  const file=await t.plugin.createHome('  文学\\摘录  ');
+  assert.equal(file.path,'文学/摘录/首页.excerpts');
+  assert.ok(t.files.has('文学'),'canonical first folder is created');
+  assert.ok(t.files.has('文学/摘录'),'canonical nested folder is created');
+  assert.ok(t.files.has(file.path),'home is placed inside the canonical folder');
+  assert.equal(t.files.has('  文学\\摘录  /首页.excerpts'),false,'no raw unnormalized path is used');
+  const existing=await t.plugin.createHome('  摘录/  ');
+  assert.equal(existing,t.home,'normalized existing home is reused rather than duplicated');
+  const before=t.files.size;
+  await assert.rejects(t.plugin.createHome(' ../非法 '),/有效的相对文件夹路径/);
+  assert.equal(t.files.size,before,'invalid path is rejected before creating folders');
+  await t.close();
+});
+
+test('settings create and open resolves a normalized folder path end-to-end',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;
+  tab.display();
+  const entry=Setting.instances.find(x=>x.name==='创建首页文件');
+  entry.text.handler('  电影\\对白  ');
+  await entry.button.handler();
+  assert.equal(t.leaf.lastFile?.path,'电影/对白/首页.excerpts');
+  assert.equal(t.files.has('电影/对白/首页.excerpts'),true);
+  assert.equal(t.plugin.homeCreationOwner,null);
+  assert.equal(t.plugin.canOpenHome(),true);
+  await t.close();
+});
+
+test('stale settings callbacks refuse every configuration change during normal navigation',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;
+  tab.display();
+  const scope=Setting.instances.find(x=>x.name==='包含子文件夹').toggle;
+  const batch=Setting.instances.find(x=>x.name==='每批扫描数量').dropdown;
+  const mode=Setting.instances.find(x=>x.name==='预取批次').dropdown;
+  const size=Setting.instances.find(x=>x.name==='固定批次大小').dropdown;
+  assert.ok(scope && batch && mode && size);
+  const initial={...t.plugin.settings};
+  let writes=0;
+  t.plugin.saveSettings=async()=>{writes++;};
+  let resolveOpen;
+  t.leaf.openFile=async()=>{await new Promise(resolve=>{resolveOpen=resolve;});};
+  const opening=t.plugin.openHome(t.home.path);
+  await waitFor(()=>typeof resolveOpen==='function','normal navigation is pending');
+  assert.equal(t.plugin.homeNavigationBusy,true);
+  assert.equal(t.plugin.isBusy(),false,'navigation-only restriction must not block initial page scans');
+  assert.equal(t.plugin.canOpenHome(),false);
+  for(const control of [scope,batch,mode,size])assert.equal(control.disabled,true);
+  await scope.handler(false);
+  await batch.handler('128');
+  await mode.handler('fixed');
+  await size.handler('96');
+  assert.deepEqual(t.plugin.settings,initial,'old callbacks cannot bypass disabled settings controls');
+  assert.equal(scope.value,initial.recursive);
+  assert.equal(batch.value,String(initial.scanBatchSize));
+  assert.equal(mode.value,initial.listBatchMode);
+  assert.equal(size.value,String(initial.listBatchSize));
+  assert.equal(writes,0,'no settings writes or deferred actions');
+  assert.match(Notice.last,/操作尚未完成/);
+  resolveOpen();
+  await opening;
+  for(const control of [scope,batch,mode,size])assert.equal(control.disabled,false);
+  await batch.handler('128');
+  assert.equal(t.plugin.settings.scanBatchSize,128,'settings recover after navigation finishes');
+  assert.equal(writes,1);
+  await t.close();
+});

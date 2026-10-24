@@ -1,5 +1,5 @@
 import { MarkdownView, Notice, Plugin, TFile, TFolder } from "obsidian";
-import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, LIST_BATCH_SIZES, Workspace } from "./model";
+import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, LIST_BATCH_SIZES, Workspace, validateRelativePath } from "./model";
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
@@ -242,8 +242,9 @@ export default class ExcerptsPlugin extends Plugin {
     await this.saveSettings();
   }
   async createHome(folder: string): Promise<TFile> {
-    await this.repo.ensureFolder(folder);
-    const path = folder.replace(/\/+$/, "") + "/首页.excerpts";
+    const normalizedFolder = validateRelativePath(folder);
+    await this.repo.ensureFolder(normalizedFolder);
+    const path = normalizedFolder + "/首页.excerpts";
     const current = this.app.vault.getAbstractFileByPath(path);
     if (current instanceof TFile && current.extension === "excerpts") return current;
     if (current) throw new Error("首页路径已经被其他文件占用");
