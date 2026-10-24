@@ -11,6 +11,10 @@ export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   repo!: EntryRepository;
   private rendered = new Set<ExcerptsRenderChild>();
+  /** Session-only candidates: never sweep unrelated or pre-existing notes. */
+  private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
+  private editorCleanupTimer: ReturnType<typeof setTimeout> | null = null;
+  private editorCleanupRunning = false;
   async onload(): Promise<void> {
     const data = await this.loadData() as Partial<PluginSettings> | null;
     // This is a breaking development release. Ignore the former collections schema.
@@ -48,6 +52,62 @@ export default class ExcerptsPlugin extends Plugin {
       if (file.path.endsWith(".excerpts") || oldPath.endsWith(".excerpts")) this.refreshViews(true);
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleEditorCleanup()));
+  }
+  onunload(): void {
+    if (this.editorCleanupTimer) clearTimeout(this.editorCleanupTimer);
+    this.temporaryEditors.clear();
+  }
+  /** Called after a newly created file has opened successfully in the native editor. */
+  trackNewEditor(file: TFile, initialRaw: string): void {
+    const frontmatter = initialRaw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n(?:\r?\n)?/)?.[0] ?? "";
+    this.temporaryEditors.set(file, { path: file.path, frontmatter });
+  }
+  private isEditorOpen(file: TFile): boolean {
+    return this.app.workspace.getLeavesOfType("markdown")
+      .some(leaf => leaf.view instanceof MarkdownView && leaf.view.file === file);
+  }
+  private scheduleEditorCleanup(): void {
+    if (!this.temporaryEditors.size) return;
+    if (this.editorCleanupTimer) clearTimeout(this.editorCleanupTimer);
+    this.editorCleanupTimer = setTimeout(() => {
+      this.editorCleanupTimer = null;
+      void this.cleanupClosedEditors().catch(showError);
+    }, 1600);
+  }
+  /** Conservative removal: wait for native editor writes and compare persisted content twice. */
+  private async cleanupClosedEditors(): Promise<void> {
+    if (this.editorCleanupRunning) { this.scheduleEditorCleanup(); return; }
+    this.editorCleanupRunning = true;
+    try {
+      for (const [file, candidate] of this.temporaryEditors) {
+        if (this.isEditorOpen(file)) continue; // Switching tabs is not closing.
+        // Do not delete a document if the user renamed or moved it.
+        if (file.path !== candidate.path ||
+            this.app.vault.getAbstractFileByPath(candidate.path) !== file) {
+          this.temporaryEditors.delete(file);
+          continue;
+        }
+        const beforeStamp = file.stat.mtime;
+        const before = await this.app.vault.read(file);
+        await new Promise<void>(resolve => setTimeout(resolve, 350));
+        if (this.isEditorOpen(file)) continue;
+        const after = await this.app.vault.read(file);
+        if (before !== after || beforeStamp !== file.stat.mtime) {
+          this.scheduleEditorCleanup();
+          continue;
+        }
+        this.temporaryEditors.delete(file);
+        // Any changed frontmatter, body, media, comments or other data preserves the file.
+        if (!after.startsWith(candidate.frontmatter) ||
+            after.slice(candidate.frontmatter.length).trim() !== "") continue;
+        if (this.isEditorOpen(file) || file.path !== candidate.path ||
+            this.app.vault.getAbstractFileByPath(candidate.path) !== file) continue;
+        await this.app.fileManager.trashFile(file);
+      }
+    } finally {
+      this.editorCleanupRunning = false;
+    }
   }
   private onFileChange(path: string): void {
     this.repo.invalidate(path);
