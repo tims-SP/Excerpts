@@ -79,7 +79,8 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   const pane=plugin.factory({});document.body.append(pane.contentEl);
   await pane.openFile(home);
   await waitFor(()=>pane.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条' &&
-    pane.contentEl.querySelectorAll('.ex-card').length===1,'initial index');
+    pane.contentEl.querySelectorAll('.ex-card').length===1 &&
+    !pane.contentEl.querySelector('.ex-card-loading'),'initial index and card hydration');
   return {files,plugin,pane,leaf,md,home,tagState,getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
     document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
