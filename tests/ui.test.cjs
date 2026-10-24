@@ -13,7 +13,7 @@ class TFile extends TAbstractFile {constructor(path){super(path);const leaf=path
 class TFolder extends TAbstractFile{}
 class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}load(){this.onload?.();}unload(){this.onunload?.();}}
 class FileView {constructor(){this.contentEl=document.createElement('div');this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
-class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}getMode(){return this.mode;}}
+class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,lastLine(){return 0;},getLine(){return '';},setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}getMode(){return this.mode;}}
 class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(){}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
 class PluginSettingTab {constructor(){}}
 class Setting {}
