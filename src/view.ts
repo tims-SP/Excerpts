@@ -225,7 +225,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const toggleTag = (tag: string, add: boolean) => {
       const value = tag.trim().replace(/^#/, "");
       if (saving) return;
-      if (!value || /\\s/.test(value)) {
+      if (!value || /\s/.test(value)) {
         new Notice("标签不能为空或包含空格");
         return;
       }
