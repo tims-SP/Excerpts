@@ -1,8 +1,8 @@
 import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { findSectionHeadingLine } from "./codec";
 import type ExcerptsPlugin from "./main";
-import { DeleteCandidate, EntryRepository } from "./repository";
-import { DeleteExcerptModal } from "./delete-modal";
+import { DeleteCandidate, DeleteProgress, DeleteResult, EntryRepository } from "./repository";
+import { DeleteExcerptModal, DeleteOutcome } from "./delete-modal";
 import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace } from "./model";
 import { PageFilter, isFiltered } from "./page-config";
@@ -93,6 +93,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private selectedFooterCountEl!: HTMLElement;
   private deleteSelectedButton!: HTMLButtonElement;
   private deleteBusy = false;
+  private selectionBusy = false;
+  private selectionProcessed = 0;
   private searchReady = true;
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
@@ -405,7 +407,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectionCountEl = node("span", "ex-selection-count");
     selectionTitle.append(this.selectionCountEl);
     const selectionActions = node("div", "ex-toolbar-actions");
-    this.selectionAllButton = button("全选", () => this.toggleSelectAll(), "ex-select-all");
+    this.selectionAllButton = button("全选", () =>
+      void this.toggleSelectAll().catch(notify), "ex-select-all");
     this.selectionDoneButton = button("完成", () => this.exitSelectionMode(), "ex-select-done");
     selectionActions.append(this.selectionAllButton, this.selectionDoneButton);
     this.selectionToolbarEl.append(selectionTitle, selectionActions);
@@ -443,6 +446,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = null;
     this.matches = null;
+    this.searchReady = !filter.query;
     this.pageSize = 40;
     this.tagFilter = filter.tag;
     this.searchText = filter.query;
@@ -527,7 +531,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateSelectionUI();
   }
   private exitSelectionMode(): void {
-    if (this.selectionMode !== "selecting") return;
+    if (this.selectionMode !== "selecting" || this.selectionBusy) return;
     this.selectionMode = "normal";
     this.selectionScope.clear();
     this.selectedPaths.clear();
@@ -559,15 +563,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private updateSelectionControls(): void {
     if (this.selectionMode === "normal") return;
     const chosen = this.selectedPaths.size, total = this.selectionScope.size;
-    this.selectionCountEl.textContent = "已选 " + chosen + " / " + total;
-    this.selectedFooterCountEl.textContent = "已选择 " + chosen + " 条";
+    this.containerEl.classList.toggle("ex-is-selecting-busy", this.selectionBusy);
+    this.selectionCountEl.textContent = this.selectionBusy ?
+      "正在选择 " + this.selectionProcessed + " / " + total : "已选 " + chosen + " / " + total;
+    this.selectedFooterCountEl.textContent = this.selectionBusy ?
+      "正在选择…" : "已选择 " + chosen + " 条";
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
-    this.selectionAllButton.disabled = this.deleteBusy || total === 0;
-    this.selectionDoneButton.disabled = this.deleteBusy;
+    this.selectionAllButton.disabled = this.deleteBusy || this.selectionBusy || total === 0;
+    this.selectionDoneButton.disabled = this.deleteBusy || this.selectionBusy;
     const cancel = this.selectionFooterEl.querySelector<HTMLButtonElement>(".ex-select-cancel");
-    if (cancel) cancel.disabled = this.deleteBusy;
+    if (cancel) cancel.disabled = this.deleteBusy || this.selectionBusy;
     this.deleteSelectedButton.textContent = "删除 (" + chosen + ")";
-    this.deleteSelectedButton.disabled = this.deleteBusy || chosen === 0;
+    this.deleteSelectedButton.disabled = this.deleteBusy || this.selectionBusy || chosen === 0;
   }
   private updateSelectionUI(): void {
     const active = this.selectionMode !== "normal";
@@ -581,7 +588,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateSelectionControls();
   }
   private toggleSelection(path: string): void {
-    if (this.selectionMode !== "selecting" || !this.selectionScope.has(path)) return;
+    if (this.selectionMode !== "selecting" || this.selectionBusy || !this.selectionScope.has(path)) return;
     if (this.selectedPaths.has(path)) {
       this.selectedPaths.delete(path);
       this.selectedCandidates.delete(path);
@@ -596,53 +603,77 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (card) this.paintCardSelection(card, path);
     this.updateSelectionControls();
   }
-  private toggleSelectAll(): void {
-    if (this.selectionMode !== "selecting") return;
-    if (this.selectedPaths.size === this.selectionScope.size) {
-      this.selectedPaths.clear(); this.selectedCandidates.clear();
-    } else {
-      this.selectedPaths.clear(); this.selectedCandidates.clear();
-      for (const path of this.selectionScope) {
-        const snapshot = this.repo.snapshotForDelete(path, this.workspace);
-        if (!snapshot) continue;
-        this.selectedPaths.add(path);
-        this.selectedCandidates.set(path, snapshot);
-      }
+  private async toggleSelectAll(): Promise<void> {
+    if (this.selectionMode !== "selecting" || this.selectionBusy || this.deleteBusy) return;
+    const allSelected = this.selectedPaths.size === this.selectionScope.size;
+    this.selectedPaths.clear(); this.selectedCandidates.clear();
+    if (allSelected) {
+      this.updateSelectionUI();
+      return;
     }
-    for (const card of this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
-      this.paintCardSelection(card, card.dataset.path ?? "");
-    this.updateSelectionControls();
+    const paths = [...this.selectionScope];
+    this.selectionBusy = paths.length > 200;
+    this.selectionProcessed = 0;
+    if (this.selectionBusy) this.updateSelectionControls();
+    try {
+      for (let start = 0; start < paths.length; start += 200) {
+        if (this.disposed || this.selectionMode !== "selecting") return;
+        for (const path of paths.slice(start, start + 200)) {
+          if (!this.selectionScope.has(path)) continue;
+          const snapshot = this.repo.snapshotForDelete(path, this.workspace);
+          if (snapshot) {
+            this.selectedPaths.add(path);
+            this.selectedCandidates.set(path, snapshot);
+          }
+        }
+        this.selectionProcessed = Math.min(start + 200, paths.length);
+        if (this.selectionBusy) {
+          this.updateSelectionControls();
+          if (this.selectionProcessed < paths.length)
+            await new Promise<void>(resolve => setTimeout(resolve, 0));
+        }
+      }
+    } finally {
+      this.selectionBusy = false;
+      if (!this.disposed) this.updateSelectionUI();
+    }
   }
   private confirmSingleDelete(path: string): void {
     if (this.deleteBusy || this.selectionMode !== "normal") return;
     const snapshot = this.repo.snapshotForDelete(path, this.workspace);
     if (!snapshot) { new Notice("该摘录已不存在"); return; }
     new DeleteExcerptModal(this.plugin.app, [path],
-      async () => this.performDeletion([snapshot], false)).open();
+      async onProgress => this.performDeletion([snapshot], false, onProgress)).open();
   }
   private confirmBulkDelete(): void {
-    if (this.deleteBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size) return;
+    if (this.deleteBusy || this.selectionBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size) return;
     const candidates = [...this.selectedPaths].map(path => this.selectedCandidates.get(path))
       .filter((candidate): candidate is DeleteCandidate => Boolean(candidate));
     if (!candidates.length) return;
     new DeleteExcerptModal(this.plugin.app, candidates.map(candidate => candidate.path),
-      async () => this.performDeletion(candidates, true)).open();
+      async onProgress => this.performDeletion(candidates, true, onProgress)).open();
   }
-  private async performDeletion(candidates: readonly DeleteCandidate[], bulk: boolean): Promise<void> {
-    if (this.deleteBusy) return;
+  private async performDeletion(candidates: readonly DeleteCandidate[], bulk: boolean,
+    onProgress: (progress: DeleteProgress) => void): Promise<DeleteOutcome> {
+    if (this.deleteBusy) throw new Error("另一项删除任务仍在进行");
     this.deleteBusy = true;
+    if (this.refreshTimer) { clearTimeout(this.refreshTimer); this.refreshTimer = null; }
+    this.searchToken++; // Discard a pending search that could restore deleted paths.
+    if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
     if (bulk) this.selectionMode = "deleting";
     this.updateSelectionUI();
-    let result;
+    let result: DeleteResult;
     try {
-      result = await this.repo.deleteEntries(this.workspace, candidates);
+      result = await this.repo.deleteEntries(this.workspace, candidates, onProgress);
     } finally {
       this.deleteBusy = false;
       if (this.selectionMode === "deleting") this.selectionMode = "selecting";
     }
-    for (const path of result.deleted) {
+    const removed = new Set(result.deleted);
+    for (const path of removed) {
       this.selectedPaths.delete(path); this.selectedCandidates.delete(path);
       this.selectionScope.delete(path);
+      this.matches?.delete(path);
       this.sectionsShown.delete(path); this.expandedBodies.delete(path);
       this.expandedTagRows.delete(path); this.openTagEditors.delete(path);
     }
@@ -656,17 +687,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.selectionMode = "normal";
       this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
     }
+    this.items = this.items.filter(item => !removed.has(item.path));
+    this.drawCards(); // Synchronous UI removal; do not await the search debounce.
+    this.updateSelectionUI();
     this.repo.invalidate();
     await this.reload();
     this.updateSelectionUI();
-    if (result.failed.length) {
-      const reasons = result.failed.slice(0, 3)
-        .map(item => item.path.split("/").pop() + "：" + item.reason).join("；");
-      new Notice("已删除 " + result.deleted.length + " 条，未删除 " +
-        result.failed.length + " 条。" + reasons, 9000);
-    } else {
-      new Notice("已删除 " + result.deleted.length + " 条摘录");
-    }
+    const details = result.failed.map(item =>
+      item.path.split("/").pop() + "：" + item.reason);
+    if (!bulk && result.failed.length) new Notice(details[0] ?? "摘录删除失败", 9000);
+    return { deleted: result.deleted.length, failed: result.failed.length, details };
   }
   private showSuggestions: () => void = () => {};
   private async reload(): Promise<void> {
@@ -710,7 +740,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.searchReady = true;
       this.pageSize = 40;
       this.drawCards();
-    } catch (error) { if (!this.disposed) notify(error); }
+    } catch (error) {
+      if (!this.disposed && token === this.searchToken) {
+        this.searchReady = true;
+        this.countEl.textContent = "搜索失败，请重试";
+        notify(error);
+      }
+    }
   }
   private visibleItems(): CardIndex[] {
     if (this.selectionMode !== "normal")
