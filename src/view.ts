@@ -65,7 +65,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private filterOpen = false;
   private matches: Set<string> | null = null;
   private searchToken = 0;
-  private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanStatus: "idle" | "scanning" | "done" | "error" = "idle";
+  private scanDone = 0;
+  private scanTotal = 0;
+  private lastScanCount: number | null = null;
+  private scanVisible = false;
+  private scanRevealTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanStatusEl!: HTMLElement;
+  private scanTextEl!: HTMLElement;
+  private scanIconEl!: HTMLElement;
+  private scanProgressEl!: HTMLElement;
+  private scanFillEl!: HTMLElement;
+  private scanAnnouncementEl!: HTMLElement;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshToken = 0;
   private renderToken = 0;
@@ -118,7 +129,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   onunload(): void {
     this.disposed = true;
     this.refreshToken++; this.renderToken++; this.searchToken++;
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
+    if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
     this.tagResizeObserver?.disconnect();
@@ -127,12 +138,32 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = [];
   }
   requestRefresh(force = false): void {
-    if (this.disposed || this.deleteBusy) return;
-    if (this.refreshTimer) clearTimeout(this.refreshTimer);
-    this.refreshTimer = setTimeout(() => {
-      if (force) this.repo.invalidate();
-      void this.reload();
-    }, force ? 0 : 1500);
+    if (this.disposed || this.deleteBusy || this.selectionMode !== "normal" || this.pendingTags.size) return;
+    void this.reload(force);
+  }
+  private renderScanStatus(): void {
+    const status = this.scanStatus === "scanning" && !this.scanVisible
+      ? (this.lastScanCount === null ? "idle" : "done") : this.scanStatus;
+    const labels = {
+      idle: "未扫描",
+      scanning: "扫描中 " + this.scanDone.toLocaleString("zh-CN") + "/" +
+        this.scanTotal.toLocaleString("zh-CN"),
+      done: "已扫描 · " + (this.lastScanCount ?? 0).toLocaleString("zh-CN") + " 条",
+      error: "扫描失败"
+    };
+    this.scanStatusEl.dataset.state = status;
+    this.scanTextEl.textContent = labels[status];
+    setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
+      status === "done" ? "check" : status === "error" ? "alert-circle" : "circle-dashed");
+    this.scanProgressEl.hidden = status !== "scanning";
+    if (status === "scanning") {
+      this.scanProgressEl.setAttribute("aria-valuenow", String(this.scanDone));
+      this.scanProgressEl.setAttribute("aria-valuemax", String(this.scanTotal));
+      this.scanFillEl.style.width = (this.scanTotal ? this.scanDone / this.scanTotal * 100 : 0) + "%";
+    }
+  }
+  private announceScan(message: string): void {
+    this.scanAnnouncementEl.textContent = message;
   }
   private build(): void {
     const root = this.containerEl;
@@ -142,6 +173,23 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     header.append(node("div", "ex-brand"));
     const fileName = this.workspace.homePath.split("/").pop()?.replace(/\.excerpts$/i, "") ?? "摘录";
     header.firstElementChild!.append(node("h2", "ex-title", this.savedFilter ? fileName : "摘录"));
+    this.scanStatusEl = node("div", "ex-scan-status");
+    const scanLine = node("div", "ex-scan-line");
+    this.scanIconEl = node("span", "ex-scan-icon");
+    this.scanTextEl = node("span", "ex-scan-text");
+    scanLine.append(this.scanIconEl, this.scanTextEl);
+    this.scanProgressEl = node("div", "ex-scan-progress");
+    this.scanProgressEl.setAttribute("role", "progressbar");
+    this.scanProgressEl.setAttribute("aria-label", "摘录索引扫描进度");
+    this.scanProgressEl.setAttribute("aria-valuemin", "0");
+    this.scanFillEl = node("div", "ex-scan-progress-fill");
+    this.scanProgressEl.append(this.scanFillEl);
+    this.scanAnnouncementEl = node("span", "ex-scan-announcement");
+    this.scanAnnouncementEl.setAttribute("role", "status");
+    this.scanAnnouncementEl.setAttribute("aria-live", "polite");
+    this.scanStatusEl.append(scanLine, this.scanProgressEl, this.scanAnnouncementEl);
+    header.append(this.scanStatusEl);
+    this.renderScanStatus();
     root.append(header);
 
     // The outer composer is the only rounded surface; textarea has no native chrome.
@@ -462,8 +510,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const current = this.currentFilter();
     const changed = this.isPageDirty();
     const menu = new Menu();
+    menu.addItem(item => item.setTitle("刷新摘录").setIcon("refresh-cw")
+      .setDisabled(this.scanStatus === "scanning" || this.deleteBusy ||
+        this.selectionMode !== "normal" || this.pendingTags.size > 0)
+      .onClick(() => void this.reload(true)));
+    menu.addSeparator();
     menu.addItem(item => item.setTitle("批量选择").setIcon("check-square")
-      .setDisabled(!this.searchReady || !this.visibleItems().length || this.pendingTags.size > 0)
+      .setDisabled(this.scanStatus === "scanning" || !this.searchReady ||
+        !this.visibleItems().length || this.pendingTags.size > 0)
       .onClick(() => this.enterSelectionMode()));
     menu.addSeparator();
     if (this.savedFilter && changed) {
@@ -701,28 +755,65 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return { deleted: result.deleted.length, failed: result.failed.length, details };
   }
   private showSuggestions: () => void = () => {};
-  private async reload(): Promise<void> {
-    if (this.deleteBusy) return;
+  private async reload(force = false): Promise<void> {
+    if (this.disposed || this.deleteBusy) return;
     const token = ++this.refreshToken;
-    const cards = this.repo.list(this.workspace);
-    cards.sort((a, b) => b.ctime - a.ctime);
-    if (this.disposed || token !== this.refreshToken) return;
-    this.items = cards;
-    if (this.selectionMode !== "normal") {
-      const indexed = new Set(cards.map(card => card.path));
-      for (const path of this.selectionScope) {
-        if (!indexed.has(path)) {
-          this.selectionScope.delete(path); this.selectedPaths.delete(path);
-          this.selectedCandidates.delete(path);
+    const cancelled = () => this.disposed || token !== this.refreshToken;
+    if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+    this.scanStatus = "scanning";
+    this.scanDone = 0;
+    this.scanTotal = 0;
+    this.scanVisible = false;
+    this.renderScanStatus();
+    this.scanRevealTimer = setTimeout(() => {
+      if (cancelled()) return;
+      this.scanVisible = true;
+      this.renderScanStatus();
+    }, 150);
+    try {
+      if (force) this.repo.invalidate();
+      const cards = await this.repo.scan(this.workspace, this.plugin.settings.scanBatchSize,
+        (done, total) => {
+          if (cancelled()) return;
+          this.scanDone = done;
+          this.scanTotal = total;
+          if (this.scanVisible) this.renderScanStatus();
+        }, cancelled);
+      if (cancelled() || !cards) return;
+      cards.sort((a, b) => b.ctime - a.ctime);
+      this.items = cards;
+      this.lastScanCount = cards.length;
+      this.scanStatus = "done";
+      if (this.selectionMode !== "normal") {
+        const indexed = new Set(cards.map(card => card.path));
+        for (const path of this.selectionScope) {
+          if (!indexed.has(path)) {
+            this.selectionScope.delete(path); this.selectedPaths.delete(path);
+            this.selectedCandidates.delete(path);
+          }
         }
       }
+      this.showSuggestions();
+      this.renderTagsFilter();
+      // The selection scope is frozen; do not rerun a full-text search.
+      if (this.selectionMode !== "normal") this.drawCards();
+      else if (this.searchText) this.scheduleSearch();
+      else { this.matches = null; this.drawCards(); }
+      this.announceScan("摘录扫描完成，共 " + cards.length + " 条");
+    } catch (error) {
+      if (!cancelled()) {
+        this.scanStatus = "error";
+        this.announceScan("摘录扫描失败");
+        notify(error);
+      }
+    } finally {
+      if (!cancelled()) {
+        if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+        this.scanRevealTimer = null;
+        this.scanVisible = false;
+        this.renderScanStatus();
+      }
     }
-    this.showSuggestions();
-    this.renderTagsFilter();
-    // The selection scope is already frozen. Reindex paths without rerunning a full-text search.
-    if (this.selectionMode !== "normal") this.drawCards();
-    else if (this.searchText) this.scheduleSearch();
-    else { this.matches = null; this.drawCards(); }
   }
   private scheduleSearch(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -1140,6 +1231,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         item.tags = [...new Set([...selected, ...item.inlineTags])];
         this.closeTagEditor(item, card);
         this.showSuggestions(); this.renderTagsFilter();
+        if (this.scanStatus === "scanning") void this.reload();
       } catch (error) {
         notify(error);
         if (editor.isConnected) {

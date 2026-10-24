@@ -188,3 +188,11 @@ test('loading feedback is scoped to the current operation and exposes real progr
   assert.match(css,/@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css,/@keyframes ex-delete-spin/);
 });
+
+test('scan status is a minimal responsive indicator, never a floating card overlay',()=>{
+  assert.match(css,/\.excerpts-root \.ex-scan-status \{/);
+  assert.match(css,/\.excerpts-root \.ex-scan-progress \{ width: 112px; height: 2px;/);
+  assert.match(css,/@container \(max-width: 700px\)[\s\S]*?\.ex-scan-progress \{ width: 80px;/);
+  assert.match(css,/\.ex-scan-status\[data-state="scanning"\]/);
+  assert.match(css,/\.ex-scan-progress\[hidden\] \{ display: none !important; \}/);
+});

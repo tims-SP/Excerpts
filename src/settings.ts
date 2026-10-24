@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type ExcerptsPlugin from "./main";
+import { SCAN_BATCH_SIZES } from "./model";
 export class ExcerptsSettingTab extends PluginSettingTab {
   constructor(app: App, private plugin: ExcerptsPlugin) { super(app, plugin); }
   display(): void {
@@ -45,7 +46,18 @@ export class ExcerptsSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         this.plugin.refreshViews(true);
       }));
-
+    new Setting(root).setName("每批扫描数量")
+      .setDesc("每处理一批 Markdown 文件后让出主线程。默认 64 个，下次扫描生效。")
+      .addDropdown(dropdown => {
+        for (const size of SCAN_BATCH_SIZES) dropdown.addOption(String(size), size + " 个");
+        dropdown.setValue(String(this.plugin.settings.scanBatchSize))
+          .onChange(async value => {
+            const size = Number(value);
+            if (!SCAN_BATCH_SIZES.some(option => option === size)) return;
+            this.plugin.settings.scanBatchSize = size;
+            await this.plugin.saveSettings();
+          });
+      });
   }
 }
 function message(value: unknown): string { return value instanceof Error ? value.message : String(value); }

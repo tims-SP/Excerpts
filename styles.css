@@ -42,7 +42,20 @@
 .excerpts-root .ex-compose-actions,
 .excerpts-root .ex-card-footer { display: flex; align-items: center; justify-content: space-between; }
 .excerpts-root .ex-header { padding: 0 0 var(--ex-space-4); }
-.excerpts-root .ex-title { margin: 0; font-size: var(--h3-size, 1.25em); font-weight: var(--h3-weight, 600); line-height: 1.35; }
+.excerpts-root .ex-title { margin: 0; font-size: var(--h3-size, 1.25em); font-weight: var(--h3-weight, 600); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.excerpts-root .ex-brand { min-width: 0; flex: 1 1 auto; }
+.excerpts-root .ex-scan-status { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; min-width: 0; color: var(--text-muted); }
+.excerpts-root .ex-scan-line { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.excerpts-root .ex-scan-text { font-size: 12px; line-height: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.excerpts-root .ex-scan-icon { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; flex: 0 0 12px; }
+.excerpts-root .ex-scan-icon svg { width: 12px; height: 12px; }
+.excerpts-root .ex-scan-status[data-state="scanning"] .ex-scan-icon svg { animation: ex-scan-rotate 900ms linear infinite; }
+.excerpts-root .ex-scan-status[data-state="error"] { color: var(--text-error); }
+.excerpts-root .ex-scan-progress { width: 112px; height: 2px; overflow: hidden; border-radius: 999px; background: var(--background-modifier-hover); }
+.excerpts-root .ex-scan-progress[hidden] { display: none !important; }
+.excerpts-root .ex-scan-progress-fill { height: 100%; width: 0; border-radius: inherit; background: var(--text-muted); }
+.excerpts-root .ex-scan-announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@keyframes ex-scan-rotate { to { transform: rotate(360deg); } }
 .excerpts-root button.ex-btn {
   box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto; gap: 4px; padding: 5px 10px; min-height: 32px;
@@ -436,6 +449,10 @@
 }
 @container (max-width: 700px) {
   .excerpts-root { padding: var(--ex-space-4) 12px 56px; }
+  .excerpts-root .ex-header { gap: 8px; }
+  .excerpts-root .ex-scan-line { gap: 4px; }
+  .excerpts-root .ex-scan-text { font-size: 11px; }
+  .excerpts-root .ex-scan-progress { width: 80px; }
   .excerpts-root .ex-composer {
     --ex-compose-pad-x: 14px; --ex-compose-pad-top: 14px;
     --ex-compose-pad-bottom: 10px; margin-bottom: 24px;

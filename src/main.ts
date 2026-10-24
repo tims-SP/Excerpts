@@ -1,5 +1,5 @@
 import { MarkdownView, Notice, Plugin, TFile } from "obsidian";
-import { DEFAULT_SETTINGS, PluginSettings, Workspace, isExcerptPath } from "./model";
+import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, Workspace } from "./model";
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
@@ -19,9 +19,12 @@ export default class ExcerptsPlugin extends Plugin {
   async onload(): Promise<void> {
     const data = await this.loadData() as Partial<PluginSettings> | null;
     // This is a breaking development release. Ignore the former collections schema.
+    const batchSize = data?.scanBatchSize;
     this.settings = {
       defaultHome: typeof data?.defaultHome === "string" ? data.defaultHome : "",
-      recursive: data?.recursive !== false
+      recursive: data?.recursive !== false,
+      scanBatchSize: SCAN_BATCH_SIZES.some(size => size === batchSize)
+        ? batchSize! : DEFAULT_SETTINGS.scanBatchSize
     };
     this.repo = new EntryRepository(this.app);
     this.registerView(EXCERPTS_HOME_VIEW, leaf => new ExcerptsHomeFileView(leaf, this, this.repo));
@@ -47,10 +50,8 @@ export default class ExcerptsPlugin extends Plugin {
         this.settings.defaultHome = file.path + this.settings.defaultHome.slice(oldPath.length);
         void this.saveSettings();
       }
-      this.repo.invalidate(oldPath);
       this.onFileChange(oldPath);
       this.onFileChange(file.path);
-      if (file.path.endsWith(".excerpts") || oldPath.endsWith(".excerpts")) this.refreshViews(true);
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleEditorCleanup()));
@@ -116,8 +117,8 @@ export default class ExcerptsPlugin extends Plugin {
     }
   }
   private onFileChange(path: string): void {
+    // Vault events invalidate cached content without triggering a feed scan.
     this.repo.invalidate(path);
-    for (const child of this.rendered) if (isExcerptPath(path, child.workspace)) child.requestRefresh();
   }
   trackRenderer(child: ExcerptsRenderChild): void { this.rendered.add(child); }
   untrackRenderer(child: ExcerptsRenderChild): void { this.rendered.delete(child); }
@@ -125,7 +126,7 @@ export default class ExcerptsPlugin extends Plugin {
     if (force) this.repo.invalidate();
     for (const child of this.rendered) {
       child.workspace.recursive = this.settings.recursive;
-      child.requestRefresh(force);
+      child.requestRefresh();
     }
   }
   async saveSettings(): Promise<void> {

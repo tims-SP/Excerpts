@@ -34,10 +34,23 @@ export class EntryRepository {
       if (!found) await this.app.vault.createFolder(cursor);
     }
   }
-  list(ws: Workspace): CardIndex[] {
-    return this.app.vault.getMarkdownFiles()
-      .filter(file => isExcerptPath(file.path, ws))
-      .map(file => this.indexFile(file));
+  /** Metadata-only scan. Each batch yields to the UI without reading Markdown bodies. */
+  async scan(ws: Workspace, batchSize: number,
+    onProgress: (done: number, total: number) => void,
+    isCancelled: () => boolean): Promise<CardIndex[] | null> {
+    if (isCancelled()) return null;
+    const files = this.app.vault.getMarkdownFiles().filter(file => isExcerptPath(file.path, ws));
+    const total = files.length;
+    onProgress(0, total);
+    const stride = Number.isInteger(batchSize) && batchSize > 0 ? batchSize : 64;
+    const cards: CardIndex[] = [];
+    for (let start = 0; start < total; start += stride) {
+      if (isCancelled()) return null;
+      for (const file of files.slice(start, start + stride)) cards.push(this.indexFile(file));
+      onProgress(cards.length, total);
+      if (cards.length < total) await new Promise<void>(resolve => setTimeout(resolve, 0));
+    }
+    return isCancelled() ? null : cards;
   }
   private indexFile(file: TFile): CardIndex {
     const cache = this.app.metadataCache.getFileCache(file);

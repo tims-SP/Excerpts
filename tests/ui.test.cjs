@@ -73,7 +73,10 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
 test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
-  assert.deepEqual(Object.keys(t.plugin.settings).sort(),['defaultHome','recursive']);
+  assert.deepEqual(Object.keys(t.plugin.settings).sort(),['defaultHome','recursive','scanBatchSize']);
+  assert.equal(t.plugin.settings.scanBatchSize,64);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
   assert.equal(t.pane.getDisplayText(),'首页');
   assert.ok(root.querySelector('.ex-composer .ex-compose-text'));
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
@@ -675,7 +678,7 @@ test('single-card deletion requires native confirmation and uses the vault trash
 test('selection mode toggles cards without reopening Markdown or changing tags',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');
-  Menu.last.items[0].handler();
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
   assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   assert.equal(root.querySelector('.ex-composer').isConnected,true);
   const card=root.querySelector('.ex-card');
@@ -699,7 +702,7 @@ test('bulk select-all includes unloaded cards while cancel preserves every Markd
   t.plugin.refreshViews(true);await wait();
   const root=t.pane.contentEl;
   assert.equal(root.querySelectorAll('.ex-card').length,40);
-  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 86 \/ 86/);
   assert.equal(root.querySelectorAll('.ex-card').length,40,'must not hydrate all matching files');
@@ -718,7 +721,7 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
   const second=await t.plugin.app.vault.create('摘录/其他.md','其他摘录');
   t.plugin.refreshViews(true);await wait();
   const root=t.pane.contentEl;
-  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
   t.md.stat.mtime++;
   root.querySelector('.ex-delete-selected').click();
@@ -748,7 +751,7 @@ test('select all respects a tag filter and never includes out-of-scope Markdown'
   const tag=[...root.querySelectorAll('.ex-filter-tags button')].find(el=>el.textContent==='#哲学');
   assert.ok(tag);tag.click();
   assert.equal(root.querySelectorAll('.ex-card').length,1);
-  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
   root.querySelector('.ex-delete-selected').click();
@@ -790,7 +793,7 @@ test('bulk deletion reports actual processed counts and requires Done after comp
     await new Promise(resolve=>setTimeout(resolve,2));
     await original(file);
   };
-  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
   root.querySelector('.ex-delete-selected').click();
   const modal=Modal.last;
@@ -815,7 +818,7 @@ test('select-all over 200 entries yields to UI and disables destructive actions 
   for(let i=0;i<425;i++) await t.plugin.app.vault.create('摘录/测试批量-'+i+'.md','摘录');
   t.plugin.refreshViews(true);await wait();
   const root=t.pane.contentEl;
-  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/正在选择 200 \/ 426/);
   assert.equal(root.querySelector('.ex-select-all').disabled,true);
@@ -841,8 +844,75 @@ test('clear filter during a canceled search restores bulk selection availability
   clear.handler();
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items[0].disabled,false);
-  Menu.last.items[0].handler();
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
   assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   root.querySelector('.ex-select-done').click();
+  await t.close();
+});
+
+test('manual refresh updates stale index without external auto-rescan',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const next=await t.plugin.app.vault.create('摘录/新增.md','新内容');
+  t.plugin.onFileChange(next.path);
+  await wait();
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items[0].title,'刷新摘录');
+  assert.equal(Menu.last.items[0].disabled,false);
+  Menu.last.items[0].handler();await wait();
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 2 条');
+  assert.equal(root.querySelectorAll('.ex-card').length,2);
+  await t.close();
+});
+
+test('batch scan reports real progress and cancels before the next batch',async()=>{
+  const t=await fixture();
+  for(let i=0;i<90;i++)await t.plugin.app.vault.create('摘录/扫描-'+i+'.md','正文');
+  let stop=false;const history=[];
+  const result=await t.plugin.repo.scan(t.plugin.workspaceForHome(t.home),32,(done,total)=>{
+    history.push([done,total]);if(done>=32)stop=true;
+  },()=>stop);
+  assert.equal(result,null);
+  assert.deepEqual(history.slice(0,2),[[0,91],[32,91]]);
+  const steps=[];
+  const all=await t.plugin.repo.scan(t.plugin.workspaceForHome(t.home),32,
+    (done,total)=>steps.push([done,total]),()=>false);
+  assert.equal(all.length,91);
+  assert.deepEqual(steps,[[0,91],[32,91],[64,91],[91,91]]);
+  await t.close();
+});
+
+test('scan indicator shows real running state and settles without progress',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(ws,batch,onProgress,cancelled)=>{
+    onProgress(0,100);
+    await new Promise(resolve=>setTimeout(resolve,320));
+    return cancelled()?null:original(ws,batch,onProgress,cancelled);
+  };
+  t.plugin.refreshViews(true);
+  await new Promise(resolve=>setTimeout(resolve,190));
+  const status=root.querySelector('.ex-scan-status');
+  assert.equal(status.dataset.state,'scanning');
+  assert.equal(root.querySelector('.ex-scan-progress').hidden,false);
+  assert.match(root.querySelector('.ex-scan-text').textContent,/扫描中/);
+  assert.equal(root.querySelector('.ex-scan-progress').getAttribute('aria-valuenow'),'0');
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items[0].disabled,true);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.equal(status.dataset.state,'done');
+  assert.equal(root.querySelector('.ex-scan-progress').hidden,true);
+  await t.close();
+});
+
+test('scan failure leaves previous cards visible and enables retry',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  t.plugin.repo.scan=async()=>{throw Error('test scan error');};
+  t.plugin.refreshViews(true);await wait();
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'error');
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'扫描失败');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items[0].disabled,false);
   await t.close();
 });
