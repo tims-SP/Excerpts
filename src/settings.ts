@@ -20,8 +20,9 @@ export class ExcerptsSettingTab extends PluginSettingTab {
         } catch (error) { new Notice(message(error)); }
       }));
     const files = this.plugin.getHomeFiles();
-    const homes = files.filter(file => file.basename === "首页");
-    const pages = files.filter(file => file.basename !== "首页");
+    const homes = files.filter(file => file.basename === "首页" ||
+      file.path === this.plugin.settings.defaultHome);
+    const pages = files.filter(file => !homes.includes(file));
     if (!homes.length) root.createEl("p", { text: "尚无 首页.excerpts，请在上方创建。" });
     for (const file of homes) {
       new Setting(root).setName(file.path)
