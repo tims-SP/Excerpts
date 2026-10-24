@@ -91,10 +91,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private timeline: VirtualTimeline | null = null;
   private itemByPath = new Map<string, CardIndex>();
   private observer: IntersectionObserver | null = null;
+  private mediaObserver: IntersectionObserver | null = null;
   private queue: Array<{ path: string; task: () => Promise<void> }> = [];
   private reading = 0;
   private markdownChildren = new Map<string, Array<{ mount: HTMLElement; child: MarkdownRenderChild }>>();
   private previewObservers = new Map<string, ResizeObserver>();
+  private lastAverageHeight = 0;
+  private lastBatchViewportHeight = 0;
+  private adaptiveBatch = 40;
   private sectionsShown = new Map<string, Set<number>>();
   private expandedBodies = new Set<string>();
   private expandedTagRows = new Set<string>();
@@ -153,6 +157,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
+    this.mediaObserver?.disconnect();
     this.tagResizeObserver?.disconnect();
     this.timeline?.dispose();
     this.timeline = null;
@@ -943,6 +948,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.selectedPaths.delete(path); this.selectedCandidates.delete(path);
         this.selectionScope.delete(path); this.matches?.delete(path);
         this.sectionsShown.delete(path); this.expandedBodies.delete(path);
+        this.itemByPath.delete(path);
         this.expandedTagRows.delete(path); this.openTagEditors.delete(path);
       }
       for (const failed of result.failed) {
@@ -1139,12 +1145,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private listBatchSize(viewport: HTMLElement): number {
     const { listBatchMode, listBatchSize } = this.plugin.settings;
     if (listBatchMode === "fixed") return listBatchSize;
-    const mounted = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-virtual-row"));
-    const heights = mounted.map(row => row.getBoundingClientRect().height).filter(value => value > 0);
-    const average = heights.length
-      ? heights.reduce((sum, value) => sum + value, 0) / heights.length : 240;
-    const suggested = 8 * Math.ceil(3 * Math.max(1, viewport.clientHeight || 800) / average / 8);
-    return Math.max(16, Math.min(96, suggested));
+    const heights = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-virtual-row"))
+      .map(row => row.getBoundingClientRect().height).filter(height => height > 0);
+    if (!heights.length) return this.adaptiveBatch;
+    const average = heights.reduce((sum, height) => sum + height, 0) / heights.length;
+    const viewportHeight = Math.max(1, viewport.clientHeight || 800);
+    // Hysteresis prevents continuously changing the batch as media loads.
+    if (this.lastAverageHeight &&
+        Math.abs(average - this.lastAverageHeight) / this.lastAverageHeight < 0.25 &&
+        Math.abs(viewportHeight - this.lastBatchViewportHeight) < 60) return this.adaptiveBatch;
+    this.lastAverageHeight = average;
+    this.lastBatchViewportHeight = viewportHeight;
+    const suggested = 8 * Math.ceil(3 * viewportHeight / average / 8);
+    this.adaptiveBatch = Math.max(16, Math.min(96, suggested));
+    return this.adaptiveBatch;
   }
   private timelineRows(items: CardIndex[]): TimelineRow[] {
     let previous = "";
@@ -1188,13 +1202,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private unmountTimelineRow(row: TimelineRow, wrapper: HTMLElement): void {
     const card = wrapper.querySelector<HTMLElement>(".ex-card");
     if (card && this.observer) this.observer.unobserve(card);
+    if (card && this.mediaObserver) this.mediaObserver.unobserve(card);
+    for (const media of Array.from(wrapper.querySelectorAll<HTMLMediaElement>("video,audio"))) {
+      try { media.pause(); } catch { /* The detached native renderer will be released. */ }
+    }
     this.queue = this.queue.filter(task => task.path !== row.path);
     this.unmountMarkdown(row.path);
   }
   private drawCards(): void {
     const token = ++this.renderToken;
     this.observer?.disconnect();
+    this.mediaObserver?.disconnect();
     this.observer = null;
+    this.mediaObserver = null;
     this.queue = [];
     this.unmountMarkdown();
     const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
@@ -1213,6 +1233,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
     if (visible.length && typeof IntersectionObserver !== "undefined") {
+      const root = this.containerEl.closest(".excerpts-native-host");
+      this.mediaObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) continue;
+          for (const media of Array.from(entry.target.querySelectorAll<HTMLMediaElement>("video,audio"))) {
+            try { media.pause(); } catch { /* Unsupported media elements are not controlled. */ }
+          }
+        }
+      }, { root });
       this.observer = new IntersectionObserver(entries => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
@@ -1221,7 +1250,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           const item = this.itemByPath.get(card.dataset.path ?? "");
           if (item) this.enqueue(item.path, () => this.hydrate(item, card, token));
         }
-      }, { root: this.containerEl.closest(".excerpts-native-host"), rootMargin: "350px 0px" });
+      }, { root, rootMargin: "350px 0px" });
     }
     this.timeline?.setRows(this.timelineRows(visible));
     if (!visible.length) {
@@ -1337,6 +1366,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const parsed = await this.repo.read(item.path);
       if (this.disposed || token !== this.renderToken || !card.isConnected) return;
       this.renderContent(card, item, parsed);
+      this.mediaObserver?.observe(card);
       card.classList.remove("ex-card-loading");
     } catch (error) {
       if (!this.disposed && token === this.renderToken && card.isConnected) {

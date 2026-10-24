@@ -158,6 +158,7 @@ export class VirtualTimeline {
       this.mounted.delete(index);
     }
     // Mount missing rows in their index order without detaching surviving DOM nodes.
+    let precedingDelta = 0;
     for (let index = start; index < end; index++) {
       if (this.mounted.has(index)) continue;
       const element = this.options.mount(this.rows[index], index);
@@ -167,8 +168,12 @@ export class VirtualTimeline {
       this.mounted.set(index, element);
       this.observer?.observe(element);
       const measured = element.getBoundingClientRect().height;
-      if (measured > 0) this.heights.set(index, measured);
+      if (measured > 0) {
+        const delta = this.heights.set(index, measured);
+        if (index < visibleFirst) precedingDelta += delta;
+      }
     }
+    if (precedingDelta) this.viewport.scrollTop += precedingDelta;
     this.updateSpacers();
   }
 

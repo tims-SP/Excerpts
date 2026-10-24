@@ -23,6 +23,9 @@ export interface DeleteProgress {
 
 export class EntryRepository {
   private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
+  /** Reusable full-text search material, bounded independently from parsed Markdown. */
+  private searchCache = new Map<string, { stamp: string; lowerText: string; bytes: number }>();
+  private searchCacheBytes = 0;
   private reservedPaths = new Set<string>();
   constructor(private readonly app: App) {}
   async ensureFolder(path: string): Promise<void> {
@@ -98,8 +101,44 @@ export class EntryRepository {
     }
   }
   invalidate(path?: string): void {
-    if (path) this.cache.delete(path);
-    else this.cache.clear();
+    if (path) {
+      this.cache.delete(path);
+      this.forgetSearchText(path);
+    } else {
+      this.cache.clear();
+      this.searchCache.clear();
+      this.searchCacheBytes = 0;
+    }
+  }
+  private forgetSearchText(path: string): void {
+    const value = this.searchCache.get(path);
+    if (value) this.searchCacheBytes -= value.bytes;
+    this.searchCache.delete(path);
+  }
+  private async searchText(card: CardIndex): Promise<string> {
+    const stamp = card.mtime + ":" + card.size;
+    const cached = this.searchCache.get(card.path);
+    if (cached?.stamp === stamp) {
+      this.searchCache.delete(card.path);
+      this.searchCache.set(card.path, cached);
+      return cached.lowerText;
+    }
+    if (cached) this.forgetSearchText(card.path);
+    const parsed = await this.read(card.path);
+    const lowerText = [parsed.title, parsed.body,
+      ...parsed.sections.map(section => section.name + "\n" + section.markdown)]
+      .join("\n").toLocaleLowerCase();
+    const bytes = lowerText.length * 2;
+    // A single unusually large note is searched without being retained.
+    if (bytes > 16 * 1024 * 1024) return lowerText;
+    this.searchCache.set(card.path, { stamp, lowerText, bytes });
+    this.searchCacheBytes += bytes;
+    while (this.searchCache.size > 4000 || this.searchCacheBytes > 16 * 1024 * 1024) {
+      const oldest = this.searchCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.forgetSearchText(oldest);
+    }
+    return lowerText;
   }
   async search(files: CardIndex[], query: string,
     shouldCancel: () => boolean, onProgress?: (done: number) => void): Promise<Set<string>> {
@@ -119,9 +158,7 @@ export class EntryRepository {
             return;
           }
           try {
-            const parsed = await this.read(card.path);
-            const text = [parsed.title, parsed.body, ...parsed.sections.map(s => s.name + "\n" + s.markdown)].join("\n");
-            if (text.toLocaleLowerCase().includes(q)) matches.add(card.path);
+            if ((await this.searchText(card)).includes(q)) matches.add(card.path);
           } catch { /* A deleted or inaccessible file cannot match. */ }
         }));
       }
