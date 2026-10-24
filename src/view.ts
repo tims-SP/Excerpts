@@ -1210,10 +1210,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private listBatchSize(viewport: HTMLElement): number {
     const { listBatchMode, listBatchSize } = this.plugin.settings;
     if (listBatchMode === "fixed") return listBatchSize;
-    const heights = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-virtual-row"))
-      .map(row => row.getBoundingClientRect().height).filter(height => height > 0);
-    if (!heights.length) return this.adaptiveBatch;
-    const average = heights.reduce((sum, height) => sum + height, 0) / heights.length;
+    const average = this.timeline?.getMeasuredAverageHeight();
+    if (average === null || average === undefined) return this.adaptiveBatch;
     const viewportHeight = Math.max(1, viewport.clientHeight || 800);
     // Hysteresis prevents continuously changing the batch as media loads.
     if (this.lastAverageHeight &&
@@ -1234,12 +1232,24 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       previous = day;
       const label = dayLabel(item.ctime);
       const gap = index === 0 ? 0 : firstOfDay ? (compact ? 24 : 32) : 16;
+      const sections = this.sectionsShown.get(item.path);
+      const sectionState = sections ? [...sections].sort((a, b) => a - b).join(",") : "";
+      const layoutKey = [
+        item.mtime, item.size, item.ctime, item.tags.join("\u001f"),
+        firstOfDay ? label.title + "|" + label.subtitle : "",
+        index === 0 ? "first" : firstOfDay ? "day" : "row",
+        compact ? "compact" : "wide",
+        this.expandedBodies.has(item.path) ? "expanded" : "clamped",
+        this.expandedTagRows.has(item.path) ? "tags-expanded" : "tags-clamped",
+        sectionState
+      ].join("\u001e");
       return {
         path: item.path, firstOfDay,
         dayTitle: firstOfDay ? label.title : "",
         daySubtitle: firstOfDay ? label.subtitle : "",
         estimatedHeight: 104 + Math.min(320, Math.max(60, Math.ceil(item.size / 5))) + gap +
-          (firstOfDay && compact ? 26 : 0)
+          (firstOfDay && compact ? 26 : 0),
+        layoutKey
       };
     });
   }

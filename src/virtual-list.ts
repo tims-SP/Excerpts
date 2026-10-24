@@ -12,6 +12,8 @@ export interface TimelineRow {
   dayTitle: string;
   daySubtitle: string;
   estimatedHeight: number;
+  /** Invalidate measured heights whenever content, grouping or card layout changes. */
+  layoutKey: string;
 }
 
 interface VirtualOptions {
@@ -30,6 +32,10 @@ export class VirtualTimeline {
   private readonly window = document.createElement("div");
   private readonly bottom = document.createElement("div");
   private readonly mounted = new Map<number, HTMLElement>();
+  /** Session-only measured-height reuse; never stores Markdown content. */
+  private readonly heightCache = new Map<string, { layoutKey: string; height: number }>();
+  private readonly mountedHeights = new Map<number, number>();
+  private mountedHeightSum = 0;
   private readonly observer: ResizeObserver | null;
   private frame: number | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -55,7 +61,7 @@ export class VirtualTimeline {
         if (!this.mounted.has(index) || this.mounted.get(index) !== entry.target) continue;
         const height = entry.target.getBoundingClientRect().height;
         if (height <= 0) continue;
-        const delta = this.heights.set(index, height);
+        const delta = this.recordMeasurement(index, height);
         if (Math.abs(delta) < 0.5) continue;
         changed = true;
         if (index < this.firstVisible) precedingDelta += delta;
@@ -79,7 +85,10 @@ export class VirtualTimeline {
     this.clearMounted();
     this.host.replaceChildren(this.top, this.window, this.bottom);
     this.rows = [...rows];
-    this.heights = new HeightIndex(rows.map(row => row.estimatedHeight));
+    this.heights = new HeightIndex(rows.map(row => {
+      const measured = this.heightCache.get(row.path);
+      return measured?.layoutKey === row.layoutKey ? measured.height : row.estimatedHeight;
+    }));
     this.host.style.minHeight = Math.max(oldHeight, this.heights.total()) + "px";
     this.updateSpacers();
     if (policy === "top" || (policy === "anchor" && !rows.length)) {
@@ -111,6 +120,9 @@ export class VirtualTimeline {
     const refreshed = this.options.resizeRows?.();
     if (refreshed && refreshed.length === this.rows.length &&
         refreshed.every((row, index) => row.path === this.rows[index].path)) this.rows = refreshed;
+    this.heightCache.clear(); // Width changes invalidate line wrapping and media dimensions.
+    this.mountedHeights.clear();
+    this.mountedHeightSum = 0;
     this.heights = new HeightIndex(this.rows.map(row => row.estimatedHeight));
     this.remeasureMountedRows();
     this.updateSpacers();
@@ -118,11 +130,40 @@ export class VirtualTimeline {
     this.schedule();
   }
 
+  /** No DOM measurements occur when the batch-size getter is called on scrolling. */
+  getMeasuredAverageHeight(): number | null {
+    return this.mountedHeights.size ? this.mountedHeightSum / this.mountedHeights.size : null;
+  }
+
+  private recordMeasurement(index: number, height: number): number {
+    if (!Number.isFinite(height) || height <= 0 || !this.rows[index]) return 0;
+    const old = this.mountedHeights.get(index);
+    this.mountedHeightSum += height - (old ?? 0);
+    this.mountedHeights.set(index, height);
+    const row = this.rows[index];
+    // The 512-entry bound also prevents unbounded caches in very long sessions.
+    this.heightCache.delete(row.path);
+    this.heightCache.set(row.path, { layoutKey: row.layoutKey, height });
+    if (this.heightCache.size > 512) {
+      const oldest = this.heightCache.keys().next().value as string | undefined;
+      if (oldest !== undefined) this.heightCache.delete(oldest);
+    }
+    return this.heights.set(index, height);
+  }
+
+  private forgetMountedHeight(index: number): void {
+    const measured = this.mountedHeights.get(index);
+    if (measured !== undefined) {
+      this.mountedHeightSum -= measured;
+      this.mountedHeights.delete(index);
+    }
+  }
+
   /** Measure existing mounted rows without remounting or touching their Markdown renderers. */
   private remeasureMountedRows(): void {
     for (const [index, element] of this.mounted) {
       const height = element.getBoundingClientRect().height;
-      if (height > 0 && Number.isFinite(height)) this.heights.set(index, height);
+      if (height > 0 && Number.isFinite(height)) this.recordMeasurement(index, height);
     }
   }
 
@@ -225,6 +266,7 @@ export class VirtualTimeline {
     for (const [index, element] of [...this.mounted]) {
       if (index >= start && index < end) continue;
       this.observer?.unobserve(element);
+      this.forgetMountedHeight(index);
       this.options.unmount(this.rows[index], element);
       element.remove();
       this.mounted.delete(index);
@@ -241,7 +283,7 @@ export class VirtualTimeline {
       this.observer?.observe(element);
       const measured = element.getBoundingClientRect().height;
       if (measured > 0) {
-        const delta = this.heights.set(index, measured);
+        const delta = this.recordMeasurement(index, measured);
         if (index < visibleFirst) precedingDelta += delta;
       }
     }
@@ -265,6 +307,7 @@ export class VirtualTimeline {
   private clearMounted(): void {
     for (const [index, element] of this.mounted) {
       this.observer?.unobserve(element);
+      this.forgetMountedHeight(index);
       this.options.unmount(this.rows[index], element);
     }
     this.mounted.clear();
@@ -279,6 +322,7 @@ export class VirtualTimeline {
     this.viewport.removeEventListener("scroll", this.handleScroll);
     this.observer?.disconnect();
     this.clearMounted();
+    this.heightCache.clear();
     this.host.replaceChildren();
   }
 }
