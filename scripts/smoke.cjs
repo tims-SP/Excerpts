@@ -19,7 +19,8 @@ class Plugin {
 class PluginSettingTab { constructor(app,plugin){this.app=app;this.plugin=plugin;} }
 class Setting {}
 class Notice { constructor(text){Notice.last=text;} }
-const mocks={TAbstractFile,TFile,TFolder,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice,
+class Modal { constructor(){this.modalEl={addClass(){}};this.contentEl={empty(){}};} open(){} close(){} }
+const mocks={TAbstractFile,TFile,TFolder,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Notice,Modal,
   MarkdownRenderer:{async render(){}},setIcon(){},Menu:class {},
   getAllTags(cache){return [...(cache.tags||[]).map(x=>x.tag),...(cache.frontmatter?.tags||[]).map(t=>'#'+t)];}
 };
