@@ -75,7 +75,12 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
     async cachedRead(file){return files.get(file.path).data;},async read(file){return files.get(file.path).data;},
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(name,handler){vaultEvents.set(name,handler);return {};}};
   const plugin=new Excerpts();
-  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();this.view.file=file;},async setViewState(state){this.state=state;if(this.view)this.view.mode=state.state.mode;}};
+  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();this.view.file=file;},async setViewState(state){
+    this.state=state;
+    if(!this.view)this.view=new MarkdownView();
+    this.view.mode=state.state.mode;
+    this.view.file=vault.getAbstractFileByPath(state.state.file);
+  }};
   plugin.app={vault,metadataCache:{getFileCache(f){return {
     tags:f.path===md.path?inlineTags.map(tag=>({tag:'#'+tag})):[],
     frontmatter:{tags:tagState.get(f.path)||[]}
@@ -101,8 +106,10 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
 test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
-  assert.deepEqual(Object.keys(t.plugin.settings).sort(),['defaultHome','recursive','scanBatchSize']);
+  assert.deepEqual(Object.keys(t.plugin.settings).sort(),['defaultHome','listBatchMode','listBatchSize','recursive','scanBatchSize']);
   assert.equal(t.plugin.settings.scanBatchSize,64);
+  assert.equal(t.plugin.settings.listBatchMode,'auto');
+  assert.equal(t.plugin.settings.listBatchSize,32);
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
   assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
   assert.equal(t.pane.getDisplayText(),'首页');
@@ -112,7 +119,8 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
   assert.equal(root.querySelector('.ex-card').classList.contains('ex-card-loading'),false);
-  assert.equal(root.querySelectorAll('.ex-day-group').length,1);
+  assert.equal(root.querySelectorAll('.ex-virtual-row').length,1);
+  assert.equal(root.querySelectorAll('.ex-day-rail .ex-day-title').length,1);
   assert.ok(root.querySelector('.ex-day-rail .ex-day-title'));
   assert.ok(root.querySelector('.ex-card-footer .ex-chips'));
   assert.equal(root.querySelector('.ex-card').lastElementChild.classList.contains('ex-card-footer'),true);
@@ -218,6 +226,19 @@ test('card options open the native Markdown editor and preserve the homepage',as
   assert.equal(filter.getAttribute('aria-expanded'),'true');
   clickByLabel(root,'筛选标签');
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
+  await t.close();
+});
+
+test('reading original opens native Markdown preview without focusing editor',async()=>{
+  const t=await fixture();
+  clickByLabel(t.pane.contentEl,'卡片选项');
+  const read=Menu.last.items.find(item=>item.title==='阅读原文');
+  assert.ok(read);
+  read.handler();await wait();
+  assert.equal(t.leaf.state.state.mode,'preview');
+  assert.equal(t.leaf.state.state.file,t.md.path);
+  assert.equal(t.leaf.view.getMode(),'preview');
+  assert.equal(t.leaf.view.editor.focused,false,'preview must not open the soft keyboard');
   await t.close();
 });
 
@@ -363,27 +384,34 @@ test('IME composition does not create a tag on Enter',async()=>{
   await t.close();
 });
 
-test('date groups keep cards in date order and load-more appends without replacing existing cards',async()=>{
+test('virtual timeline keeps a single date rail and recycles offscreen cards',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   for(let i=0;i<84;i++){
     const file=new TFile('摘录/样例-'+String(i).padStart(3,'0')+'.md');
     file.stat.ctime=100-i*86400000;
     t.files.set(file.path,{file,data:'第 '+i+' 段文字'});
   }
+  const list=root.querySelector('.ex-card-list');
+  list.getBoundingClientRect=()=>({top:-t.pane.contentEl.scrollTop,left:0,bottom:0,right:0,width:720,height:0});
+  Object.defineProperty(t.pane.contentEl,'clientHeight',{configurable:true,value:800});
   t.pane.renderer.requestRefresh(true);
   await waitForIndex(t,85);
-  assert.equal(root.querySelectorAll('.ex-card').length,40);
-  assert.equal(root.querySelectorAll('.ex-day-group').length,39); // fixture's original and first generated excerpt share the same date
-  const first=root.querySelector('.ex-card');
-  const buttons=[...root.querySelectorAll('.ex-loadmore')];
-  assert.equal(buttons.length,1);
-  buttons[0].click();await wait();
-  assert.equal(root.querySelectorAll('.ex-card').length,80);
-  assert.equal(root.querySelector('.ex-card'),first,'existing card element was replaced during pagination');
-  assert.equal(root.querySelectorAll('.ex-loadmore').length,1);
-  root.querySelector('.ex-loadmore').click();await wait();
-  assert.equal(root.querySelectorAll('.ex-card').length,85);
+  const initial=root.querySelectorAll('.ex-card').length;
+  assert.ok(initial>0&&initial<=96,'initial virtual DOM count is bounded');
   assert.equal(root.querySelectorAll('.ex-loadmore').length,0);
+  assert.ok(root.querySelector('.ex-virtual-top-spacer'));
+  assert.ok(root.querySelector('.ex-virtual-bottom-spacer'));
+  const first=root.querySelector('.ex-card');
+  t.pane.contentEl.scrollTop=9500;
+  t.pane.contentEl.dispatchEvent(new dom.window.Event('scroll'));
+  await waitFor(()=>!first.isConnected,'first card recycled');
+  assert.ok(root.querySelectorAll('.ex-card').length<=96);
+  assert.ok(parseFloat(root.querySelector('.ex-virtual-top-spacer').style.height)>0);
+  t.pane.contentEl.scrollTop=0;
+  t.pane.contentEl.dispatchEvent(new dom.window.Event('scroll'));
+  await waitFor(()=>root.querySelector('.ex-card')?.dataset.path===first.dataset.path,'first card restored');
+  const rails=[...root.querySelectorAll('.ex-day-rail .ex-day-title')];
+  assert.equal(rails.length,new Set(rails.map(x=>x.textContent)).size,'no duplicate visible day rails');
   await t.close();
 });
 
