@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
 const contract = JSON.parse(readFileSync(path.join(ROOT, 'tests/fixtures/visual-class-contract.json'), 'utf8'));
@@ -17,6 +18,15 @@ test('ex-prefixed UI identifiers are reviewed; new/removed components need expli
   assert.deepEqual(actual, contract.classes,
     'UI selectors/tokens have drifted: review new/deleted component states, then update approved inventory');
   assert.deepEqual(contract.classes, [...new Set(contract.classes)].sort());
+});
+
+test('all CSS pixel, color, and spacing modifications require approval against screenshots', () => {
+  const bytes = readFileSync(path.join(ROOT, 'styles.css'));
+  const gitBlob = createHash('sha1').update(Buffer.concat([
+    Buffer.from('blob ' + bytes.length + '\\0'), bytes
+  ])).digest('hex');
+  assert.equal(gitBlob, contract.stylesheet_git_blob_sha,
+    'CSS changed: first inspect all affected Screenshot QA images, then explicitly approve the new style blob SHA');
 });
 
 test('screenshot suite covers runtime states and records component crops for review', () => {
