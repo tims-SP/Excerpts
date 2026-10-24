@@ -736,3 +736,23 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
   assert.ok(t.files.has(t.md.path),'open Markdown editors are protected');
   await t.close();
 });
+
+test('select all respects a tag filter and never includes out-of-scope Markdown',async()=>{
+  const t=await fixture();
+  const unrelated=await t.plugin.app.vault.create('摘录/无标签.md','无标签的正文');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'筛选标签');
+  const tag=[...root.querySelectorAll('.ex-filter-tags button')].find(el=>el.textContent==='#哲学');
+  assert.ok(tag);tag.click();
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
+  root.querySelector('.ex-delete-selected').click();
+  document.querySelector('.ex-delete-modal .ex-delete-submit').click();await wait();
+  assert.equal(t.files.has(t.md.path),false);
+  assert.equal(t.files.has(unrelated.path),true);
+  assert.equal(t.files.has(t.home.path),true);
+  await t.close();
+});
