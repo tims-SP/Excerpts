@@ -1464,7 +1464,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const rendered = content.querySelector<HTMLElement>(".ex-native-markdown");
       const measured = Math.max(rendered?.scrollHeight ?? 0, content.scrollHeight,
         rendered?.getBoundingClientRect().height ?? 0);
-      const fallback = parsed.body.length > 280 ? Math.max(policy.limit + 2, parsed.body.length / 2) : 0;
+      const fallback = parsed.body.length > 280 ? parsed.body.length / 2 : 0;
       const action = previewAction(measured > 0 ? measured : fallback, policy);
       if (action !== "expand") this.expandedBodies.delete(item.path);
       expand.hidden = action === "none";
