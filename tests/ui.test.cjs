@@ -1263,7 +1263,8 @@ test('tag edits reject refresh and save once, without deferred work',async()=>{
   t.plugin.refreshViews(true);
   assert.equal(scans,0);
   card.querySelector('.ex-tag-done').click();
-  await waitFor(()=>t.getTagWrites()===1,'single tag write');
+  await waitFor(()=>t.getTagWrites()===1 &&
+    root.querySelector('.ex-scan-status').dataset.state==='stale','single tag write and stale state');
   assert.equal(scans,0);
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   assert.deepEqual(t.tagState.get(t.md.path),['哲学','暂存标签']);
@@ -1295,7 +1296,11 @@ test('scan locks save and search inputs without discarding the composer draft',a
   assert.equal(textarea.value,'尚未保存的草稿');
   release();
   await waitFor(()=>root.querySelector('.ex-scan-status').dataset.state==='done','scan completes');
-  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,false);
+  const button=root.querySelector('.ex-compose-actions .ex-btn-primary');
+  const renderer=[...t.plugin.rendered][0];
+  assert.equal(button.disabled,false,JSON.stringify({state:renderer.scanStatus,
+    text:textarea.value,reason:renderer.reason('save'),busy:renderer.isBusy(),
+    peers:t.plugin.isBusy(renderer),searchReady:renderer.searchReady}));
   assert.equal(scans,1);
   await t.close();
 });
