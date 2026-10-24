@@ -65,7 +65,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private filterOpen = false;
   private matches: Set<string> | null = null;
   private searchToken = 0;
-  private scanStatus: "idle" | "scanning" | "done" | "stale" | "error" = "idle";
+  private scanStatus: "idle" | "blocked" | "scanning" | "done" | "stale" | "error" = "idle";
   private scanDirty = false;
   private homeInvalid = false;
   private scanDone = 0;
@@ -74,6 +74,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanVisible = false;
   private scanRevealTimer: ReturnType<typeof setTimeout> | null = null;
   private scanStatusEl!: HTMLElement;
+  private pageHintEl!: HTMLElement;
   private scanTextEl!: HTMLElement;
   private scanIconEl!: HTMLElement;
   private scanProgressEl!: HTMLElement;
@@ -162,6 +163,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!this.searchReady) return "正在搜索，请先清除搜索条件";
     if (this.searchText && ["select", "refresh", "tag", "delete", "filter"].includes(action))
       return "请先清除搜索条件，再进行此操作";
+    if (this.scanStatus === "blocked" && action !== "refresh")
+      return "本页尚未扫描，请先手动刷新";
     if (this.scanStatus === "stale" || this.scanStatus === "error" || this.scanStatus === "idle") {
       if (action === "select" || action === "search" || action === "filter" || action === "tag" || action === "delete")
         return "摘录索引需要刷新，请先手动刷新";
@@ -251,6 +254,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         ? (this.lastScanCount === null ? "idle" : "done") : this.scanStatus;
     const labels = {
       idle: "未扫描",
+      blocked: "未扫描 · 请手动刷新",
       scanning: "扫描中 " + this.scanDone.toLocaleString("zh-CN") + "/" +
         this.scanTotal.toLocaleString("zh-CN"),
       done: "已扫描 · " + (this.lastScanCount ?? 0).toLocaleString("zh-CN") + " 条",
@@ -260,11 +264,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     };
     this.scanStatusEl.dataset.state = status;
     this.scanTextEl.textContent = labels[status];
-    this.scanStatusEl.title = this.homeInvalid ?
-      "当前页面不能继续操作。复制未保存的草稿后，请从文件列表重新打开摘录页。" : "";
+    const hint = this.homeInvalid
+      ? "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
+      : this.scanStatus === "blocked"
+        ? "因其他摘录页正在操作，本页未扫描。待操作结束后，请从页面选项手动刷新。"
+        : "";
+    this.scanStatusEl.title = hint;
+    if (this.pageHintEl) {
+      this.pageHintEl.textContent = hint;
+      this.pageHintEl.hidden = !hint;
+    }
     setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
       status === "done" ? "check" : status === "stale" ? "refresh-cw" :
-      status === "error" || status === "invalid" ? "alert-circle" : "circle-dashed");
+      status === "error" || status === "invalid" ? "alert-circle" :
+      status === "blocked" ? "info" : "circle-dashed");
     this.scanProgressEl.hidden = status !== "scanning";
     if (status === "scanning") {
       this.scanProgressEl.setAttribute("aria-valuenow", String(this.scanDone));
@@ -299,8 +312,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scanAnnouncementEl.setAttribute("aria-live", "polite");
     this.scanStatusEl.append(scanLine, this.scanProgressEl, this.scanAnnouncementEl);
     header.append(this.scanStatusEl);
+    this.pageHintEl = node("p", "ex-page-hint");
+    this.pageHintEl.setAttribute("role", "status");
+    root.append(header, this.pageHintEl);
     this.renderScanStatus();
-    root.append(header);
 
     // The outer composer is the only rounded surface; textarea has no native chrome.
     const form = node("section", "ex-composer");
@@ -912,7 +927,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private showSuggestions: () => void = () => {};
   private async reload(force = false): Promise<void> {
-    if (this.disposed || this.homeInvalid || this.isBusy() || this.plugin.isBusy(this)) return;
+    if (this.disposed || this.homeInvalid || this.isBusy()) return;
+    if (this.plugin.isBusy(this)) {
+      // The initial scan is refused, not queued. The user must refresh explicitly.
+      if (this.scanStatus === "idle") {
+        this.scanStatus = "blocked";
+        this.renderScanStatus();
+        this.updateAvailability();
+      }
+      return;
+    }
     const token = ++this.refreshToken;
     const cancelled = () => this.disposed || token !== this.refreshToken;
     // Supersede in-flight full-text searches immediately, not after the scan completes.
@@ -1395,14 +1419,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       onEscape: () => { if (!this.pendingTags.has(item.path)) this.closeTagEditor(item, card); }
     });
     const inlineInfo = item.inlineTags.length
-      ? node("div", "ex-tag-inline-hint", "正文标签仅能在 Markdown 原文中修改。") : null;
-    if (inlineInfo) {
-      const openOriginal = button("编辑原文", () => {
-        if (!this.guard("page")) return;
-        void this.plugin.openMarkdown(item.path).catch(notify);
-      }, "ex-tag-source");
-      inlineInfo.append(openOriginal);
-    }
+      ? node("div", "ex-tag-inline-hint",
+          "正文标签请在 Markdown 原文中修改。先结束标签编辑，再从卡片选项进入原文。") : null;
     const commit = async () => {
       if (this.pendingTags.has(item.path) || !this.guard("tag")) return;
       if (original.length === selected.size && original.every(tag => selected.has(tag))) {
