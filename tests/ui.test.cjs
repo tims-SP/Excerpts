@@ -876,6 +876,9 @@ test('select all excludes externally missing files, and a second click cancels s
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 1/);
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(root.querySelectorAll('.ex-card').length,1,
+    'missing files must not reappear after leaving selection mode');
   assert.equal(t.files.has(t.md.path),true);
   await t.close();
 });
@@ -894,6 +897,9 @@ test('clicking an externally removed card prunes it from the current selection',
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 1/);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(root.querySelectorAll('.ex-card').length,1,
+    'stale card stays removed in normal feed');
   await t.close();
 });
 
@@ -913,6 +919,9 @@ test('batched selection keeps its original progress denominator when a file disa
   assert.equal(root.querySelector('.ex-select-all').textContent,'取消全选');
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 201/);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(root.querySelectorAll('.ex-card').length,40,
+    'normal feed retains the page size after removing missing items');
   await t.close();
 });
 
