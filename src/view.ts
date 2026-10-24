@@ -784,48 +784,60 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
     if (bulk) this.selectionMode = "deleting";
     this.updateSelectionUI();
-    let result: DeleteResult;
     try {
-      result = await this.repo.deleteEntries(this.workspace, candidates, onProgress);
+      const result = await this.repo.deleteEntries(this.workspace, candidates, onProgress);
+      const removed = new Set(result.deleted);
+      for (const path of removed) {
+        this.selectedPaths.delete(path); this.selectedCandidates.delete(path);
+        this.selectionScope.delete(path);
+        this.matches?.delete(path);
+        this.sectionsShown.delete(path); this.expandedBodies.delete(path);
+        this.expandedTagRows.delete(path); this.openTagEditors.delete(path);
+      }
+      for (const failed of result.failed) {
+        if (failed.reason.includes("已被修改") || failed.reason.includes("已不存在")) {
+          this.selectedPaths.delete(failed.path);
+          this.selectedCandidates.delete(failed.path);
+        }
+      }
+      if (bulk && !result.failed.length) {
+        this.selectionMode = "normal";
+        this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
+      }
+      this.items = this.items.filter(item => !removed.has(item.path));
+      this.drawCards(); // Remove successful deletions before the index scan completes.
+      this.updateSelectionUI();
+      this.repo.invalidate();
+
+      // A queued settings/scope refresh is subsumed by this required post-delete
+      // scan only after selection has fully ended. A failed batch keeps its
+      // selection and its queued scope change until the user exits that mode.
+      let force = false;
+      if (this.selectionMode === "normal" && !this.pendingTags.size && !this.openTagEditors.size) {
+        force = this.refreshQueuedForce;
+        this.refreshQueued = false;
+        this.refreshQueuedForce = false;
+        this.workspace.recursive = this.plugin.settings.recursive;
+      }
+      await this.reload(force, true);
+      const details = result.failed.map(item =>
+        item.path.split("/").pop() + "：" + item.reason);
+      if (!bulk && result.failed.length) new Notice(details[0] ?? "摘录删除失败", 9000);
+      return { deleted: result.deleted.length, failed: result.failed.length, details };
     } finally {
+      // Keep every destructive operation locked until post-delete reconciliation
+      // finishes; any refresh received during the scan remains queued.
       this.deleteBusy = false;
       if (this.selectionMode === "deleting") this.selectionMode = "selecting";
-      // An unexpected repository error must not leave selection controls disabled.
-      if (!this.disposed) this.updateSelectionUI();
-    }
-    const removed = new Set(result.deleted);
-    for (const path of removed) {
-      this.selectedPaths.delete(path); this.selectedCandidates.delete(path);
-      this.selectionScope.delete(path);
-      this.matches?.delete(path);
-      this.sectionsShown.delete(path); this.expandedBodies.delete(path);
-      this.expandedTagRows.delete(path); this.openTagEditors.delete(path);
-    }
-    for (const failed of result.failed) {
-      if (failed.reason.includes("已被修改") || failed.reason.includes("已不存在")) {
-        this.selectedPaths.delete(failed.path);
-        this.selectedCandidates.delete(failed.path);
+      if (!this.disposed) {
+        this.updateSelectionUI();
+        this.flushQueuedRefresh();
       }
     }
-    if (bulk && !result.failed.length) {
-      this.selectionMode = "normal";
-      this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
-    }
-    this.items = this.items.filter(item => !removed.has(item.path));
-    this.drawCards(); // Synchronous UI removal; do not await the search debounce.
-    this.updateSelectionUI();
-    this.repo.invalidate();
-    await this.reload();
-    this.updateSelectionUI();
-    this.flushQueuedRefresh();
-    const details = result.failed.map(item =>
-      item.path.split("/").pop() + "：" + item.reason);
-    if (!bulk && result.failed.length) new Notice(details[0] ?? "摘录删除失败", 9000);
-    return { deleted: result.deleted.length, failed: result.failed.length, details };
   }
   private showSuggestions: () => void = () => {};
-  private async reload(force = false): Promise<void> {
-    if (this.disposed || this.deleteBusy) return;
+  private async reload(force = false, fromDeletion = false): Promise<void> {
+    if (this.disposed || (this.deleteBusy && !fromDeletion)) return;
     const token = ++this.refreshToken;
     const cancelled = () => this.disposed || token !== this.refreshToken;
     // Supersede in-flight full-text searches immediately, not after the scan completes.
