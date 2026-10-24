@@ -2895,3 +2895,94 @@ test('new folder tab is detached if its folder moves while setting view state',a
   assert.equal(t.plugin.homeNavigationBusy,false);
   await t.close();
 });
+
+
+test('scope setting invalidates existing indexes before persistence and remains stale on failure', async()=>{
+  const t=await fixture();
+  const renderer=[...t.plugin.rendered][0];
+  Setting.instances=[];
+  t.plugin.settingsTab.display();
+  const scope=Setting.instances.find(x=>x.name==='包含子文件夹').toggle;
+  let release,fail=false;
+  t.plugin.saveSettings=()=>new Promise((resolve,reject)=>{release=()=>fail?reject(new Error('persist failed')):resolve();});
+  const change=scope.handler(false);
+  assert.equal(renderer.scanStatus,'stale','scope must invalidate synchronously before awaiting');
+  assert.equal(t.plugin.settings.recursive,false);
+  clickByLabel(t.pane.contentEl,'页面选项');
+  assert.equal(Menu.last.items.find(x=>x.title==='批量选择').disabled,true);
+  fail=true;release();await change;
+  assert.equal(t.plugin.settings.recursive,true,'failed persistence restores setting');
+  assert.equal(scope.value,true);
+  assert.equal(renderer.scanStatus,'stale','a failed write cannot revive old index');
+  await t.close();
+});
+
+test('navigation blocks existing page writes and allows a new view initial scan',async()=>{
+  const t=await fixture();
+  let release;
+  t.leaf.openFile=()=>new Promise(resolve=>{release=resolve;});
+  const navigation=t.plugin.openHome(t.home.path);
+  await waitFor(()=>typeof release==='function','navigation pending');
+  const root=t.pane.contentEl;
+  const composer=root.querySelector('.ex-compose-text');
+  composer.value='不能在导航期间保存';composer.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(root.querySelector('.ex-btn-primary').disabled,true);
+  root.querySelector('.ex-btn-primary').click();
+  assert.equal([...t.files.keys()].filter(path=>path.endsWith('.md')).length,1);
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  // Native loading of the target view does not use the page action guard.
+  await t.pane.onUnloadFile(t.home);
+  const second=t.plugin.factory({});
+  document.body.append(second.contentEl);
+  await second.openFile(t.home);
+  await waitFor(()=>second.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条',
+    'initial scan during navigation');
+  release();await navigation;
+  assert.equal(second.contentEl.querySelector('.ex-compose-actions .ex-open-editor').disabled,false);
+  await second.onUnloadFile(t.home);second.contentEl.remove();
+  await t.close();
+});
+
+test('stale index freezes existing bulk selection while allowing exit',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(x=>x.title==='批量选择').handler();
+  const renderer=[...t.plugin.rendered][0];
+  assert.equal(renderer.selectionMode,'selecting');
+  renderer.markStale(t.md.path);
+  assert.equal(root.querySelector('.ex-select-all').disabled,true);
+  root.querySelector('.ex-card').click();
+  assert.equal(renderer.selectedPaths.size,0);
+  await renderer.toggleSelectAll();
+  assert.equal(renderer.selectedPaths.size,0);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(renderer.selectionMode,'normal');
+  assert.equal(renderer.scanStatus,'stale');
+  await t.close();
+});
+
+test('tag menu is capped and tag picker reuses the same index between input events',async()=>{
+  const t=await fixture();const renderer=[...t.plugin.rendered][0];
+  for(let i=0;i<60;i++)await t.plugin.app.vault.create('摘录/标签-'+i+'.md','文本'+i);
+  t.plugin.app.metadataCache.getFileCache=file=>({
+    tags:[{tag:'#tag-'+file.basename}],frontmatter:{tags:[]}
+  });
+  t.plugin.refreshViews(true);
+  await waitFor(()=>renderer.scanStatus==='done'&&renderer.items.length===61,'tag scan');
+  const tags=renderer.availableTags;
+  assert.equal(tags.length,61);
+  clickByLabel(t.pane.contentEl,'筛选标签');
+  const more=[...t.pane.contentEl.querySelectorAll('.ex-filter-tags button')]
+    .find(button=>button.textContent.startsWith('更多标签'));
+  assert.ok(more);more.click();
+  assert.equal(Menu.last.items.length,41,'only 40 selectable tags and one message');
+  assert.equal(Menu.last.items.at(-1).disabled,true);
+  clickByLabel(t.pane.contentEl,'添加标签');
+  const input=t.pane.contentEl.querySelector('.ex-tags-input');
+  for(const q of ['tag-','tag-标签-1','tag-标签-12']){
+    input.value=q;input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+    assert.equal(renderer.availableTags,tags,'typing never rebuilds or sorts the index');
+  }
+  assert.ok(t.pane.contentEl.querySelectorAll('.ex-capture-tags .ex-tag-choice').length<=9);
+  await t.close();
+});

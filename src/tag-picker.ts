@@ -18,6 +18,9 @@ export class TagPicker {
   private clearButton: HTMLButtonElement;
   private active = 0;
   private choices: Array<{ name: string; kind: "existing" | "create"; locked: boolean }> = [];
+  private availableSource: readonly string[] | null = null;
+  private sortedAvailable: string[] = [];
+  private availableKeys = new Set<string>();
   private composing = false;
 
   constructor(private opts: TagPickerOptions, inputClass = "ex-tag-custom") {
@@ -88,13 +91,29 @@ export class TagPicker {
   refresh(): void {
     const query = this.input.value.trim().replace(/^#/, "");
     const folded = query.toLocaleLowerCase();
-    const known = [...new Set([...this.opts.available(), ...this.opts.selected(), ...(this.opts.readonlyTags?.() ?? [])])]
+    const source = this.opts.available();
+    if (source !== this.availableSource) {
+      this.availableSource = source;
+      this.sortedAvailable = [...new Set(source)].sort((a, b) => a.localeCompare(b, "zh"));
+      this.availableKeys = new Set(this.sortedAvailable.map(tag => tag.toLocaleLowerCase()));
+    }
+    const selected = this.opts.selected();
+    const readonly = this.opts.readonlyTags?.() ?? new Set<string>();
+    // Draft tags are not necessarily part of the scanned index.
+    const extras = [...new Set([...selected, ...readonly])]
+      .filter(tag => !this.availableKeys.has(tag.toLocaleLowerCase()))
       .sort((a, b) => a.localeCompare(b, "zh"));
-    this.choices = known.filter(tag => tag.toLocaleLowerCase().includes(folded))
-      .slice(0, 8).map(name => ({
-        name, kind: "existing" as const, locked: this.opts.readonlyTags?.().has(name) ?? false
-      }));
-    if (query && !/\s/.test(query) && !known.some(tag => tag.toLocaleLowerCase() === folded)) {
+    this.choices = [];
+    for (const names of [this.sortedAvailable, extras]) {
+      for (const name of names) {
+        if (!name.toLocaleLowerCase().includes(folded)) continue;
+        this.choices.push({ name, kind: "existing", locked: readonly.has(name) });
+        if (this.choices.length >= 8) break;
+      }
+      if (this.choices.length >= 8) break;
+    }
+    if (query && !/\s/.test(query) && !this.availableKeys.has(folded) &&
+        !extras.some(tag => tag.toLocaleLowerCase() === folded)) {
       this.choices.push({ name: query, kind: "create", locked: false });
     }
     if (this.active >= this.choices.length) this.active = 0;

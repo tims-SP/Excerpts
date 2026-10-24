@@ -94,10 +94,21 @@ export class ExcerptsSettingTab extends PluginSettingTab {
             new Notice("摘录操作尚未完成，请稍后修改文件范围");
             return;
           }
+          const previous = this.plugin.settings.recursive;
+          if (previous === v) return;
           this.plugin.settings.recursive = v;
-          await this.plugin.saveSettings();
-          this.plugin.markAllStale();
-          new Notice("文件范围已更新，请在摘录首页手动刷新");
+          this.plugin.markAllStale(); // Invalidate synchronously, before the first await.
+          try {
+            await this.plugin.saveSettings();
+            new Notice("文件范围已更新，请在摘录首页手动刷新");
+          } catch (error) {
+            this.plugin.settings.recursive = previous;
+            t.setValue(previous);
+            new Notice("文件范围保存失败：" + message(error));
+          } finally {
+            // Any explicit scan that ran during persistence must also be considered stale.
+            this.plugin.markAllStale();
+          }
         });
       });
     new Setting(root).setName("每批扫描数量")
