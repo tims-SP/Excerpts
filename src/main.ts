@@ -52,6 +52,13 @@ export default class ExcerptsPlugin extends Plugin {
       }
       this.onFileChange(oldPath);
       this.onFileChange(file.path);
+      // Vault updates TFile paths in-place; existing renderers still hold their old scope.
+      for (const child of this.rendered) {
+        const home = child.workspace.homePath;
+        if (home === oldPath || home.startsWith(oldPath + "/")) {
+          child.relocateHomePath(file.path + home.slice(oldPath.length));
+        }
+      }
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleEditorCleanup()));
@@ -126,7 +133,7 @@ export default class ExcerptsPlugin extends Plugin {
     if (force) this.repo.invalidate();
     for (const child of this.rendered) {
       child.workspace.recursive = this.settings.recursive;
-      child.requestRefresh();
+      child.requestRefresh(force);
     }
   }
   async saveSettings(): Promise<void> {

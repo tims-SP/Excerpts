@@ -60,9 +60,10 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   const md=new TFile('摘录/测试.md'); files.set(md.path,{file:md,data:markdown});
   const tagState=new Map([[md.path,noTags?[]:['哲学']]]);
   let tagWrites=0;
+  const vaultEvents=new Map();
   const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
     async cachedRead(file){return files.get(file.path).data;},async read(file){return files.get(file.path).data;},
-    async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
+    async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(name,handler){vaultEvents.set(name,handler);return {};}};
   const plugin=new Excerpts();
   const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();this.view.file=file;},async setViewState(state){this.state=state;if(this.view)this.view.mode=state.state.mode;}};
   plugin.app={vault,metadataCache:{getFileCache(f){return {
@@ -81,7 +82,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   await waitFor(()=>pane.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条' &&
     pane.contentEl.querySelectorAll('.ex-card').length===1 &&
     !pane.contentEl.querySelector('.ex-card-loading'),'initial index and card hydration');
-  return {files,plugin,pane,leaf,md,home,tagState,getTagWrites:()=>tagWrites,async close(){
+  return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
     document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
   }};
@@ -1073,5 +1074,152 @@ test('scan failure leaves previous cards visible and enables retry',async()=>{
   assert.equal(root.querySelectorAll('.ex-card').length,1);
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,false);
+  await t.close();
+});
+
+test('refresh cancels an already running full-text search before scanning starts',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  let oldCancel, oldRelease, searchCount=0;
+  const originalSearch=t.plugin.repo.search.bind(t.plugin.repo);
+  t.plugin.repo.search=async(files,query,cancel,onProgress)=>{
+    searchCount++;
+    if(searchCount===1){
+      oldCancel=cancel;
+      await new Promise(resolve=>{oldRelease=resolve;});
+      return new Set([t.md.path]);
+    }
+    return originalSearch(files,query,cancel,onProgress);
+  };
+  const input=root.querySelector('.ex-search');
+  input.value='旧关键词';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>typeof oldRelease==='function','old full-text search started');
+  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let scanRelease;
+  t.plugin.repo.scan=async(...args)=>{
+    await new Promise(resolve=>{scanRelease=resolve;});
+    return originalScan(...args);
+  };
+  t.plugin.refreshViews(true);
+  assert.equal(oldCancel(),true,'old search must become cancelled immediately');
+  input.value='测试标题';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  oldRelease();
+  await wait();
+  assert.equal(searchCount,1,'do not start another search until the refreshed index commits');
+  scanRelease();
+  await waitFor(()=>searchCount===2 && root.querySelector('.ex-card'),'new search after scan');
+  await waitFor(()=>root.querySelector('.ex-count').textContent==='1 / 1','current query applied');
+  assert.equal(t.pane.contentEl.querySelector('.ex-search').value,'测试标题');
+  await t.close();
+});
+
+test('moving a homepage folder updates its active scope and saves new notes into the new folder',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  // Obsidian changes TFile objects in-place before dispatching the rename event.
+  const folder=t.files.get('摘录').file;
+  t.files.delete('摘录');folder.path='收藏';t.files.set('收藏',{file:folder});
+  const move=(oldPath,newPath)=>{
+    const record=t.files.get(oldPath);
+    t.files.delete(oldPath);
+    record.file.path=newPath;
+    record.file.parent={path:'收藏'};
+    t.files.set(newPath,record);
+  };
+  move('摘录/首页.excerpts','收藏/首页.excerpts');
+  move('摘录/测试.md','收藏/测试.md');
+  t.tagState.set('收藏/测试.md',t.tagState.get('摘录/测试.md'));
+  t.vaultEvents.get('rename')(folder,'摘录');
+  const renderer=[...t.plugin.rendered][0];
+  assert.equal(renderer.workspace.homePath,'收藏/首页.excerpts');
+  assert.equal(renderer.workspace.rootFolder,'收藏');
+  await waitFor(()=>root.querySelector('.ex-card')?.dataset.path==='收藏/测试.md','moved card index');
+  const quote=root.querySelector('.ex-compose-text');
+  quote.value='# 新目录下的摘录';
+  quote.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(el=>el.textContent==='保存').click();
+  await waitFor(()=>[...t.files.keys()].some(path=>path.startsWith('收藏/')&&path.endsWith('新目录下的摘录.md')),
+    'saved into renamed folder');
+  await t.close();
+});
+
+test('renaming a saved excerpt page updates its title and scope without rebuilding the composer',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const saved=await t.plugin.createSavedPage(t.home.path,'文学摘录',{tag:'哲学',query:''});
+  await t.pane.openFile(saved);
+  await waitFor(()=>root.querySelector('.ex-title')?.textContent==='文学摘录','saved page opened');
+  const composer=root.querySelector('.ex-compose-text');
+  const oldPath=saved.path;
+  t.files.delete(oldPath);saved.path='摘录/句子摘录.excerpts';saved.basename='句子摘录';
+  t.files.set(saved.path,{file:saved,data:'version: 1\nfilter:\n  tag: "哲学"\n  query: ""'});
+  t.vaultEvents.get('rename')(saved,oldPath);
+  assert.equal(root.querySelector('.ex-title').textContent,'句子摘录');
+  assert.equal(root.querySelector('.ex-compose-text'),composer,'do not drop an unsaved composer');
+  assert.equal([...t.plugin.rendered][0].workspace.homePath,saved.path);
+  await t.close();
+});
+
+test('saving and native editor opening do not wait for a blocked index scan',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let releaseScan, scanCount=0;
+  t.plugin.repo.scan=async(...args)=>{
+    scanCount++;
+    await new Promise(resolve=>{releaseScan=resolve;});
+    return scan(...args);
+  };
+  const textarea=root.querySelector('.ex-compose-text');
+  textarea.value='# 立即编辑';
+  textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'编辑文档');
+  await waitFor(()=>t.leaf.lastFile?.basename==='立即编辑','native editor opens before rescan finishes');
+  assert.equal(textarea.disabled,false,'composer reenabled before scan completion');
+  assert.equal(textarea.value,'');
+  await waitFor(()=>scanCount===1,'post-save scan started');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done',
+    'short scans do not flash a spinner before 150ms');
+  releaseScan();
+  await waitForIndex(t,2);
+  await t.close();
+});
+
+test('settings-triggered refresh is queued during bulk selection and applied after exit',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  await t.plugin.app.vault.create('摘录/子目录/子项.md','nested text');
+  t.plugin.refreshViews(true);
+  await waitForIndex(t,2);
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  const renderer=[...t.plugin.rendered][0];
+  t.plugin.settings.recursive=false;
+  t.plugin.refreshViews(true);
+  assert.equal(renderer.workspace.recursive,false);
+  assert.equal(renderer.refreshQueued,true);
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 2/);
+  root.querySelector('.ex-select-done').click();
+  await waitForIndex(t,1);
+  assert.equal(renderer.refreshQueued,false);
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  await t.close();
+});
+
+test('scan yields to the main thread across ten thousand metadata entries',async()=>{
+  const t=await fixture();
+  for(let i=0;i<10000;i++){
+    const path='摘录/压力-'+i+'.md';
+    const file=new TFile(path);
+    t.files.set(path,{file,data:'x'});
+  }
+  let progressed=0, yielded=false;
+  const scan=t.plugin.repo.scan(t.plugin.workspaceForHome(t.home),64,(done,total)=>{
+    progressed=done;
+    assert.equal(total,10001);
+    if(done===64)setTimeout(()=>{yielded=true;},0);
+    if(done>=128)assert.equal(yielded,true,'the first 64-file batch must yield');
+  },()=>false);
+  const result=await scan;
+  assert.equal(result.length,10001);
+  assert.equal(progressed,10001);
   await t.close();
 });

@@ -79,6 +79,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanAnnouncementEl!: HTMLElement;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshToken = 0;
+  private refreshQueued = false;
+  private refreshQueuedForce = false;
   private renderToken = 0;
   private pageSize = 40;
   private observer: IntersectionObserver | null = null;
@@ -139,8 +141,32 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = [];
   }
   requestRefresh(force = false): void {
-    if (this.disposed || this.deleteBusy || this.selectionMode !== "normal" || this.pendingTags.size) return;
-    void this.reload(force);
+    if (this.disposed) return;
+    if (this.deleteBusy || this.selectionMode !== "normal" || this.pendingTags.size) {
+      this.refreshQueued = true;
+      this.refreshQueuedForce ||= force;
+      return;
+    }
+    const effectiveForce = force || this.refreshQueuedForce;
+    this.refreshQueued = false;
+    this.refreshQueuedForce = false;
+    void this.reload(effectiveForce);
+  }
+  private flushQueuedRefresh(): void {
+    if (this.refreshQueued) this.requestRefresh();
+  }
+  /** Follow moves of the open .excerpts file or one of its parent folders. */
+  relocateHomePath(path: string): void {
+    if (this.disposed || path === this.workspace.homePath) return;
+    const oldPath = this.workspace.homePath;
+    const draft = composerDrafts.get(oldPath);
+    if (draft) { composerDrafts.set(path, draft); composerDrafts.delete(oldPath); }
+    this.workspace.homePath = path;
+    const slash = path.lastIndexOf("/");
+    this.workspace.rootFolder = slash >= 0 ? path.slice(0, slash) || "/" : "/";
+    const title = this.containerEl.querySelector<HTMLElement>(".ex-title");
+    if (title && this.savedFilter) title.textContent = path.split("/").pop()?.replace(/\.excerpts$/i, "") ?? "摘录";
+    this.requestRefresh(true);
   }
   private renderScanStatus(): void {
     const status = this.scanStatus === "scanning" && !this.scanVisible
@@ -354,9 +380,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       saveButton.disabled = true; editorButton.disabled = true;
       selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = true; });
       saveButton.textContent = "保存中…";
+      let created = false;
       try {
         let file: TFile;
-        let created = false;
         if (openEditor && retryOpenPath) {
           const retry = this.plugin.app.vault.getAbstractFileByPath(retryOpenPath);
           if (!(retry instanceof TFile)) {
@@ -375,7 +401,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           quote.value = ""; tagSearch.value = ""; selectedTags.clear();
           picker.refresh(); repaintSelected(); persistDraft();
           closeTagPanel(false); fit(); form.classList.remove("ex-is-composing");
-          await this.reload();
         }
         if (openEditor) {
           const initialRaw = await this.repo.readRaw(file.path);
@@ -394,6 +419,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         saveButton.disabled = !quote.value.trim();
         selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = false; });
         saveButton.textContent = "保存";
+        // Show the new file without making save or native editor opening wait for a full index scan.
+        if (created) this.requestRefresh();
       }
     };
     quote.addEventListener("blur", () => {
@@ -595,6 +622,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectedCandidates.clear();
     this.updateSelectionUI();
     this.drawCards();
+    this.flushQueuedRefresh();
   }
   private paintCardSelection(card: HTMLElement, path: string): void {
     const active = this.selectionMode !== "normal";
@@ -785,6 +813,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.repo.invalidate();
     await this.reload();
     this.updateSelectionUI();
+    this.flushQueuedRefresh();
     const details = result.failed.map(item =>
       item.path.split("/").pop() + "：" + item.reason);
     if (!bulk && result.failed.length) new Notice(details[0] ?? "摘录删除失败", 9000);
@@ -795,6 +824,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed || this.deleteBusy) return;
     const token = ++this.refreshToken;
     const cancelled = () => this.disposed || token !== this.refreshToken;
+    // Supersede in-flight full-text searches immediately, not after the scan completes.
+    this.searchToken++;
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    this.searchReady = !this.searchText;
+    this.matches = null;
     if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
     this.scanStatus = "scanning";
     this.scanDone = 0;
@@ -840,6 +875,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!cancelled()) {
         this.scanStatus = "error";
         this.announceScan("摘录扫描失败");
+        // The old feed remains usable after a failed scan.
+        if (this.searchText) this.scheduleSearch();
+        else this.searchReady = true;
         notify(error);
       }
     } finally {
@@ -854,6 +892,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scheduleSearch(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     const token = ++this.searchToken;
+    // Search only against a committed index; keep the latest query for scan completion.
+    if (this.scanStatus === "scanning") {
+      this.searchReady = !this.searchText;
+      this.matches = null;
+      this.countEl.textContent = "扫描中…";
+      return;
+    }
     if (!this.searchText) { this.searchReady = true; this.matches = null; this.drawCards(); return; }
     this.searchReady = false;
     this.countEl.textContent = "搜索准备中…";
@@ -1277,6 +1322,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
       } finally {
         this.pendingTags.delete(item.path);
+        this.flushQueuedRefresh();
       }
     };
     editor.append(heading, picker.element);
