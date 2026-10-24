@@ -4,8 +4,9 @@ This is a browser-based mock of Obsidian's WebView, not a real mobile client.
 Screenshots are review artifacts; assertions are mandatory CI gates. No automatic
 baseline update is permitted. Business behavior is never patched for these tests.
 """
+import hashlib
 import json
-import re
+import struct
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -73,7 +74,7 @@ WIDTHS = (320, 390, 768, 1280)
 manifest = {"kind": "mock-webview", "viewport_height": 900,
             "themes": list(THEMES), "widths": list(WIDTHS),
             "required": list(REQUIRED), "scenarios": list(SCENARIOS),
-            "screenshots": [], "coverage": {}, "warnings": [
+            "screenshots": [], "coverage": {}, "geometry": {}, "warnings": [
                 "Browser mock only: mobile keyboard, platform chrome, theme plugins and "
                 "native media playback require real Obsidian verification.",
                 "PNG artifacts are not approved pixel goldens. Layout assertions enforce "
@@ -173,7 +174,7 @@ with sync_playwright() as playwright:
             if theme == "dark":
                 page.evaluate("document.documentElement.classList.add('theme-dark')")
             page.wait_for_selector(".ex-card .ex-section", timeout=15000)
-            geometry(page, theme, width)
+            manifest["geometry"][key] = geometry(page, theme, width)
             screenshot(page, theme, width, "home", "page-header", "scan-status",
                        "composer", "composer-input", "composer-toolbar", "composer-save",
                        "composer-edit-document", "list-toolbar", "date-rail",
@@ -295,6 +296,18 @@ for theme in THEMES:
         missing = set(REQUIRED).difference(manifest["coverage"].get(key, {}))
         assert not missing, ("visual inventory is incomplete", key, sorted(missing))
 manifest["screenshots"].sort()
+# Re-open and verify every written PNG rather than trusting a screenshot call
+# that could be interrupted or leave a zero-byte artifact.
+manifest["image_checksums"] = {}
+for name in manifest["screenshots"]:
+    data = (OUT / name).read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", ("invalid PNG", name)
+    assert len(data) >= 33 and data[12:16] == b"IHDR", ("truncated PNG", name)
+    w, h = struct.unpack(">II", data[16:24])
+    assert w > 0 and h > 0, ("invalid PNG dimensions", name, w, h)
+    manifest["image_checksums"][name] = {
+        "width": w, "height": h, "sha256": hashlib.sha256(data).hexdigest()
+    }
 (OUT / "manifest.json").write_text(
     json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print("visual audit complete:", len(manifest["screenshots"]), "PNG images")
