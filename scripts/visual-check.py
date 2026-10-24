@@ -79,6 +79,63 @@ with sync_playwright() as playwright:
                 assert page.locator(".ex-card").first.locator(".ex-chips .ex-tag").count() == 9
                 page.locator(".ex-card").first.locator(".ex-tag-collapse").click()
                 assert page.locator(".ex-card").first.locator(".ex-chips.ex-tags-expanded").count() == 0
+            # Flomo-style composer: one card surface, a distinct writing region and stable footer.
+            layout = page.evaluate("""() => {
+                const q = s => document.querySelector(s);
+                const r = s => q(s).getBoundingClientRect();
+                const c = r('.ex-composer'), b = r('.ex-compose-body'),
+                      t = r('.ex-compose-text'), f = r('.ex-compose-actions'),
+                      save = r('.ex-compose-actions > .ex-btn-primary'),
+                      tags = r('.ex-capture-options');
+                const styles = getComputedStyle(q('.ex-composer'));
+                return {
+                    top: c.top, bottom: c.bottom, textTop: t.top, bodyLeft: b.left,
+                    textLeft: t.left, footerTop: f.top, footerBottom: f.bottom,
+                    saveRight: save.right, innerRight: c.right - parseFloat(styles.paddingRight) - 1,
+                    tagsRight: tags.right, footerHeight: f.height, textHeight: t.height,
+                    paddingTop: parseFloat(styles.paddingTop),
+                    paddingLeft: parseFloat(styles.paddingLeft),
+                    paddingBottom: parseFloat(styles.paddingBottom),
+                    radius: styles.borderTopLeftRadius,
+                    placeholder: q('.ex-compose-text').placeholder,
+                    textareaBorder: getComputedStyle(q('.ex-compose-text')).borderWidth,
+                    textareaBg: getComputedStyle(q('.ex-compose-text')).backgroundColor
+                };
+            }""")
+            compact = page.locator(".excerpts-native-host").evaluate("(el) => el.clientWidth <= 700")
+            assert layout["placeholder"] == "现在想记录的是…", (theme,width,layout)
+            assert layout["radius"] == "12px", (theme,width,layout)
+            assert layout["textareaBorder"] == "0px", (theme,width,layout)
+            assert layout["textareaBg"] == "rgba(0, 0, 0, 0)", (theme,width,layout)
+            assert layout["paddingLeft"] == (16 if compact else 20), (theme,width,layout)
+            assert layout["paddingTop"] == (14 if compact else 16), (theme,width,layout)
+            assert layout["paddingBottom"] == (10 if compact else 12), (theme,width,layout)
+            assert layout["textHeight"] >= (78 if compact else 84), (theme,width,layout)
+            assert layout["footerHeight"] >= (44 if compact else 36), (theme,width,layout)
+            assert abs(layout["bodyLeft"] - layout["textLeft"]) < 1, (theme,width,layout)
+            assert layout["footerTop"] >= layout["textTop"] + layout["textHeight"], (theme,width,layout)
+            assert layout["saveRight"] <= layout["innerRight"]+1, (theme,width,layout)
+            assert layout["tagsRight"] <= layout["saveRight"], (theme,width,layout)
+
+            page.screenshot(path=str(root / "artifacts" / f"composer-idle-{theme}-{width}.png"), full_page=True)
+            # Even many tags cannot push the save button away or produce a second footer row.
+            page.locator(".ex-capture-tag-toggle").click()
+            for row in page.locator(".ex-capture-tags .ex-tag-choice").all():
+                if row.get_attribute("aria-selected") == "false":
+                    row.click()
+            page.wait_for_timeout(60)
+            assert page.locator(".ex-capture-selected .ex-capture-chip").count() >= 5
+            assert "×" not in page.locator(".ex-capture-selected").inner_text()
+            if compact:
+                assert page.locator(".ex-capture-overflow").is_visible(), (theme,width,"top tag +N")
+            footer_after = page.locator(".ex-compose-actions").bounding_box()
+            save_after = page.locator(".ex-compose-actions > .ex-btn-primary").bounding_box()
+            assert footer_after["height"] <= (46 if compact else 38), (theme,width,footer_after)
+            assert save_after["x"] + save_after["width"] <= layout["innerRight"]+1, (theme,width,save_after)
+            page.screenshot(path=str(root / "artifacts" / f"composer-{theme}-{width}.png"), full_page=True)
+            page.locator(".ex-compose-text").focus()
+            assert page.locator(".ex-capture-tags").evaluate("(el) => el.hidden")
+            assert page.locator(".ex-capture-selected").is_visible()
             page.screenshot(path=str(root / "artifacts" / f"feed-{theme}-{width}.png"), full_page=True)
 
             card = page.locator(".ex-card").first

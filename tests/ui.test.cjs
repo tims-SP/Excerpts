@@ -81,6 +81,51 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   clickByLabel(root,'搜索');assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   await t.close();
 });
+test('capture composer has a separate writing body, a single stable footer and flomo-oriented placeholder',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl;
+  const composer=root.querySelector('.ex-composer');
+  assert.ok(composer.querySelector('.ex-compose-body > .ex-compose-text'));
+  assert.equal(root.querySelector('.ex-compose-text').rows,3);
+  assert.equal(root.querySelector('.ex-compose-text').placeholder,'现在想记录的是…');
+  assert.equal(composer.children.length,3);
+  assert.equal(composer.children[0].className,'ex-compose-body');
+  assert.equal(composer.children[1].className,'ex-capture-tags');
+  assert.equal(composer.children[2].className,'ex-compose-actions');
+  const actions=composer.querySelector('.ex-compose-actions');
+  assert.equal(actions.children.length,2);
+  assert.equal(actions.children[0].className,'ex-capture-options');
+  assert.ok(actions.children[1].classList.contains('ex-btn-primary'));
+  const toggle=actions.querySelector('.ex-capture-tag-toggle');
+  assert.equal(toggle.textContent,'标签');
+  assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  await t.close();
+});
+
+test('capture chip opens picker to edit instead of deleting, and returning to body closes only panel',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'添加标签');
+  const row=[...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent==='哲学');
+  row.click();
+  const chip=root.querySelector('.ex-capture-selected .ex-capture-chip');
+  assert.ok(chip);assert.equal(chip.textContent,'#哲学');
+  assert.equal(chip.getAttribute('aria-label'),'编辑标签：哲学');
+  assert.equal(root.querySelector('.ex-capture-tag-toggle').textContent,'');
+  const priorChips=root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length;
+  clickByLabel(root,'添加标签');
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
+  chip.click();
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
+  root.querySelector('.ex-compose-text').dispatchEvent(new dom.window.Event('focus'));
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length,priorChips);
+  // Leave the session-scoped draft clean for following tests.
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent==='哲学').click();
+  await t.close();
+});
+
 test('quick composer saves normal Markdown with native tags and restores continuous writing',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const textarea=root.querySelector('.ex-compose-text');textarea.value='直接写入普通 Markdown';textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
@@ -91,7 +136,8 @@ test('quick composer saves normal Markdown with native tags and restores continu
   tagSearch.value='札记';tagSearch.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   const create=[...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent.includes('创建 #札记'));
   assert.ok(create);create.click();
-  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,2);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length,2);
+  assert.ok(!root.querySelector('.ex-capture-selected').textContent.includes('×'));
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
   const entries=[...t.files].filter(([path])=>path==='摘录/直接写入普通 Markdown.md');
@@ -182,13 +228,13 @@ test('quick tags toggle without comma parsing and persist only the selected chip
   clickByLabel(root,'添加标签');
   const tag=root.querySelector('.ex-capture-tags .ex-tag-choice');
   assert.ok(tag);tag.click();
-  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,1);
-  clickByLabel(root,'移除标签：哲学');
-  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,0);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length,1);
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent==='哲学').click();
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length,0);
   const input=root.querySelector('.ex-tags-input');
   input.value='灵感';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
-  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag-remove').length,1);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length,1);
   root.querySelector('.ex-compose-text').value='一段新摘录';root.querySelector('.ex-compose-text').dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
@@ -234,7 +280,8 @@ test('Escape cancels card tag edits while capture tag panel keeps its draft and 
   root.querySelector('.ex-tags-input').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,1);
-  clickByLabel(root,'移除标签：哲学');
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(row=>row.textContent==='哲学').click();
   await t.close();
 });
 
@@ -377,6 +424,6 @@ test('tag search clear only clears the query, not the picker or selected tags',a
   selected.click();
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,before+(active?-1:1));
   assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
-  if(!active) clickByLabel(root,'移除标签：哲学');
+  if(!active) [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(row=>row.textContent==='哲学').click();
   await t.close();
 });

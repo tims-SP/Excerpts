@@ -17,8 +17,18 @@ test('composer remains a single-surface textarea with theme-native focus and res
   assert.match(css,/border-radius:\s*0\s*!important/);
   assert.match(css,/background-image:\s*none\s*!important/);
   assert.match(css,/appearance:\s*none/);
-  assert.match(css,/min-height:\s*3\.3em/);
-  assert.match(css,/max-height:\s*min\(42vh,\s*340px\)/);
+  assert.match(css,/min-height:\s*84px; height: auto; max-height: 320px/);
+  assert.match(css,/min-height:\s*78px; max-height: min\(240px, 34dvh\)/);
+  assert.match(css,/--ex-compose-pad-x: 20px/);
+  assert.match(css,/--ex-compose-pad-top: 16px/);
+  assert.match(css,/--ex-compose-pad-bottom: 12px/);
+  assert.match(css,/--ex-compose-pad-x: 16px/);
+  assert.match(css,/--ex-compose-pad-top: 14px/);
+  assert.match(css,/--ex-compose-pad-bottom: 10px/);
+  assert.match(css,/\.ex-compose-body/);
+  assert.match(css,/\.ex-capture-overflow/);
+  assert.match(css,/\.ex-capture-tag-toggle/);
+  assert.doesNotMatch(css,/\.ex-capture-selected button\.ex-tag-remove/);
   assert.match(css,/--interactive-accent/);
 });
 
@@ -76,4 +86,21 @@ test('section and footer vertical rhythm is compact without shrinking touch cont
   assert.match(css,/\.excerpts-root \.ex-native-markdown p \{[^}]*var\(--ex-prose-gap/);
   assert.match(css,/\.excerpts-root \.ex-tag-editor\s*\{[^}]*padding:\s*var\(--ex-space-2\) 0 0; margin-top:\s*var\(--ex-space-3\)/);
   assert.match(css,/\.excerpts-root button\.ex-group-trigger\s*\{[^}]*min-height:\s*40px/);
+});
+
+test('flomo composer controls remain aligned, single-row and distinct from markdown cards',()=>{
+  const composer=css.match(/\.excerpts-root \.ex-composer \{([\s\S]*?)\}/)?.[1]||'';
+  const actions=css.match(/\.excerpts-root \.ex-compose-actions \{([\s\S]*?)\}/)?.[1]||'';
+  assert.match(composer,/border-radius: 12px/);
+  assert.match(composer,/background: var\(--background-primary\)/);
+  assert.match(composer,/padding: var\(--ex-compose-pad-top\) var\(--ex-compose-pad-x\) var\(--ex-compose-pad-bottom\)/);
+  assert.match(actions,/margin-top: 12px/);
+  assert.match(actions,/min-height: 36px/);
+  assert.match(css,/\.excerpts-root \.ex-capture-options \{[\s\S]*?flex-wrap: nowrap/);
+  assert.match(css,/\.excerpts-root \.ex-capture-selected \{[\s\S]*?overflow: hidden/);
+  assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?width: 64px/);
+  assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?border-radius: 8px/);
+  assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-suggestions \{ max-height: 192px/);
+  assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-search \{ background: var\(--background-secondary\)/);
+  assert.match(css,/@container \(max-width: 700px\)[\s\S]*?width: 72px/);
 });

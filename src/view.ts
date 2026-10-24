@@ -74,6 +74,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private expandedBodies = new Set<string>();
   private expandedTagRows = new Set<string>();
   private tagResizeObserver: ResizeObserver | null = null;
+  private reflowCaptureTags: () => void = () => {};
   private openTagEditors = new Set<string>();
   private pendingTags = new Set<string>();
   private disposed = false;
@@ -82,7 +83,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   onload(): void {
     this.build();
     if (typeof ResizeObserver !== "undefined") {
-      this.tagResizeObserver = new ResizeObserver(() => this.reflowVisibleTags());
+      this.tagResizeObserver = new ResizeObserver(() => {
+        this.reflowVisibleTags();
+        this.reflowCaptureTags();
+      });
       this.tagResizeObserver.observe(this.containerEl);
     }
     void this.reload();
@@ -117,9 +121,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // The outer composer is the only rounded surface; textarea has no native chrome.
     const form = node("section", "ex-composer");
     form.setAttribute("aria-label", "快速摘录");
+    const body = node("div", "ex-compose-body");
     const quote = node("textarea", "ex-compose-text");
-    quote.placeholder = "记录你想留下的文字……";
-    quote.rows = 2;
+    quote.placeholder = "现在想记录的是…";
+    quote.rows = 3;
     const priorDraft = composerDrafts.get(this.workspace.homePath);
     if (priorDraft) quote.value = priorDraft.text;
     quote.setAttribute("aria-label", "摘录正文");
@@ -130,7 +135,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     };
     quote.addEventListener("input", fit);
     quote.addEventListener("compositionend", fit);
-    quote.addEventListener("focus", () => { form.classList.add("ex-is-composing"); fit(); });
+    quote.addEventListener("focus", () => { form.classList.add("ex-is-composing"); fit();
+      if (!tagsPane.hidden) closeTagPanel(false);
+    });
 
     const tagsPane = node("div", "ex-capture-tags");
     tagsPane.hidden = true;
@@ -142,15 +149,78 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     };
     quote.addEventListener("input", persistDraft);
     const selectedChips = node("div", "ex-capture-selected");
+    const composeActions = node("div", "ex-compose-actions");
+    const options = node("div", "ex-capture-options");
+    const tagToggle = button("", () => {
+      if (saving) return;
+      if (tagsPane.hidden) openTagPanel();
+      else closeTagPanel(true);
+    }, "ex-capture-tag-toggle");
+    tagToggle.setAttribute("aria-label", "添加标签");
+    tagToggle.setAttribute("aria-expanded", "false");
+    const updateTagToggle = () => {
+      tagToggle.replaceChildren();
+      const icon = node("span", "ex-capture-toggle-icon");
+      setIcon(icon, selectedTags.size ? "plus" : "hash");
+      tagToggle.append(icon);
+      if (!selectedTags.size) tagToggle.append(node("span", "ex-capture-toggle-text", "标签"));
+    };
+    const openTagPanel = () => {
+      if (saving) return;
+      tagsPane.hidden = false;
+      tagToggle.setAttribute("aria-expanded", "true");
+      picker.focus();
+    };
+    const closeTagPanel = (restoreFocus: boolean) => {
+      tagsPane.hidden = true;
+      tagToggle.setAttribute("aria-expanded", "false");
+      if (restoreFocus) tagToggle.focus();
+    };
     const repaintSelected = () => {
       selectedChips.replaceChildren();
       for (const tag of selectedTags) {
-        const pill = button("#" + tag + " ×", () => toggleTag(tag, false), "ex-tag ex-tag-remove");
-        pill.setAttribute("aria-label", "移除标签：" + tag);
-        pill.replaceChildren(node("span", "ex-tag-label", "#" + tag + " ×"));
+        const pill = button("", openTagPanel, "ex-tag ex-capture-chip");
+        pill.setAttribute("aria-label", "编辑标签：" + tag);
+        pill.replaceChildren(node("span", "ex-tag-label", "#" + tag));
+        pill.title = "#" + tag;
         selectedChips.append(pill);
       }
+      if (selectedTags.size) {
+        const more = button("", openTagPanel, "ex-capture-overflow");
+        more.setAttribute("aria-label", "查看其余标签");
+        more.hidden = true;
+        selectedChips.append(more);
+      }
       selectedChips.hidden = !selectedTags.size;
+      updateTagToggle();
+      const schedule = () => {
+        if (typeof requestAnimationFrame === "function") requestAnimationFrame(this.reflowCaptureTags);
+        else setTimeout(this.reflowCaptureTags, 0);
+      };
+      schedule();
+    };
+    this.reflowCaptureTags = () => {
+      if (!selectedChips.isConnected || selectedChips.hidden || !selectedChips.clientWidth) return;
+      const chips = Array.from(selectedChips.querySelectorAll<HTMLButtonElement>(".ex-capture-chip"));
+      const more = selectedChips.querySelector<HTMLButtonElement>(".ex-capture-overflow");
+      if (!more) return;
+      chips.forEach(chip => { chip.hidden = false; });
+      more.hidden = true;
+      const width = selectedChips.clientWidth, gap = 5;
+      let used = 0, visible = 0;
+      for (let index = 0; index < chips.length; index++) {
+        const chipWidth = chips[index].getBoundingClientRect().width;
+        const reserve = index === chips.length - 1 ? 0 : 37;
+        if (used + (visible ? gap : 0) + chipWidth + (reserve ? gap + reserve : 0) > width) break;
+        used += (visible ? gap : 0) + chipWidth;
+        visible++;
+      }
+      chips.forEach((chip, i) => { chip.hidden = i >= visible; });
+      if (visible < chips.length) {
+        more.textContent = "+" + (chips.length - visible);
+        more.setAttribute("aria-label", "查看其余 " + (chips.length - visible) + " 个标签");
+        more.hidden = false;
+      }
     };
     const toggleTag = (tag: string, add: boolean) => {
       const value = tag.trim().replace(/^#/, "");
@@ -167,16 +237,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       persistDraft();
       this.showSuggestions();
     };
-    const tagToggle = iconButton("hash", "添加标签", () => {
-      if (saving) return;
-      tagsPane.hidden = !tagsPane.hidden;
-      tagToggle.setAttribute("aria-expanded", String(!tagsPane.hidden));
-      if (!tagsPane.hidden) picker.focus();
-      else tagToggle.focus();
-    });
-    tagToggle.setAttribute("aria-expanded", "false");
-    const composeActions = node("div", "ex-compose-actions");
-    const options = node("div", "ex-capture-options");
     options.append(selectedChips, tagToggle);
     const saveButton = button("保存", () => void save(), "ex-btn-primary mod-cta");
     saveButton.disabled = !quote.value.trim();
@@ -186,15 +246,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       available: () => this.items.flatMap(item => item.tags),
       selected: () => selectedTags,
       onToggle: toggleTag,
-      onEscape: () => {
-        tagsPane.hidden = true;
-        tagToggle.setAttribute("aria-expanded", "false");
-        tagToggle.focus();
-      }
+      onEscape: () => closeTagPanel(true)
     }, "ex-tags-input");
     const tagSearch = picker.input;
     tagsPane.append(picker.element);
-    form.append(quote, tagsPane, composeActions);
+    body.append(quote);
+    form.append(body, tagsPane, composeActions);
     root.append(form);
     let saving = false;
     let resume = false;
@@ -209,7 +266,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const markdown = quote.value.trim();
       if (!markdown) { new Notice("请输入摘录内容"); return; }
       saving = true;
-      quote.disabled = true; tagSearch.disabled = true; tagToggle.disabled = true; saveButton.disabled = true;
+      quote.disabled = true; picker.setDisabled(true); tagToggle.disabled = true; saveButton.disabled = true;
       selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = true; });
       saveButton.textContent = "保存中…";
       try {
@@ -218,15 +275,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         picker.refresh();
         repaintSelected();
         persistDraft();
-        tagsPane.hidden = true; fit();
-        tagToggle.setAttribute("aria-expanded", "false");
+        closeTagPanel(false); fit();
         form.classList.remove("ex-is-composing");
         await this.reload();
         if (resume) quote.focus();
       } catch (error) { notify(error); }
       finally {
         saving = false; resume = false;
-        quote.disabled = false; tagSearch.disabled = false; tagToggle.disabled = false;
+        quote.disabled = false; picker.setDisabled(false); tagToggle.disabled = false;
         saveButton.disabled = !quote.value.trim();
         selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = false; });
         saveButton.textContent = "保存";
