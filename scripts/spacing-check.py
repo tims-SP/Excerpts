@@ -87,7 +87,10 @@ with sync_playwright() as playwright:
             editor = card.locator(".ex-tag-editor")
             assert editor.is_visible()
             field = editor.locator(".ex-tag-custom")
-            assert 43 <= field.bounding_box()["height"] <= 48
+            search_surface = editor.locator(".ex-tag-search")
+            expected_height = 44 if width <= 480 else 40
+            assert abs(search_surface.bounding_box()["height"] - expected_height) <= 1, (theme,width,search_surface.bounding_box())
+            assert field.bounding_box()["height"] >= expected_height - 4, (theme,width,field.bounding_box())
             assert field.bounding_box()["y"] + field.bounding_box()["height"] <= card.locator(".ex-card-footer").bounding_box()["y"] + 1
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             print("OK", theme, width, "editor-and-footer", coords["cardLeft"])

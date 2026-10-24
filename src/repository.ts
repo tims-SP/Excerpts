@@ -28,10 +28,14 @@ export class EntryRepository {
     const all = getAllTags(cache ?? {}) ?? [];
     const inline = new Set((cache?.tags ?? []).map(tag => tag.tag.replace(/^#/, "")));
     const tags = [...new Set(all.map(tag => tag.replace(/^#/, "")))];
+    const rawFrontmatter = cache?.frontmatter?.tags;
+    const frontmatterTags = (Array.isArray(rawFrontmatter) ? rawFrontmatter.map(String) :
+      typeof rawFrontmatter === "string" ? rawFrontmatter.split(/[\s,]+/) : [])
+      .map(value => value.replace(/^#/, "").trim()).filter(Boolean);
     return {
       path: file.path, basename: file.basename,
       mtime: file.stat?.mtime ?? 0, ctime: file.stat?.ctime ?? 0,
-      size: file.stat?.size ?? 0, tags, inlineTags: [...inline]
+      size: file.stat?.size ?? 0, tags, inlineTags: [...inline], frontmatterTags
     };
   }
   private file(path: string): TFile {
@@ -136,20 +140,27 @@ export class EntryRepository {
   async readRaw(path: string): Promise<string> {
     return this.app.vault.cachedRead(this.file(path));
   }
-  async setTag(path: string, tag: string, add: boolean): Promise<void> {
+  /** Atomically replace only YAML tags; never rewrite inline #tags in the Markdown body. */
+  async setFrontmatterTags(path: string, tags: string[], expected: string[]): Promise<void> {
     const file = this.file(path);
-    const normalized = tag.replace(/^#/, "").trim();
-    if (!normalized || /\s/.test(normalized)) throw new Error("标签不能包含空格");
-    const current = this.indexFile(file);
-    if (!add && current.inlineTags.includes(normalized)) {
-      throw new Error("该标签位于 Markdown 正文中，请使用原生编辑器修改");
+    const normalized = new Map<string, string>();
+    for (const original of tags) {
+      const tag = original.trim().replace(/^#/, "");
+      if (!tag || /\s/.test(tag)) throw new Error("标签不能为空或包含空格");
+      const key = tag.toLocaleLowerCase();
+      if (!normalized.has(key)) normalized.set(key, tag);
     }
+    const names = [...normalized.values()];
+    const comparable = (list: string[]) => list.map(value => value.replace(/^#/, "").trim().toLocaleLowerCase())
+      .filter(Boolean).sort().join("\n");
     await this.app.fileManager.processFrontMatter(file, frontmatter => {
-      const existing = Array.isArray(frontmatter.tags) ? frontmatter.tags.map(String) :
-        typeof frontmatter.tags === "string" ? frontmatter.tags.split(/[,\s]+/) : [];
-      const next = new Set(existing.map((t: string) => t.replace(/^#/, "")).filter(Boolean));
-      if (add) next.add(normalized); else next.delete(normalized);
-      if (next.size) frontmatter.tags = [...next]; else delete frontmatter.tags;
+      const raw = frontmatter.tags;
+      const current = Array.isArray(raw) ? raw.map(String) :
+        typeof raw === "string" ? raw.split(/[\s,]+/) : [];
+      if (comparable(current) !== comparable(expected))
+        throw new Error("标签已被其他操作修改，请重新打开标签编辑器");
+      if (names.length) frontmatter.tags = names;
+      else delete frontmatter.tags;
     });
     this.invalidate(path);
   }

@@ -29,7 +29,9 @@ test('card actions and micro-pill labels belong to a non-overlay footer',()=>{
   assert.match(css,/font-size:\s*11px/);
   assert.match(css,/position:\s*static/);
   assert.match(css,/\.ex-chips\.ex-tags-editing/);
-  assert.match(css,/\.ex-tag-custom\s*\{\s*flex:\s*0 1 auto;/);
+  assert.match(css,/\.ex-tag-search/);
+  assert.match(css,/\.ex-tag-choice/);
+  assert.doesNotMatch(css,/button\.ex-tag-option/);
 });
 
 test('H2 chapters are independent disclosure rows, not pill-shaped buttons',()=>{
