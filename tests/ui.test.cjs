@@ -67,7 +67,10 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
   await pane.openFile(home);await wait();
-  return {files,plugin,pane,leaf,md,home,tagState,getTagWrites:()=>tagWrites,async close(){await pane.onUnloadFile(home);pane.contentEl.remove();}};
+  return {files,plugin,pane,leaf,md,home,tagState,getTagWrites:()=>tagWrites,async close(){
+    await pane.onUnloadFile(home);pane.contentEl.remove();
+    document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
+  }};
 }
 
 test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
@@ -541,6 +544,10 @@ test('saved query restores search UI; invalid or duplicate save names are blocke
 test('empty composer enters native Markdown and safely trashes an unchanged blank note after closing',async()=>{
   const t=await fixture();
   const root=t.pane.contentEl;
+  // Previous tests can leave a session draft; explicitly clear it for the blank-note case.
+  const textarea=root.querySelector('.ex-compose-text');
+  textarea.value='';
+  textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'编辑文档');
   await wait();
   const created=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
@@ -550,9 +557,7 @@ test('empty composer enters native Markdown and safely trashes an unchanged blan
   assert.equal(t.leaf.view.editor.focused,true);
   t.leaf.view=null;
   await t.plugin.cleanupClosedEditors();
-  assert.equal(t.files.has(created[0]),false,'blank new file moved to trash: '+
-    JSON.stringify({tracked:t.plugin.temporaryEditors.size,raw:t.files.get(created[0])?.data,
-      active:t.plugin.editorCleanupRunning,view:t.leaf.view,notice:Notice.last}));
+  assert.equal(t.files.has(created[0]),false,'blank new file moved to trash');
   await t.close();
 });
 
@@ -762,9 +767,7 @@ test('select all respects a tag filter and never includes out-of-scope Markdown'
   root.querySelector('.ex-delete-selected').click();
   const modal=document.querySelector('.ex-delete-modal');
   modal.querySelector('.ex-delete-submit').click();await wait();
-  assert.equal(t.files.has(t.md.path),false,'tag delete state: '+
-    JSON.stringify({modal:modal.textContent,notice:Notice.last,
-      selected:[...root.querySelectorAll('.ex-card.ex-is-selected')].map(x=>x.dataset.path)}));
+  assert.equal(t.files.has(t.md.path),false);
   assert.equal(t.files.has(unrelated.path),true);
   assert.equal(t.files.has(t.home.path),true);
   await t.close();
