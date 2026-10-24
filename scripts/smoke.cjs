@@ -43,7 +43,7 @@ async function main(){
   const plugin=new Excerpts();
   plugin.app={vault,metadataCache:{getFileCache(){return {frontmatter:{tags:['文学']},tags:[]};},on(){return {};}}
     ,fileManager:{async processFrontMatter(file,change){change({tags:[]});}}
-    ,workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
+    ,workspace:{getLeaf(){return leaf;},getLeavesOfType(){return [];},on(){return {};},async revealLeaf(){}}};
   await plugin.onload();
   assert.deepEqual(plugin.extensions,{exts:['excerpts'],type:'excerpts-home-file'});
   assert.equal(plugin.ribbon.title,'打开摘录首页');
@@ -60,21 +60,23 @@ async function main(){
   assert.equal(plugin.repo.list(ws).length,2);
   const parsed=await plugin.repo.read('资料/摘录/自然.md');
   assert.equal(parsed.title,'自然');assert.equal(parsed.sections[0].name,'批注');
-  const created=await plugin.repo.create(ws,'新记录', ['哲学']);
+  const created=await plugin.repo.create(ws,'# 新记录', ['哲学']);
   assert.equal(created.path,'资料/摘录/新记录.md');
   assert.match(files.get(created.path).data,/tags:\n  - "哲学"/);
   assert.match(files.get(created.path).data,/新记录/);
   assert.equal(files.get('资料/摘录/自然.md').data,'# 自然\n\n普通 Markdown\n\n## 批注\n\n我的想法');
+  const untitled=await plugin.repo.create(ws,'普通摘录，无明确 H1');
+  assert.match(untitled.path,/^资料\/摘录\/摘录 \d{4}-\d\d-\d\d \d\d-\d\d\.md$/);
   // Same-text duplicates, case variants and parallel saves must create distinct files.
-  const same=await plugin.repo.create(ws,'新记录');
+  const same=await plugin.repo.create(ws,'# 新记录');
   assert.equal(same.path,'资料/摘录/新记录-2.md');
   await vault.create('资料/摘录/HELLO.md','existing');
-  const caseConflict=await plugin.repo.create(ws,'hello');
+  const caseConflict=await plugin.repo.create(ws,'# hello');
   assert.equal(caseConflict.path,'资料/摘录/hello-2.md');
   await vault.create('资料/摘录/Cafe\u0301.md','existing NFD name');
   const normalizedConflict=await plugin.repo.create(ws,'# Café');
   assert.equal(normalizedConflict.path,'资料/摘录/Café-2.md');
-  const many=await Promise.all([plugin.repo.create(ws,'并发摘录'),plugin.repo.create(ws,'并发摘录')]);
+  const many=await Promise.all([plugin.repo.create(ws,'# 并发摘录'),plugin.repo.create(ws,'# 并发摘录')]);
   assert.deepEqual(many.map(x=>x.path).sort(),['资料/摘录/并发摘录-2.md','资料/摘录/并发摘录.md'].sort());
   // Simulate an external writer winning the create race.
   const normalCreate=vault.create;
@@ -87,7 +89,7 @@ async function main(){
     }
     return normalCreate.call(this,path,data);
   };
-  const retried=await plugin.repo.create(ws,'竞态');
+  const retried=await plugin.repo.create(ws,'# 竞态');
   assert.equal(retried.path,'资料/摘录/竞态-2.md');
   assert.equal(files.get('资料/摘录/竞态.md').data,'created externally');
   vault.create=normalCreate;
@@ -100,7 +102,7 @@ async function main(){
     }
     return normalCreate.call(this,path,data);
   };
-  const delayed=await plugin.repo.create(ws,'延迟同步');
+  const delayed=await plugin.repo.create(ws,'# 延迟同步');
   assert.equal(delayed.path,'资料/摘录/延迟同步-2.md');
   vault.create=normalCreate;
   // Propagate unrelated errors, do not silently retry them as conflicts.
@@ -108,7 +110,7 @@ async function main(){
     if(path==='资料/摘录/写入失败.md')throw Error('permission denied');
     return normalCreate.call(this,path,data);
   };
-  await assert.rejects(plugin.repo.create(ws,'写入失败'),/permission denied/);
+  await assert.rejects(plugin.repo.create(ws,'# 写入失败'),/permission denied/);
   vault.create=normalCreate;
   plugin.ribbon.action(); await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(opened,[home.path]);
