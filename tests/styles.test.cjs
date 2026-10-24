@@ -178,3 +178,13 @@ test('delete confirmation has theme-native responsive sizing and safe focus',()=
   assert.match(css,/\.ex-delete-submit:disabled/);
   assert.match(css,/\.ex-delete-modal :is\(button\):focus-visible/);
 });
+
+test('loading feedback is scoped to the current operation and exposes real progress',()=>{
+  assert.match(css,/\.excerpts-root\.ex-is-selecting-busy \.ex-selection-count::before/);
+  assert.match(css,/\.ex-delete-modal \.ex-delete-spinner svg/);
+  assert.match(css,/\.ex-delete-modal \.ex-delete-progress\s*\{/);
+  assert.match(css,/\.ex-delete-modal \.ex-delete-progress\[hidden\]/);
+  assert.match(css,/\.ex-delete-modal progress\.ex-delete-progress-bar/);
+  assert.match(css,/@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css,/@keyframes ex-delete-spin/);
+});
