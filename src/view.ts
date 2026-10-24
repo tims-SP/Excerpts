@@ -91,6 +91,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderToken = 0;
   private timeline: VirtualTimeline | null = null;
   private itemByPath = new Map<string, CardIndex>();
+  private availableTags: string[] = [];
   private observer: IntersectionObserver | null = null;
   private mediaObserver: IntersectionObserver | null = null;
   private queue: Array<{ path: string; task: () => Promise<void> }> = [];
@@ -191,6 +192,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         ? "文件夹位置已变化，请从文件夹右键菜单重新打开摘录"
         : "摘录页位置已变化，请从文件列表重新打开";
     if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
+    if (this.plugin.isNavigating()) return "正在打开摘录页，请完成后再操作";
     if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
     if (this.saveBusy) return "正在保存，请完成后再操作";
     if (this.deleteBusy) return "正在删除，请完成后再操作";
@@ -230,6 +232,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed) return "页面已关闭";
     if (this.homeInvalid) return "摘录页已失效，请重新打开";
     if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
+    if (this.plugin.isNavigating()) return "正在打开摘录页，请完成后再操作";
     if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
     if (this.saveBusy) return "正在保存，请完成后再操作";
     if (this.deleteBusy) return "正在删除，请完成后再操作";
@@ -242,7 +245,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return Boolean(this.searchText) &&
       (!this.searchReady || this.scanStatus === "stale" || this.scanStatus === "error") &&
       !this.disposed && !this.homeInvalid && this.scanStatus !== "scanning" &&
-      !this.plugin.isBusy(this) && !this.saveBusy && !this.deleteBusy &&
+      !this.plugin.isBusy(this) && !this.plugin.isNavigating() && !this.saveBusy && !this.deleteBusy &&
       this.selectionMode === "normal" && !this.pendingTags.size && !this.openTagEditors.size;
   }
   private updateAvailability(broadcast = true): void {
@@ -514,7 +517,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         new Notice("标签不能为空或包含空格");
         return;
       }
-      const canonical = [...new Set([...this.items.flatMap(item => item.tags), ...selectedTags])]
+      const canonical = [...this.availableTags, ...selectedTags]
         .find(t => t.toLocaleLowerCase() === value.toLocaleLowerCase()) ?? value;
       if (add) selectedTags.add(canonical);
       else selectedTags.delete(canonical);
@@ -542,7 +545,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     quote.addEventListener("input", () => { if (!saving) this.updateComposerControls(); });
     composeActions.append(options, editorButton, saveButton);
     const picker = new TagPicker({
-      available: () => this.items.flatMap(item => item.tags),
+      available: () => this.availableTags,
       selected: () => selectedTags,
       onToggle: toggleTag,
       onEscape: () => closeTagPanel(true)
@@ -884,7 +887,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectedFooterCountEl.textContent = this.selectionBusy ?
       "正在选择…" : "已选择 " + chosen + " 条";
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
-    this.selectionAllButton.disabled = this.homeInvalid || this.deleteBusy || this.selectionBusy || total === 0;
+    this.selectionAllButton.disabled = this.homeInvalid || this.scanStatus !== "done" ||
+      this.deleteBusy || this.selectionBusy || total === 0;
     this.selectionDoneButton.disabled = this.deleteBusy || this.selectionBusy;
     const cancel = this.selectionFooterEl.querySelector<HTMLButtonElement>(".ex-select-cancel");
     if (cancel) cancel.disabled = this.deleteBusy || this.selectionBusy;
@@ -904,7 +908,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateSelectionControls();
   }
   private toggleSelection(path: string): void {
-    if (this.homeInvalid || this.selectionMode !== "selecting" || this.selectionBusy || !this.selectionScope.has(path)) return;
+    if (this.homeInvalid || this.scanStatus !== "done" ||
+        this.selectionMode !== "selecting" || this.selectionBusy || !this.selectionScope.has(path)) return;
     if (this.selectedPaths.has(path)) {
       this.selectedPaths.delete(path);
       this.selectedCandidates.delete(path);
@@ -916,6 +921,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.selectedCandidates.delete(path);
         this.items = this.items.filter(item => item.path !== path);
         this.matches?.delete(path);
+        this.rebuildAvailableTags();
         this.showSuggestions();
         this.renderTagsFilter();
         this.drawCards("anchor");
@@ -932,7 +938,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateSelectionControls();
   }
   private async toggleSelectAll(): Promise<void> {
-    if (this.homeInvalid || this.selectionMode !== "selecting" || this.selectionBusy || this.deleteBusy) return;
+    if (this.homeInvalid || this.scanStatus !== "done" ||
+        this.selectionMode !== "selecting" || this.selectionBusy || this.deleteBusy) return;
     const allSelected = this.selectedPaths.size === this.selectionScope.size;
     this.selectedPaths.clear(); this.selectedCandidates.clear();
     if (allSelected) {
@@ -947,7 +954,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.selectionBusy) this.updateSelectionControls();
     try {
       for (let start = 0; start < paths.length; start += 200) {
-        if (this.disposed || this.selectionMode !== "selecting") return;
+        if (this.disposed || this.scanStatus !== "done" || this.selectionMode !== "selecting") return;
         for (const path of paths.slice(start, start + 200)) {
           if (!this.selectionScope.has(path)) continue;
           const snapshot = this.repo.snapshotForDelete(path, this.workspace);
@@ -973,6 +980,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         if (prunedPaths.size) {
           this.items = this.items.filter(item => !prunedPaths.has(item.path));
           for (const path of prunedPaths) this.matches?.delete(path);
+          this.rebuildAvailableTags();
           this.showSuggestions();
           this.renderTagsFilter();
           this.drawCards("anchor");
@@ -1006,7 +1014,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private async performDeletion(candidates: readonly DeleteCandidate[], bulk: boolean,
     onProgress: (progress: DeleteProgress) => void): Promise<DeleteOutcome> {
-    if (this.deleteBusy || this.scanStatus !== "done" || this.plugin.isBusy(this))
+    if (this.deleteBusy || this.scanStatus !== "done" ||
+        this.plugin.isBusy(this) || this.plugin.isNavigating())
       throw new Error("当前操作未完成，请先结束后再删除");
     this.deleteBusy = true;
     if (bulk) this.selectionMode = "deleting";
@@ -1032,6 +1041,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
       }
       this.items = this.items.filter(item => !removed.has(item.path));
+      if (removed.size) this.rebuildAvailableTags();
       if (result.deleted.length) this.markStale();
       this.drawCards("anchor");
       this.updateSelectionUI();
@@ -1091,6 +1101,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
       this.itemByPath = new Map(cards.map(card => [card.path, card]));
+      this.rebuildAvailableTags();
       this.lastScanCount = cards.length;
       this.scanStatus = this.scanDirty ? "stale" : "done";
       this.showSuggestions();
@@ -1164,16 +1175,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       (!this.searchText || (this.matches !== null && this.matches.has(item.path)))
     );
   }
+  /** One in-memory tag list per committed index; do not sort every keystroke. */
+  private rebuildAvailableTags(): void {
+    this.availableTags = [...new Set(this.items.flatMap(item => item.tags))]
+      .sort((a, b) => a.localeCompare(b, "zh"));
+  }
   private renderTagsFilter(): void {
     this.tagBar.replaceChildren();
     this.tagBar.hidden = !this.filterOpen && !this.tagFilter;
     this.filterButton.setAttribute("aria-expanded", String(!this.tagBar.hidden));
-    this.filterButton.disabled = !this.items.some(item => item.tags.length) && !this.tagFilter;
+    this.filterButton.disabled = !this.availableTags.length && !this.tagFilter;
     if (this.tagBar.hidden) return;
     const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards("top"); },
       this.tagFilter ? "ex-btn-quiet" : "ex-selected");
     this.tagBar.append(all);
-    const tags = [...new Set(this.items.flatMap(item => item.tags))].sort((a,b) => a.localeCompare(b, "zh"));
+    const tags = this.availableTags;
     const limit = 8;
     for (const tag of tags.slice(0, limit)) this.tagBar.append(button("#" + tag, () => {
       if (!this.guard("filter")) return;
@@ -1184,10 +1200,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const more = button("更多标签 · " + (tags.length-limit), () => {
         if (!this.guard("filter")) return;
         const menu = new Menu();
-        for (const tag of tags.slice(limit)) menu.addItem(item => item.setTitle("#" + tag).onClick(() => {
+        for (const tag of tags.slice(limit, limit + 40)) menu.addItem(item => item.setTitle("#" + tag).onClick(() => {
           if (!this.guard("filter")) return;
           this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("top");
         }));
+        if (tags.length > limit + 40) menu.addItem(item =>
+          item.setTitle("其余 " + (tags.length - limit - 40) + " 个标签，请使用搜索").setDisabled(true));
         const rect = more.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet");
       this.tagBar.append(more);
@@ -1781,7 +1799,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const done = button("完成", () => void commit(), "ex-tag-done");
     controls.append(cancel, done);
     const picker = new TagPicker({
-      available: () => this.items.flatMap(entry => entry.tags),
+      available: () => this.availableTags,
       selected: () => selected,
       readonlyTags: () => new Set(item.inlineTags),
       onToggle: (tag, add) => {
@@ -1811,6 +1829,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         item.frontmatterTags = [...selected];
         item.tags = [...new Set([...selected, ...item.inlineTags])];
         this.closeTagEditor(item, card);
+        this.rebuildAvailableTags();
         this.showSuggestions(); this.renderTagsFilter();
         this.markStale(item.path);
       } catch (error) {

@@ -178,6 +178,7 @@ export default class ExcerptsPlugin extends Plugin {
           root.startsWith(path + "/")) child.markStale();
     }
   }
+  isNavigating(): boolean { return this.homeNavigationBusy; }
   canOpenHome(): boolean { return !this.homeNavigationBusy && !this.isBusy(); }
   /** Start creation synchronously. The token is the sole authority to release the lock. */
   private tryBeginHomeCreation(): symbol | null {
