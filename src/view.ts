@@ -75,7 +75,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private expandedTagRows = new Set<string>();
   private tagResizeObserver: ResizeObserver | null = null;
   private openTagEditors = new Set<string>();
-  private tagDrafts = new Map<string, { selected: Set<string>; original: string[]; picker: TagPicker; saving: boolean }>();
   private pendingTags = new Set<string>();
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
@@ -621,7 +620,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
 
   private closeTagEditor(item: CardIndex, card: HTMLElement | null | undefined): void {
     this.openTagEditors.delete(item.path);
-    this.tagDrafts.delete(item.path);
     const editor = card?.querySelector<HTMLElement>(".ex-tag-editor");
     if (editor) { editor.hidden = true; editor.replaceChildren(); }
     const mount = card?.querySelector<HTMLElement>(".ex-chips");
@@ -660,7 +658,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       },
       onEscape: () => { if (!this.pendingTags.has(item.path)) this.closeTagEditor(item, card); }
     });
-    this.tagDrafts.set(item.path, { selected, original, picker, saving: false });
     const inlineInfo = item.inlineTags.length
       ? node("div", "ex-tag-inline-hint", "正文标签仅能在 Markdown 原文中修改。") : null;
     if (inlineInfo) {
