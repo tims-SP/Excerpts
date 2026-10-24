@@ -337,3 +337,41 @@ test('empty capture is disabled and an unsaved draft survives reopening the home
   assert.equal(t.pane.contentEl.querySelector('.ex-compose-text').value,'重新打开后仍然存在的摘录');
   await t.close();
 });
+
+test('unchanged Done closes card editor without writing YAML',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  card.querySelector('.ex-tag-done').click();
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(t.getTagWrites(),0);
+  await t.close();
+});
+test('stale frontmatter refuses save and retains draft picker for retry or cancel',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  input.value='新词';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...card.querySelectorAll('.ex-tag-choice')].find(b=>b.textContent.includes('创建 #新词')).click();
+  t.tagState.set(t.md.path,['另一个编辑器']);
+  card.querySelector('.ex-tag-done').click();await wait();
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
+  assert.equal(card.querySelector('.ex-tag-custom'),input);
+  assert.deepEqual(t.tagState.get(t.md.path),['另一个编辑器']);
+  assert.ok(card.querySelector('.ex-tag-choice'));
+  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  await t.close();
+});
+test('tag search clear only clears the query, not the picker or selected tags',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'添加标签');
+  const input=root.querySelector('.ex-tags-input');
+  input.value='文学';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'清空标签搜索');
+  assert.equal(input.value,'');
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
+  const selected=[...root.querySelectorAll('.ex-tag-choice')].find(b=>b.textContent==='哲学');
+  selected.click();
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,1);
+  await t.close();
+});
