@@ -22,7 +22,7 @@ test('composer remains a single-surface textarea with theme-native focus and res
   assert.match(css,/--ex-compose-pad-x: 20px/);
   assert.match(css,/--ex-compose-pad-top: 16px/);
   assert.match(css,/--ex-compose-pad-bottom: 12px/);
-  assert.match(css,/--ex-compose-pad-x: 16px/);
+  assert.match(css,/--ex-compose-pad-x: 14px/);
   assert.match(css,/--ex-compose-pad-top: 14px/);
   assert.match(css,/--ex-compose-pad-bottom: 10px/);
   assert.match(css,/\.ex-compose-body/);
@@ -74,7 +74,7 @@ test('card spacing is optically balanced rather than uniformly padded',()=>{
   assert.match(card,/--ex-card-pad-bottom:\s*12px/);
   assert.match(card,/--ex-prose-gap:\s*10px/);
   assert.match(card,/padding:\s*var\(--ex-card-pad\) var\(--ex-card-pad\) var\(--ex-card-pad-bottom\)/);
-  assert.match(css,/--ex-card-pad:\s*16px/);
+  assert.match(css,/--ex-card-pad:\s*14px/);
   assert.match(css,/--ex-card-pad-bottom:\s*10px/);
   assert.match(css,/\.excerpts-root \.ex-chips\s*\{[^}]*min-height:\s*36px/);
   assert.match(css,/@media \(pointer: coarse\)\s*\{[\s\S]*?\.excerpts-root \.ex-chips \{ min-height: 44px; \}/);
@@ -103,4 +103,17 @@ test('flomo composer controls remain aligned, single-row and distinct from markd
   assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-suggestions \{ max-height: 192px/);
   assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-search \{ background: var\(--background-secondary\)/);
   assert.match(css,/@container \(max-width: 700px\)[\s\S]*?width: 72px/);
+});
+
+test('mobile feed gutters are 8/12px, with 14px card insets and no extra host padding',()=>{
+  const narrow=css.split('@container (max-width: 700px) {')[1]?.split('@container (max-width: 400px) {')[0]||'';
+  const compact=css.split('@container (max-width: 400px) {')[1]?.split('@media (pointer: coarse)')[0]||'';
+  assert.match(css,/\.is-mobile \.excerpts-native-host \{ padding-inline: 0; \}/);
+  assert.match(css,/padding: var\(--ex-space-5\) var\(--ex-space-5\) 64px/); // Desktop remains at 24px.
+  assert.match(narrow,/\.excerpts-root \{ padding: var\(--ex-space-4\) 12px 56px; \}/);
+  assert.match(compact,/\.excerpts-root \{ padding: var\(--ex-space-3\) 8px 48px; \}/);
+  assert.match(narrow,/--ex-compose-pad-x: 14px/);
+  assert.match(narrow,/--ex-card-pad: 14px/);
+  assert.match(narrow,/\.excerpts-root \.ex-day-rail \{ padding: 0;/);
+  assert.doesNotMatch(compact,/--ex-card-pad:/); // Inherit the 14px inset below 400px.
 });
