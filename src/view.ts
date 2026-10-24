@@ -574,7 +574,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const path of [...this.openTagEditors]) {
       const item = this.items.find(card => card.path === path);
       if (!item) continue;
-      const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+      const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
         .find(element => element.dataset.path === path);
       this.closeTagEditor(item, card);
     }
@@ -637,7 +637,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (ordinary) ordinary.hidden = active;
     this.selectionToolbarEl.hidden = !active;
     this.selectionFooterEl.hidden = !active;
-    for (const card of this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+    for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")))
       this.paintCardSelection(card, card.dataset.path ?? "");
     this.updateSelectionControls();
   }
@@ -652,7 +652,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.selectedPaths.add(path);
       this.selectedCandidates.set(path, snapshot);
     }
-    const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+    const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
       .find(element => element.dataset.path === path);
     if (card) this.paintCardSelection(card, path);
     this.updateSelectionControls();
@@ -711,7 +711,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     onProgress: (progress: DeleteProgress) => void): Promise<DeleteOutcome> {
     if (this.deleteBusy) throw new Error("另一项删除任务仍在进行");
     this.deleteBusy = true;
-    if (this.refreshTimer) { clearTimeout(this.refreshTimer); this.refreshTimer = null; }
+    // A deletion supersedes any in-flight index scan.
+    this.refreshToken++;
+    if (this.scanRevealTimer) { clearTimeout(this.scanRevealTimer); this.scanRevealTimer = null; }
+    this.scanVisible = false;
+    this.scanStatus = this.lastScanCount === null ? "idle" : "done";
+    this.renderScanStatus();
     this.searchToken++; // Discard a pending search that could restore deleted paths.
     if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
     if (bulk) this.selectionMode = "deleting";
