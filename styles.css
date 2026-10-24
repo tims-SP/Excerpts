@@ -60,43 +60,92 @@
 }
 .excerpts-root button.ex-btn-primary:hover { background: var(--interactive-accent-hover); color: var(--text-on-accent); }
 
-/* The composer is ALWAYS directly editable; only its tag suggestions disclose. */
+/* Flomo-inspired capture card: one quiet outer surface with generous editable space.
+ * Everything inside uses the same text baseline; footer controls stay at the bottom. */
 .excerpts-root .ex-composer {
-  display: block; margin-bottom: var(--ex-space-6);
-  padding: var(--ex-space-3) var(--ex-space-4);
-  background: var(--ex-input-surface); border: 1px solid var(--ex-border);
-  border-radius: var(--ex-radius); box-shadow: none;
+  --ex-compose-pad-x: 20px;
+  --ex-compose-pad-top: 16px;
+  --ex-compose-pad-bottom: 12px;
+  display: flex; flex-direction: column; min-width: 0;
+  margin-bottom: 28px;
+  padding: var(--ex-compose-pad-top) var(--ex-compose-pad-x) var(--ex-compose-pad-bottom);
+  background: var(--background-primary); border: 1px solid var(--ex-border);
+  border-radius: 12px; box-shadow: none;
   transition: border-color 140ms ease;
 }
+.excerpts-root .ex-composer:hover { border-color: var(--background-modifier-border-hover, var(--ex-border)); }
 .excerpts-root .ex-composer:focus-within {
   border-color: var(--background-modifier-border-focus, var(--interactive-accent));
 }
+.excerpts-root .ex-compose-body { display: block; width: 100%; min-width: 0; }
 .excerpts-root .ex-composer textarea.ex-compose-text,
 .excerpts-root .ex-composer textarea.ex-compose-text:is(:hover, :focus, :focus-visible) {
   display: block; width: 100%; min-width: 0; max-width: 100%;
-  min-height: 3.3em; height: auto; max-height: min(42vh, 340px);
+  min-height: 84px; height: auto; max-height: 320px;
   margin: 0; padding: 0; border: 0 !important; border-radius: 0 !important;
   background: transparent !important; background-image: none !important;
   box-shadow: none !important; outline: none !important;
   appearance: none; -webkit-appearance: none;
   color: var(--text-normal); -webkit-text-fill-color: var(--text-normal);
   font-family: var(--font-text, var(--font-interface));
-  font-size: var(--font-text-size, 16px); line-height: 1.65;
+  font-size: var(--font-text-size, 16px); font-weight: 400;
+  line-height: 1.65; letter-spacing: inherit; text-align: left;
   resize: none; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere;
 }
 .excerpts-root .ex-composer textarea.ex-compose-text::placeholder { color: var(--text-muted); opacity: 1; }
 .excerpts-root .ex-compose-actions {
-  min-height: 40px; gap: var(--ex-space-2); padding-top: var(--ex-space-2);
-  align-items: flex-end;
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 36px; margin-top: 12px; padding: 0; gap: 12px;
 }
-.excerpts-root .ex-compose-actions > .ex-btn-primary { flex-shrink: 0; }
-.excerpts-root .ex-capture-options { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-.excerpts-root .ex-capture-selected { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-.excerpts-root .ex-capture-selected[hidden], .excerpts-root .ex-capture-selected:empty { display: none; }
+.excerpts-root .ex-capture-options {
+  display: flex; flex: 1 1 auto; min-width: 0; max-width: 100%;
+  align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 5px;
+}
+.excerpts-root .ex-capture-selected {
+  display: flex; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 36px);
+  height: 36px; align-items: center; flex-wrap: nowrap; gap: 5px; overflow: hidden;
+}
+.excerpts-root .ex-capture-selected[hidden],
+.excerpts-root .ex-capture-selected:empty,
+.excerpts-root .ex-capture-selected .ex-btn[hidden] { display: none !important; }
+.excerpts-root button.ex-capture-tag-toggle {
+  display: inline-flex; align-items: center; flex: 0 0 auto; justify-content: center;
+  gap: 5px; min-width: 32px; min-height: 36px; padding: 0 6px;
+  border-radius: var(--radius-m, 8px); background: transparent;
+  color: var(--text-muted); font-size: 12px; font-weight: 400;
+}
+.excerpts-root button.ex-capture-tag-toggle:hover,
+.excerpts-root button.ex-capture-tag-toggle[aria-expanded="true"] {
+  color: var(--text-normal); background: var(--background-modifier-hover);
+}
+.excerpts-root .ex-capture-toggle-icon {
+  display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center;
+}
+.excerpts-root .ex-capture-toggle-icon svg { width: 16px; height: 16px; }
+.excerpts-root button.ex-capture-overflow {
+  flex: 0 0 auto; min-height: 32px; padding: 0 5px;
+  background: transparent; color: var(--text-muted); border-radius: var(--radius-m, 8px);
+  font-size: 11px; font-weight: 400;
+}
+.excerpts-root .ex-compose-actions > button.ex-btn-primary {
+  flex: 0 0 auto; width: 64px; min-width: 64px; min-height: 36px;
+  padding: 0 12px; border-radius: 8px; border: 0; box-shadow: none;
+  font-size: 13px; font-weight: 500;
+}
+.excerpts-root .ex-compose-actions > button.ex-btn-primary:disabled {
+  color: var(--text-muted); background: var(--background-modifier-hover); opacity: 1;
+}
+.excerpts-root .ex-compose-actions > button.ex-btn-primary:hover:not(:disabled) {
+  color: var(--text-on-accent); background: var(--interactive-accent-hover);
+}
 .excerpts-root .ex-capture-tags {
-  display: flex; flex-direction: column; gap: var(--ex-space-2);
-  padding: var(--ex-space-3) 0 var(--ex-space-2); min-width: 0;
+  display: flex; flex-direction: column; min-width: 0;
+  padding: 12px 0 0; margin-top: 12px;
+  border-top: 1px solid var(--ex-border);
 }
+.excerpts-root .ex-composer .ex-tag-picker { gap: 8px; }
+.excerpts-root .ex-composer .ex-tag-suggestions { max-height: 192px; }
+.excerpts-root .ex-composer .ex-tag-search { background: var(--background-secondary); }
 .excerpts-root .ex-capture-tags[hidden],
 .excerpts-root .ex-search-wrap[hidden],
 .excerpts-root .ex-filter-tags[hidden],
@@ -323,7 +372,13 @@
 .excerpts-root .ex-card-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .excerpts-root button.ex-card-options { position: static; margin: 0; color: var(--text-muted); }
 .excerpts-root button.ex-tag-remove { color: var(--text-normal); }
-.excerpts-root .ex-capture-selected button.ex-tag::before { background: var(--background-secondary); }
+.excerpts-root .ex-capture-selected button.ex-tag {
+  min-height: 32px; height: 32px; max-width: min(140px, 70%);
+  font-size: 11px; padding-inline: 7px;
+}
+.excerpts-root .ex-capture-selected button.ex-tag::before {
+  background: var(--background-secondary); height: 22px;
+}
 
 /* System feedback / pagination. */
 .excerpts-root .ex-empty { padding: 44px 16px; text-align: center; color: var(--text-muted); }
@@ -337,6 +392,24 @@
 }
 @container (max-width: 700px) {
   .excerpts-root { padding: var(--ex-space-4) var(--ex-space-4) 56px; }
+  .excerpts-root .ex-composer {
+    --ex-compose-pad-x: 16px; --ex-compose-pad-top: 14px;
+    --ex-compose-pad-bottom: 10px; margin-bottom: 24px;
+  }
+  .excerpts-root .ex-composer textarea.ex-compose-text {
+    min-height: 78px; max-height: min(240px, 34dvh);
+    font-size: max(16px, var(--font-text-size, 16px));
+  }
+  .excerpts-root .ex-compose-actions { min-height: 44px; margin-top: 10px; gap: 10px; }
+  .excerpts-root .ex-capture-options { min-height: 44px; }
+  .excerpts-root .ex-capture-selected { height: 44px; }
+  .excerpts-root .ex-capture-tags { margin-top: 10px; padding-top: 10px; }
+  .excerpts-root .ex-composer .ex-tag-suggestions { max-height: 176px; }
+  .excerpts-root .ex-compose-actions > button.ex-btn-primary {
+    width: 72px; min-width: 72px; min-height: 44px;
+  }
+  .excerpts-root button.ex-capture-tag-toggle { min-height: 44px; }
+  .excerpts-root button.ex-capture-overflow { min-height: 44px; }
   .excerpts-root .ex-header,
   .excerpts-root .ex-composer,
   .excerpts-root .ex-toolbar,
@@ -355,7 +428,7 @@
 @container (max-width: 400px) {
   .excerpts-root { padding: var(--ex-space-3) var(--ex-space-4) 48px; }
   .excerpts-root .ex-card-footer { gap: var(--ex-space-2); }
-  .excerpts-root .ex-composer { margin-bottom: var(--ex-space-5); }
+  .excerpts-root .ex-composer { margin-bottom: 24px; }
 }
 @media (pointer: coarse) {
   .excerpts-root button.ex-icon-button,
@@ -365,6 +438,7 @@
   .excerpts-root button.ex-tag-overflow,
   .excerpts-root button.ex-tag { min-height: 44px; }
   .excerpts-root button.ex-icon-button { width: 44px; height: 44px; padding: 12px; }
+  .excerpts-root .ex-capture-selected button.ex-tag { min-height: 44px; height: 44px; }
   .excerpts-root .ex-chips { min-height: 44px; }
   .excerpts-root button.ex-tag { height: 44px; }
   .excerpts-root .ex-tag-choice { min-height: 44px; }
