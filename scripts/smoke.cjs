@@ -57,7 +57,8 @@ async function main(){
   const ws=plugin.workspaceForHome(home);
   await vault.create('资料/摘录/自然.md','# 自然\n\n普通 Markdown\n\n## 批注\n\n我的想法');
   await vault.create('资料/摘录/子目录.md','普通摘录');
-  assert.equal(plugin.repo.list(ws).length,2);
+  const scanned=await plugin.repo.scan(ws,plugin.settings.scanBatchSize,()=>{},()=>false);
+  assert.equal(scanned.length,2);
   const parsed=await plugin.repo.read('资料/摘录/自然.md');
   assert.equal(parsed.title,'自然');assert.equal(parsed.sections[0].name,'批注');
   const created=await plugin.repo.create(ws,'# 新记录', ['哲学']);
