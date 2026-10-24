@@ -1,4 +1,4 @@
-import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, setIcon } from "obsidian";
+import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { findSectionHeadingLine } from "./codec";
 import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
@@ -244,13 +244,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else selectedTags.delete(canonical);
       repaintSelected();
       persistDraft();
+      retryOpenPath = null;
       this.showSuggestions();
     };
     options.append(selectedChips, tagToggle);
-    const saveButton = button("保存", () => void save(), "ex-btn-primary mod-cta");
+    const editorButton = button("", () => void save(true), "ex-open-editor");
+    editorButton.title = "进入 Markdown 编辑器";
+    editorButton.setAttribute("aria-label", "编辑文档");
+    const editorIcon = node("span", "ex-open-editor-icon");
+    setIcon(editorIcon, "file-pen-line");
+    editorButton.append(editorIcon, node("span", "ex-open-editor-label", "编辑文档"));
+    const saveButton = button("保存", () => void save(false), "ex-btn-primary mod-cta");
     saveButton.disabled = !quote.value.trim();
     quote.addEventListener("input", () => { if (!saving) saveButton.disabled = !quote.value.trim(); });
-    composeActions.append(options, saveButton);
+    composeActions.append(options, editorButton, saveButton);
     const picker = new TagPicker({
       available: () => this.items.flatMap(item => item.tags),
       selected: () => selectedTags,
@@ -264,34 +271,60 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.append(form);
     let saving = false;
     let resume = false;
+    let retryOpenPath: string | null = null;
+    quote.addEventListener("input", () => { retryOpenPath = null; });
     quote.addEventListener("keydown", event => {
       if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
         event.preventDefault(); resume = true; void save();
       }
     });
 
-    const save = async () => {
+    const save = async (openEditor = false) => {
       if (saving) return;
       const markdown = quote.value.trim();
-      if (!markdown) { new Notice("请输入摘录内容"); return; }
+      if (!openEditor && !markdown) { new Notice("请输入摘录内容"); return; }
       saving = true;
-      quote.disabled = true; picker.setDisabled(true); tagToggle.disabled = true; saveButton.disabled = true;
+      quote.disabled = true; picker.setDisabled(true); tagToggle.disabled = true;
+      saveButton.disabled = true; editorButton.disabled = true;
       selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = true; });
       saveButton.textContent = "保存中…";
       try {
-        await this.repo.create(this.workspace, markdown, [...selectedTags]);
-        quote.value = ""; tagSearch.value = ""; selectedTags.clear();
-        picker.refresh();
-        repaintSelected();
-        persistDraft();
-        closeTagPanel(false); fit();
-        form.classList.remove("ex-is-composing");
-        await this.reload();
-        if (resume) quote.focus();
-      } catch (error) { notify(error); }
-      finally {
+        let file: TFile;
+        let created = false;
+        if (openEditor && retryOpenPath) {
+          const retry = this.plugin.app.vault.getAbstractFileByPath(retryOpenPath);
+          if (!(retry instanceof TFile)) {
+            retryOpenPath = null;
+            throw new Error("已创建的 Markdown 文件不存在，请重新操作");
+          }
+          file = retry;
+        } else {
+          file = await this.repo.create(this.workspace, markdown, [...selectedTags]);
+          created = true;
+          if (openEditor) retryOpenPath = file.path;
+        }
+
+        // Once the file exists, the draft is saved even if opening the native tab fails.
+        if (created) {
+          quote.value = ""; tagSearch.value = ""; selectedTags.clear();
+          picker.refresh(); repaintSelected(); persistDraft();
+          closeTagPanel(false); fit(); form.classList.remove("ex-is-composing");
+          await this.reload();
+        }
+        if (openEditor) {
+          const initialRaw = await this.repo.readRaw(file.path);
+          await this.plugin.openMarkdown(file.path);
+          this.plugin.trackNewEditor(file, initialRaw);
+          retryOpenPath = null;
+        } else if (resume) quote.focus();
+      } catch (error) {
+        notify(error);
+        if (openEditor && retryOpenPath)
+          new Notice("文件已创建；再次点击「编辑文档」可重试打开");
+      } finally {
         saving = false; resume = false;
         quote.disabled = false; picker.setDisabled(false); tagToggle.disabled = false;
+        editorButton.disabled = false;
         saveButton.disabled = !quote.value.trim();
         selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = false; });
         saveButton.textContent = "保存";
