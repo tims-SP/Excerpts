@@ -56,7 +56,7 @@
   color: var(--text-muted); font-size: 12px; line-height: 1.5;
 }
 .excerpts-root .ex-page-hint[hidden] { display: none !important; }
-.excerpts-root .ex-scan-status[data-state="invalid"] ~ .ex-page-hint { color: var(--text-error); }
+.excerpts-root .ex-page-hint[data-state="invalid"] { color: var(--text-error); }
 .excerpts-root .ex-scan-progress { width: 112px; height: 2px; overflow: hidden; border-radius: 999px; background: var(--background-modifier-hover); }
 .excerpts-root .ex-scan-progress[hidden] { display: none !important; }
 .excerpts-root .ex-scan-progress-fill { height: 100%; width: 0; border-radius: inherit; background: var(--text-muted); }
