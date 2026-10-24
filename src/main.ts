@@ -124,7 +124,7 @@ export default class ExcerptsPlugin extends Plugin {
     const homes = this.getHomeFiles();
     const file = path
       ? homes.find(item => item.path === path)
-      : homes.find(item => item.path === this.settings.defaultHome && item.basename === "首页") ??
+      : homes.find(item => item.path === this.settings.defaultHome) ??
         homes.find(item => item.basename === "首页");
     if (!file) { new Notice("没有首页.excerpts，请在插件设置中创建首页入口"); return; }
     const leaf = this.app.workspace.getLeaf(false);
