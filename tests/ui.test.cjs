@@ -1755,3 +1755,149 @@ test('scan errors release the exclusive lock so another page can scan',async()=>
   assert.equal(count,2);
   await next.onUnloadFile(t.home);next.contentEl.remove();await t.close();
 });
+
+test('dirty scan with saved query shows unavailable results instead of zero matches',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'搜索状态',{tag:'',query:'测试标题'});
+  const actual=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release;
+  t.plugin.repo.scan=async(...args)=>{
+    await new Promise(resolve=>{release=resolve;});
+    return actual(...args);
+  };
+  await t.pane.openFile(saved);
+  const root=t.pane.contentEl;
+  await waitFor(()=>typeof release==='function','saved-query scan began');
+  const renderer=[...t.plugin.rendered][0];
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(renderer.scanDirty,true);
+  assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索结果暂不可用');
+  release();
+  await waitFor(()=>renderer.scanStatus==='stale','dirty scan completed');
+  assert.equal(root.querySelector('.ex-count').textContent,'搜索结果暂不可用');
+  assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索结果暂不可用');
+  assert.match(root.querySelector('.ex-empty-description')?.textContent,/清除搜索词.*手动刷新/);
+  assert.equal(root.querySelector('.ex-card'),null);
+  const search=root.querySelector('button[aria-label="搜索"]');
+  assert.equal(search.disabled,false);
+  search.click();
+  assert.equal(root.querySelector('.ex-search').value,'');
+  assert.equal(root.querySelector('.ex-count').textContent,'1 / 1','clearing shows old index without a scan');
+  await t.close();
+});
+
+test('completed full-text search with no matches still uses the true empty result',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  input.value='不存在的匹配词';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='0 / 1','completed no-match search');
+  assert.equal(root.querySelector('.ex-empty-title')?.textContent,'没有匹配的摘录');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  await t.close();
+});
+
+test('another page scan disables clear-search button and Escape including stale event callbacks',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'带搜索的页面',{tag:'',query:'测试标题'});
+  const second=t.plugin.factory({});
+  document.body.append(second.contentEl);
+  await second.openFile(saved);
+  const renderer=[...t.plugin.rendered].find(c=>c.workspace.homePath===saved.path);
+  await waitFor(()=>renderer.scanStatus==='done' && renderer.searchReady,'saved search completed');
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(renderer.scanStatus,'stale');
+  const root=second.contentEl;
+  const button=root.querySelector('button[aria-label="搜索"]');
+  const input=root.querySelector('.ex-search');
+  assert.equal(button.disabled,false,'stale results can be cleared while idle');
+  let release;
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{
+    await new Promise(resolve=>{release=resolve;});
+    return scan(...args);
+  };
+  const homeRenderer=[...t.plugin.rendered].find(c=>c.workspace.homePath===t.home.path);
+  homeRenderer.requestRefresh(true);
+  await waitFor(()=>typeof release==='function','other page scanning');
+  assert.equal(button.disabled,true,'global activity disables clearing');
+  button.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(input.value,'测试标题','stale button and Escape cannot bypass busy guard');
+  release();
+  await waitFor(()=>homeRenderer.scanStatus==='done' && !t.plugin.isBusy(),'scan and mutex settled');
+  assert.equal(button.disabled,false,'clearing is re-enabled after other page settles');
+  button.click();
+  assert.equal(input.value,'');
+  await second.onUnloadFile(saved);second.contentEl.remove();await t.close();
+});
+
+test('settings create action locks synchronously and rejects repeated or concurrent settings actions',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;
+  tab.display();
+  const setting=Setting.instances.find(x=>x.name==='创建首页文件');
+  const button=setting.button;
+  const opened=Setting.instances.find(x=>x.name===t.home.path).button;
+  const scope=Setting.instances.find(x=>x.name==='包含子文件夹').toggle;
+  setting.text.handler('阅读记录');
+  const create=t.plugin.createHome.bind(t.plugin);
+  let calls=0,release;
+  t.plugin.createHome=async(...args)=>{
+    calls++;
+    await new Promise(resolve=>{release=resolve;});
+    return create(...args);
+  };
+  const first=button.handler();
+  assert.equal(calls,1);
+  assert.equal(button.disabled,true);
+  assert.equal(button.text,'创建中…');
+  assert.equal(opened.disabled,true);
+  assert.equal(scope.disabled,true);
+  await button.handler();
+  assert.equal(calls,1,'a second handler invocation is refused without queueing');
+  assert.match(Notice.last,/正在创建首页/);
+  tab.syncBusy();
+  assert.equal(button.disabled,true,'other control updates cannot unlock the create button');
+  await scope.handler(false);
+  assert.equal(t.plugin.settings.recursive,true,'settings remain unchanged while creation is pending');
+  const before=t.files.size;
+  release();
+  await first;
+  assert.equal(calls,1);
+  assert.equal(t.files.has('阅读记录/首页.excerpts'),true);
+  assert.equal(t.files.size,before+2,'the requested folder and homepage were created once');
+  assert.equal(tab.creatingHome,false);
+  assert.equal(button.text,'创建并打开');
+  assert.equal(tab.homeButtons.every(b=>!b.disabled),true);
+  await t.close();
+});
+
+test('failed homepage creation releases the settings lock and preserves the folder entry',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;
+  tab.display();
+  const setting=Setting.instances.find(x=>x.name==='创建首页文件');
+  setting.text.handler('稍后重试');
+  const button=setting.button;
+  const create=t.plugin.createHome.bind(t.plugin);
+  let calls=0;
+  t.plugin.createHome=async(...args)=>{
+    calls++;
+    if(calls===1)throw new Error('模拟创建失败');
+    return create(...args);
+  };
+  await button.handler();
+  assert.match(Notice.last,/模拟创建失败/);
+  assert.equal(button.disabled,false);
+  assert.equal(button.text,'创建并打开');
+  assert.equal(tab.creatingHome,false);
+  await button.handler();
+  assert.equal(calls,2);
+  assert.equal(t.files.has('稍后重试/首页.excerpts'),true,
+    'retry uses the original folder entry rather than discarding it on failure');
+  await t.close();
+});

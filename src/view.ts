@@ -182,12 +182,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return true;
   }
   syncControls(): void { this.updateAvailability(false); }
+  /** Clear is the only search action permitted while search results are pending or stale. */
+  private canClearSearch(): boolean {
+    return Boolean(this.searchText) &&
+      (!this.searchReady || this.scanStatus === "stale" || this.scanStatus === "error") &&
+      !this.disposed && !this.homeInvalid && this.scanStatus !== "scanning" &&
+      !this.plugin.isBusy(this) && !this.saveBusy && !this.deleteBusy &&
+      this.selectionMode === "normal" && !this.pendingTags.size && !this.openTagEditors.size;
+  }
   private updateAvailability(broadcast = true): void {
     if (this.disposed || !this.searchButton) return;
     const searching = !this.searchReady;
     this.searchInput.disabled = Boolean(this.reason("search")) || searching;
-    const canClear = !this.homeInvalid && this.scanStatus !== "scanning" && Boolean(this.searchText) &&
-      (searching || this.scanStatus === "stale" || this.scanStatus === "error");
+    const canClear = this.canClearSearch();
     this.searchButton.disabled = !canClear && Boolean(this.reason("search"));
     this.searchButton.title = canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
     this.filterButton.disabled = Boolean(this.reason("filter"));
@@ -572,12 +579,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchInput.setAttribute("aria-label", "搜索摘录");
     this.searchWrap.append(this.searchInput);
     const searchButton = iconButton("search", "搜索", () => {
-      if (this.scanStatus === "scanning" || this.saveBusy || this.deleteBusy ||
-          this.selectionMode !== "normal" || this.openTagEditors.size || this.plugin.isBusy(this)) {
-        this.guard("search"); return;
-      }
-      if (!this.searchReady || (this.searchText &&
-          (this.scanStatus === "stale" || this.scanStatus === "error"))) {
+      if (this.canClearSearch()) {
         this.searchText = ""; this.searchInput.value = "";
         this.scheduleSearch(); this.searchWrap.hidden = true;
         searchButton.setAttribute("aria-expanded", "false");
@@ -598,7 +600,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
     this.searchInput.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
-      event.preventDefault(); this.searchText = ""; this.searchInput.value = "";
+      event.preventDefault();
+      if (!this.canClearSearch() && !this.guard("search")) return;
+      this.searchText = ""; this.searchInput.value = "";
       this.searchWrap.hidden = true; searchButton.setAttribute("aria-expanded", "false");
       this.scheduleSearch(); searchButton.focus();
     });
@@ -1110,6 +1114,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = [];
     this.unmountMarkdown();
     this.listEl.replaceChildren();
+    const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
+      (this.scanStatus === "stale" || (this.scanStatus === "scanning" && this.scanDirty));
+    if (resultsUnavailable) {
+      this.countEl.textContent = "搜索结果暂不可用";
+      const empty = node("section", "ex-empty");
+      empty.append(node("div", "ex-empty-title", "搜索结果暂不可用"));
+      empty.append(node("p", "ex-empty-description",
+        "摘录内容在扫描期间发生变化。请清除搜索词，然后手动刷新。"));
+      this.listEl.append(empty);
+      this.updateAvailability();
+      return;
+    }
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
     if (!visible.length) {
