@@ -3,16 +3,10 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths:
-      - 'src/view.ts'
-      - 'styles.css'
-      - 'scripts/visual-check.py'
-      - 'scripts/spacing-check.py'
-      - 'tests/fixtures/preview-template.html'
-      - '.github/workflows/screenshot-qa.yml'
   workflow_dispatch:
 jobs:
   chromium:
+    name: Visual inventory and layout guards
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,13 +21,19 @@ jobs:
       - run: npm install --no-audit --no-fund && npm run build
       - run: python -m pip install playwright
       - run: python -m playwright install --with-deps chromium
-      - run: python scripts/spacing-check.py
-      - run: python scripts/visual-check.py
+      - name: Existing layout constraints
+        run: python scripts/spacing-check.py
+      - name: Existing screenshot and interaction coverage
+        run: python scripts/visual-check.py
+      - name: Component-state screenshot inventory and geometry guards
+        run: python scripts/visual-audit.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: excerpts-screenshot-qa
           path: |
+            artifacts/**/*.png
+            artifacts/**/*.json
             artifacts/*.png
             preview-current.html
-          retention-days: 14
+          retention-days: 30
