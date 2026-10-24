@@ -142,7 +142,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   requestRefresh(force = false): void {
     if (this.disposed) return;
-    if (this.deleteBusy || this.selectionMode !== "normal" || this.pendingTags.size) {
+    if (this.deleteBusy || this.selectionMode !== "normal" ||
+        this.pendingTags.size || this.openTagEditors.size) {
       this.refreshQueued = true;
       this.refreshQueuedForce ||= force;
       return;
@@ -150,6 +151,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const effectiveForce = force || this.refreshQueuedForce;
     this.refreshQueued = false;
     this.refreshQueuedForce = false;
+    // Apply a changed scope only when the frozen selection/editor session has ended.
+    this.workspace.recursive = this.plugin.settings.recursive;
     void this.reload(effectiveForce);
   }
   private flushQueuedRefresh(): void {
@@ -540,12 +543,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const menu = new Menu();
     menu.addItem(item => item.setTitle("刷新摘录").setIcon("refresh-cw")
       .setDisabled(this.scanStatus === "scanning" || this.deleteBusy ||
-        this.selectionMode !== "normal" || this.pendingTags.size > 0)
-      .onClick(() => void this.reload(true)));
+        this.selectionMode !== "normal" || this.pendingTags.size > 0 ||
+        this.openTagEditors.size > 0)
+      .onClick(() => this.requestRefresh(true)));
     menu.addSeparator();
     menu.addItem(item => item.setTitle("批量选择").setIcon("check-square")
       .setDisabled(this.scanStatus === "scanning" || !this.searchReady ||
-        !this.visibleItems().length || this.pendingTags.size > 0)
+        !this.visibleItems().length || this.pendingTags.size > 0 || this.refreshQueued)
       .onClick(() => this.enterSelectionMode()));
     menu.addSeparator();
     if (this.savedFilter && changed) {
@@ -600,7 +604,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // A menu can remain open when a scan starts; recheck at invocation time.
     if (this.disposed || this.scanStatus === "scanning" ||
         this.selectionMode !== "normal" || this.deleteBusy || !this.searchReady ||
-        this.pendingTags.size || !this.visibleItems().length) return;
+        this.pendingTags.size || this.refreshQueued || !this.visibleItems().length) return;
     for (const path of [...this.openTagEditors]) {
       const item = this.items.find(card => card.path === path);
       if (!item) continue;
@@ -1260,6 +1264,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.renderTags(mount, item, false);
       mount.querySelector<HTMLButtonElement>(".ex-add-tag")?.focus();
     }
+    this.flushQueuedRefresh();
   }
 
   private renderTagEditor(editor: HTMLElement, item: CardIndex): void {

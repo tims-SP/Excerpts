@@ -1194,11 +1194,17 @@ test('settings-triggered refresh is queued during bulk selection and applied aft
   const renderer=[...t.plugin.rendered][0];
   t.plugin.settings.recursive=false;
   t.plugin.refreshViews(true);
-  assert.equal(renderer.workspace.recursive,false);
+  assert.equal(renderer.workspace.recursive,true,
+    'selection must retain the original recursive scope until exit');
   assert.equal(renderer.refreshQueued,true);
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 2/);
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 2 \/ 2/);
+  assert.equal(renderer.selectedPaths.size,2,
+    'nested selection snapshots must not be invalidated by a pending setting');
   root.querySelector('.ex-select-done').click();
   await waitForIndex(t,1);
+  assert.equal(renderer.workspace.recursive,false,'new scope becomes active after selection exit');
   assert.equal(renderer.refreshQueued,false);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
   await t.close();
@@ -1221,5 +1227,29 @@ test('scan yields to the main thread across ten thousand metadata entries',async
   const result=await scan;
   assert.equal(result.length,10001);
   assert.equal(progressed,10001);
+  await t.close();
+});
+
+test('settings refresh preserves a staged card tag editor until it is closed',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl, card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  input.value='暂存标签';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2');
+  const renderer=[...t.plugin.rendered][0];
+  t.plugin.refreshViews(true);
+  assert.equal(renderer.refreshQueued,true,'open tag editor defers refresh');
+  assert.equal(card.querySelector('.ex-tag-custom'),input,'the editor must not be rebuilt');
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
+  const freshMenu=()=>{clickByLabel(root,'页面选项');return Menu.last.items;};
+  assert.equal(freshMenu().find(item=>item.title==='刷新摘录').disabled,true);
+  card.querySelector('.ex-tag-done').click();
+  await waitFor(()=>t.getTagWrites()===1,'single staged tag write');
+  await waitFor(()=>!renderer.refreshQueued && root.querySelector('.ex-scan-status').dataset.state==='done','deferred refresh completed');
+  assert.deepEqual(t.tagState.get(t.md.path),['哲学','暂存标签']);
+  assert.equal(renderer.pendingTags.size,0);
   await t.close();
 });

@@ -131,10 +131,7 @@ export default class ExcerptsPlugin extends Plugin {
   untrackRenderer(child: ExcerptsRenderChild): void { this.rendered.delete(child); }
   refreshViews(force = false): void {
     if (force) this.repo.invalidate();
-    for (const child of this.rendered) {
-      child.workspace.recursive = this.settings.recursive;
-      child.requestRefresh(force);
-    }
+    for (const child of this.rendered) child.requestRefresh(force);
   }
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
