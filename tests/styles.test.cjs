@@ -162,3 +162,19 @@ test('native Markdown edit action is a separate secondary control with a compact
   assert.match(css,/\.ex-open-editor-label \{ display: none; \}/);
   assert.match(css,/\.ex-compose-actions > button\.ex-btn-primary/);
 });
+
+test('bulk controls use the existing footer column and never overlay card body',()=>{
+  assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card\.ex-is-selected/);
+  assert.match(css,/\.excerpts-root \.ex-selection-indicator/);
+  assert.match(css,/\.excerpts-root \.ex-selection-footer\s*\{/);
+  assert.match(css,/position:\s*sticky/);
+  assert.match(css,/bottom:\s*calc\(8px \+ env\(safe-area-inset-bottom/);
+  assert.match(css,/\.excerpts-root \.ex-selection-footer\[hidden\]/);
+  assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card-options/);
+});
+test('delete confirmation has theme-native responsive sizing and safe focus',()=>{
+  assert.match(css,/\.ex-delete-modal/);
+  assert.match(css,/width:\s*min\(420px, calc\(100vw - 32px\)\)/);
+  assert.match(css,/\.ex-delete-submit:disabled/);
+  assert.match(css,/\.ex-delete-modal :is\(button\):focus-visible/);
+});
