@@ -88,7 +88,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private refreshToken = 0;
   private saveBusy = false;
   /** Scoped identities for this view's own creates; never suppress external modifies. */
-  private localCreates = new Map<string, { file: TFile | null; tags: string[] }>();
+  private localCreates = new Map<string, {
+    file: TFile | null; tags: string[]; ignoredEvent: boolean;
+  }>();
   private updateComposerControls: () => void = () => {};
   private renderToken = 0;
   private timeline: VirtualTimeline | null = null;
@@ -276,11 +278,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Register the exact path before vault.create can emit a create event. */
   private beginLocalCreate(path: string, tags: string[]): (file?: TFile) => void {
-    const record = { file: null as TFile | null, tags };
+    const record = { file: null as TFile | null, tags, ignoredEvent: false };
     this.localCreates.set(path, record);
     return file => {
       if (this.localCreates.get(path) !== record) return;
-      if (!file) { this.localCreates.delete(path); return; }
+      if (!file) {
+        this.localCreates.delete(path);
+        // If another writer created the same candidate path, its event was
+        // provisionally ignored; retain the external-change indication.
+        if (record.ignoredEvent) this.markStale(path);
+        return;
+      }
       record.file = file;
       // Bounded event provenance. Eviction is fail-closed: old events mark stale.
       while (this.localCreates.size > 128) {
@@ -340,15 +348,26 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Mark cached results obsolete without scheduling any scan. */
   markStale(path?: string, event: "create" | "metadata" | "other" = "other", file?: TFile): void {
+    if (this.disposed || this.homeInvalid || (path && path !== this.workspace.homePath &&
+        !isExcerptPath(path, this.workspace))) return;
     if (path && (event === "create" || event === "metadata")) {
       const own = this.localCreates.get(path);
       if (own && (own.file === null || own.file === file)) {
-        if (event === "metadata" && own.file) this.syncCreatedMetadata(own.file, own.tags);
+        if (!own.file) own.ignoredEvent = true;
+        if (event === "metadata" && own.file) {
+          if (this.plugin.app.vault.getAbstractFileByPath(path) !== own.file) {
+            this.markStale(path);
+          } else {
+            try { this.syncCreatedMetadata(own.file, own.tags); }
+            catch (error) {
+              this.markStale(path);
+              console.error("Excerpts: single-file metadata update failed", error);
+            }
+          }
+        }
         return;
       }
     }
-    if (this.disposed || this.homeInvalid || (path && path !== this.workspace.homePath &&
-        !isExcerptPath(path, this.workspace))) return;
     const staleSelection = this.scanStatus === "done" && this.selectionMode === "selecting";
     if (this.scanStatus === "scanning") this.scanDirty = true;
     // A page without a committed index remains unscanned, even when Vault files change.
@@ -675,7 +694,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           picker.refresh(); repaintSelected(); persistDraft();
           closeTagPanel(false); fit(); form.classList.remove("ex-is-composing");
           try {
-            this.commitCreatedFile(file, markdown, savedTags);
+            if (markdown) this.commitCreatedFile(file, markdown, savedTags);
           } catch (error) {
             // The Markdown file exists: never report a failed save or recreate it.
             this.markStale(file.path);
