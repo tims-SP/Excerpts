@@ -711,12 +711,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     } catch (error) { if (!this.disposed) notify(error); }
   }
   private visibleItems(): CardIndex[] {
-    const found = this.items.filter(item =>
+    if (this.selectionMode !== "normal")
+      return this.items.filter(item => this.selectionScope.has(item.path));
+    return this.items.filter(item =>
       (!this.tagFilter || item.tags.includes(this.tagFilter)) &&
       (!this.searchText || (this.matches !== null && this.matches.has(item.path)))
     );
-    return this.selectionMode === "normal" ? found :
-      found.filter(item => this.selectionScope.has(item.path));
   }
   private renderTagsFilter(): void {
     this.tagBar.replaceChildren();
