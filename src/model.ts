@@ -1,13 +1,18 @@
 /** A display scope is determined by the parent folder of an .excerpts entry file. */
 export interface Workspace { rootFolder: string; recursive: boolean; homePath: string; }
 export const SCAN_BATCH_SIZES = [32, 64, 128, 256] as const;
+export const LIST_BATCH_SIZES = [16, 32, 64, 96] as const;
+export type ListBatchMode = "auto" | "fixed";
 export interface PluginSettings {
   defaultHome: string;
   recursive: boolean;
   scanBatchSize: number;
+  listBatchMode: ListBatchMode;
+  listBatchSize: number;
 }
 export const DEFAULT_SETTINGS: PluginSettings = {
-  defaultHome: "", recursive: true, scanBatchSize: 64
+  defaultHome: "", recursive: true, scanBatchSize: 64,
+  listBatchMode: "auto", listBatchSize: 32
 };
 export interface CardIndex {
   path: string;

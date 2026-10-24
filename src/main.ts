@@ -1,5 +1,5 @@
 import { MarkdownView, Notice, Plugin, TFile, TFolder } from "obsidian";
-import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, Workspace } from "./model";
+import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, LIST_BATCH_SIZES, Workspace } from "./model";
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
@@ -27,7 +27,10 @@ export default class ExcerptsPlugin extends Plugin {
       defaultHome: typeof data?.defaultHome === "string" ? data.defaultHome : "",
       recursive: data?.recursive !== false,
       scanBatchSize: SCAN_BATCH_SIZES.some(size => size === batchSize)
-        ? batchSize! : DEFAULT_SETTINGS.scanBatchSize
+        ? batchSize! : DEFAULT_SETTINGS.scanBatchSize,
+      listBatchMode: data?.listBatchMode === "fixed" ? "fixed" : "auto",
+      listBatchSize: LIST_BATCH_SIZES.some(size => size === data?.listBatchSize)
+        ? data!.listBatchSize! : DEFAULT_SETTINGS.listBatchSize
     };
     this.repo = new EntryRepository(this.app);
     this.registerView(EXCERPTS_HOME_VIEW, leaf => new ExcerptsHomeFileView(leaf, this, this.repo));
@@ -260,6 +263,17 @@ export default class ExcerptsPlugin extends Plugin {
     if (!file) { new Notice("没有首页.excerpts，请在插件设置中创建首页入口"); return; }
     const leaf = this.app.workspace.getLeaf(false);
     await leaf.openFile(file);
+    await this.app.workspace.revealLeaf(leaf);
+  }
+  /** Reading uses the native Markdown preview mode, with no editor focus or soft keyboard. */
+  async openMarkdownPreview(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md")
+      throw new Error("Markdown 文件不存在：" + path);
+    const leaf = this.app.workspace.getLeaf("tab");
+    await leaf.setViewState({ type: "markdown", state: { file: path, mode: "preview" } });
+    if (!(leaf.view instanceof MarkdownView) || leaf.view.getMode() !== "preview")
+      throw new Error("无法切换到 Markdown 阅读模式");
     await this.app.workspace.revealLeaf(leaf);
   }
   async openMarkdown(path: string, line?: number, atEnd = false): Promise<void> {

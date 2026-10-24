@@ -1,15 +1,19 @@
 import { App, Notice, PluginSettingTab, Setting, ToggleComponent, DropdownComponent, ButtonComponent } from "obsidian";
 import type ExcerptsPlugin from "./main";
-import { SCAN_BATCH_SIZES } from "./model";
+import { SCAN_BATCH_SIZES, LIST_BATCH_SIZES } from "./model";
 export class ExcerptsSettingTab extends PluginSettingTab {
   private scopeToggle: ToggleComponent | null = null;
   private batchDropdown: DropdownComponent | null = null;
+  private listModeDropdown: DropdownComponent | null = null;
+  private listBatchDropdown: DropdownComponent | null = null;
   private homeButtons: ButtonComponent[] = [];
   private creatingHome = false;
   syncBusy(): void {
     const busy = this.plugin.isBusy() || this.creatingHome;
     this.scopeToggle?.setDisabled(busy);
     this.batchDropdown?.setDisabled(busy);
+    this.listModeDropdown?.setDisabled(busy);
+    this.listBatchDropdown?.setDisabled(busy);
     for (const button of this.homeButtons) button.setDisabled(busy);
   }
   private canOpen(): boolean {
@@ -27,6 +31,8 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     root.empty();
     this.scopeToggle = null;
     this.batchDropdown = null;
+    this.listModeDropdown = null;
+    this.listBatchDropdown = null;
     this.homeButtons = [];
     root.createEl("h2", { text: "摘录 · Excerpts" });
     root.createEl("p", { text: "首页.excerpts 是主入口；其他 .excerpts 文件可保存独立筛选，摘录内容仍是普通 Markdown。" });
@@ -119,6 +125,41 @@ export class ExcerptsSettingTab extends PluginSettingTab {
             this.plugin.settings.scanBatchSize = size;
             await this.plugin.saveSettings();
           });
+      });
+    root.createEl("h3", { text: "列表加载" });
+    const fixedBox = root.createDiv();
+    fixedBox.hidden = this.plugin.settings.listBatchMode !== "fixed";
+    new Setting(root).setName("预取批次").setDesc("按实际视口和卡片高度自动调整，或固定每批处理数量。")
+      .addDropdown(dropdown => {
+        this.listModeDropdown = dropdown;
+        dropdown.addOption("auto", "自动适应屏幕").addOption("fixed", "固定数量");
+        dropdown.setValue(this.plugin.settings.listBatchMode).onChange(async value => {
+          if (this.plugin.isBusy()) {
+            dropdown.setValue(this.plugin.settings.listBatchMode);
+            new Notice("摘录操作尚未完成，请稍后修改列表设置");
+            return;
+          }
+          this.plugin.settings.listBatchMode = value === "fixed" ? "fixed" : "auto";
+          fixedBox.hidden = this.plugin.settings.listBatchMode !== "fixed";
+          await this.plugin.saveSettings();
+        });
+      });
+    new Setting(fixedBox).setName("固定批次大小")
+      .setDesc("只限制预取的缓冲卡片数量，不截断可视区域。")
+      .addDropdown(dropdown => {
+        this.listBatchDropdown = dropdown;
+        for (const size of LIST_BATCH_SIZES) dropdown.addOption(String(size), size + " 条");
+        dropdown.setValue(String(this.plugin.settings.listBatchSize)).onChange(async value => {
+          if (this.plugin.isBusy()) {
+            dropdown.setValue(String(this.plugin.settings.listBatchSize));
+            new Notice("摘录操作尚未完成，请稍后修改列表设置");
+            return;
+          }
+          const size = Number(value);
+          if (!LIST_BATCH_SIZES.some(option => option === size)) return;
+          this.plugin.settings.listBatchSize = size;
+          await this.plugin.saveSettings();
+        });
       });
     this.syncBusy();
   }
