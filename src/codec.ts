@@ -91,22 +91,46 @@ export function findSectionHeadingLine(raw: string, sectionIndex: number): numbe
 export function visibleMediaMarkdown(markdown: string): string {
   let fenceChar = "";
   let fenceLength = 0;
+  // A list continuation is not an indented code block until it is indented
+  // four *additional* columns beyond its list content. Preserve original Markdown.
+  let listContentIndent: number | null = null;
+  const columns = (text: string): number => {
+    let width = 0;
+    for (const char of text) width = char === "\t" ? width + (4 - width % 4) : width + 1;
+    return width;
+  };
   const lines = markdown.split(/\r\n?|\n/);
   return lines.map(line => {
-    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
-    if (marker) {
-      const char = marker[1][0];
-      if (!fenceChar) {
-        fenceChar = char;
-        fenceLength = marker[1].length;
-      } else if (char === fenceChar && marker[1].length >= fenceLength &&
-          marker[2].trim() === "") {
+    const trimmed = line.trimStart();
+    if (fenceChar) {
+      const closing = trimmed.match(/^(\u0060{3,}|~{3,})\s*$/);
+      if (closing && closing[1][0] === fenceChar && closing[1].length >= fenceLength) {
         fenceChar = "";
         fenceLength = 0;
       }
       return "";
     }
-    if (fenceChar || /^(?: {4}|\t)/.test(line)) return "";
-    return line.replace(/(`+)([\s\S]*?)\1/g, " ");
+    if (!trimmed) return ""; // A blank line alone does not end list context.
+    const leading = line.match(/^[ \t]*/)?.[0] ?? "";
+    const indent = columns(leading);
+    const listMarker = line.match(/^([ \t]*)(?:[-+*]|\d+[.)])[ \t]+/);
+    if (listMarker) {
+      // Outside a list, four-column indentation is ordinary code, not a nested list.
+      if (listContentIndent === null && indent >= 4) return "";
+      if (listContentIndent !== null && indent >= listContentIndent + 4) return "";
+      listContentIndent = columns(listMarker[0]);
+    } else {
+      if (listContentIndent !== null && indent < listContentIndent) listContentIndent = null;
+      if (indent >= 4 && (listContentIndent === null || indent >= listContentIndent + 4))
+        return "";
+    }
+    const contents = listMarker ? line.slice(listMarker[0].length) : trimmed;
+    const opening = contents.match(/^(\u0060{3,}|~{3,})(.*)$/);
+    if (opening) {
+      fenceChar = opening[1][0];
+      fenceLength = opening[1].length;
+      return "";
+    }
+    return line.replace(/(\u0060+)([\s\S]*?)\1/g, " ");
   }).join("\n");
 }
