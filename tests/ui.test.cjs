@@ -517,7 +517,7 @@ test('saved query restores search UI; invalid or duplicate save names are blocke
   assert.equal(t.plugin.savedPageNameIssue(saved.path,'检索摘录')!==null,true);
   assert.equal(t.plugin.savedPageNameIssue(saved.path,'异常/名称')!==null,true);
   clickByLabel(root,'页面选项');
-  Menu.last.items[1].handler();
+  Menu.last.items[0].handler();
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   const input=dialog.querySelector('.ex-save-page-input');
