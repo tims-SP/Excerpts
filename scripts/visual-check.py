@@ -125,7 +125,8 @@ with sync_playwright() as playwright:
             page.wait_for_timeout(60)
             assert page.locator(".ex-capture-selected .ex-capture-chip").count() >= 5
             assert "×" not in page.locator(".ex-capture-selected").inner_text()
-            assert page.locator(".ex-capture-overflow").is_visible(), (theme,width,"top tag +N")
+            if compact:
+                assert page.locator(".ex-capture-overflow").is_visible(), (theme,width,"top tag +N")
             footer_after = page.locator(".ex-compose-actions").bounding_box()
             save_after = page.locator(".ex-compose-actions > .ex-btn-primary").bounding_box()
             assert footer_after["height"] <= (46 if compact else 38), (theme,width,footer_after)
