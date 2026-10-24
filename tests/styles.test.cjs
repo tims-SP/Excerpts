@@ -117,3 +117,15 @@ test('mobile feed gutters are 8/12px, with 14px card insets and no extra host pa
   assert.match(narrow,/\.excerpts-root \.ex-day-rail \{ padding: 0;/);
   assert.doesNotMatch(compact,/--ex-card-pad:/); // Inherit the 14px inset below 400px.
 });
+
+test('saved page controls preserve native toolbar sizing and modal input geometry',()=>{
+  assert.match(css,/\.excerpts-root \.ex-toolbar-actions \{[^}]*gap: var\(--ex-space-1\)/);
+  assert.match(css,/button\.ex-icon-button \{ width: 36px; height: 36px/);
+  assert.match(css,/button\.ex-icon-button \{ width: 44px; height: 44px/);
+  assert.match(css,/\.ex-save-page-modal \.ex-save-page-title/);
+  assert.match(css,/\.ex-save-page-modal input\.ex-save-page-input/);
+  assert.match(css,/min-height: 40px/);
+  assert.match(css,/\.ex-save-page-modal \.ex-save-page-footer/);
+  assert.match(css,/\.ex-save-page-modal \.ex-save-page-hint\.ex-is-error/);
+  assert.match(css,/@media \(max-width: 500px\)/);
+});
