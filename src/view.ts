@@ -272,6 +272,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scanStatusEl.title = hint;
     if (this.pageHintEl) {
       this.pageHintEl.textContent = hint;
+      this.pageHintEl.dataset.state = status;
       this.pageHintEl.hidden = !hint;
     }
     setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
