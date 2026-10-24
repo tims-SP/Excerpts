@@ -1153,53 +1153,99 @@ test('search blocks refresh until the user explicitly clears the query',async()=
   await t.close();
 });
 
-test('moving a homepage folder updates its active scope and saves new notes into the new folder',async()=>{
+test('moving a homepage folder invalidates the old view and preserves a copyable draft',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
-  // Obsidian changes TFile objects in-place before dispatching the rename event.
+  const renderer=[...t.plugin.rendered][0];
+  const text=root.querySelector('.ex-compose-text');
+  text.value='尚未保存的草稿';
+  text.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  let scans=0;const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return original(...args);};
+  const oldWorkspace={...renderer.workspace};
+  clickByLabel(root,'页面选项');
+  const previousRefresh=Menu.last.items.find(item=>item.title==='刷新摘录');
+  assert.equal(previousRefresh.disabled,false);
+
+  // Obsidian mutates paths in place before emitting a folder rename.
   const folder=t.files.get('摘录').file;
   t.files.delete('摘录');folder.path='收藏';t.files.set('收藏',{file:folder});
-  const move=(oldPath,newPath)=>{
-    const record=t.files.get(oldPath);
+  for (const oldPath of ['摘录/首页.excerpts','摘录/测试.md']){
+    const record=t.files.get(oldPath),newPath=oldPath.replace('摘录/','收藏/');
     t.files.delete(oldPath);
-    record.file.path=newPath;
-    record.file.parent={path:'收藏'};
+    record.file.path=newPath;record.file.parent={path:'收藏'};
     t.files.set(newPath,record);
-  };
-  move('摘录/首页.excerpts','收藏/首页.excerpts');
-  move('摘录/测试.md','收藏/测试.md');
-  t.tagState.set('收藏/测试.md',t.tagState.get('摘录/测试.md'));
+  }
   t.vaultEvents.get('rename')(folder,'摘录');
-  const renderer=[...t.plugin.rendered][0];
-  assert.equal(renderer.workspace.homePath,'收藏/首页.excerpts');
-  assert.equal(renderer.workspace.rootFolder,'收藏');
-  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
-  assert.equal(root.querySelector('.ex-card')?.dataset.path,'摘录/测试.md',
-    'external move does not rescan automatically');
+  assert.equal(renderer.homeInvalid,true);
+  assert.deepEqual(renderer.workspace,oldWorkspace,'runtime path must not silently migrate');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'页面已失效 · 请重新打开');
+  assert.match(root.querySelector('.ex-scan-status').title,/复制未保存的草稿/);
+  assert.equal(text.value,'尚未保存的草稿');
+  assert.equal(text.disabled,false,'allow draft selection and copy');
+  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
+  assert.equal(root.querySelector('.ex-open-editor').disabled,true);
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  previousRefresh.handler();
   t.plugin.refreshViews(true);
-  await waitFor(()=>root.querySelector('.ex-card')?.dataset.path==='收藏/测试.md','manual refresh after move');
-  const quote=root.querySelector('.ex-compose-text');
-  quote.value='# 新目录下的摘录';
-  quote.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
-  [...root.querySelectorAll('.ex-compose-actions button')].find(el=>el.textContent==='保存').click();
-  await waitFor(()=>[...t.files.keys()].some(path=>path.startsWith('收藏/')&&path.endsWith('新目录下的摘录.md')),
-    'saved into renamed folder');
+  assert.equal(scans,0,'neither stale menus nor commands can scan an invalid page');
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,true);
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
+  root.querySelector('.ex-compose-actions .ex-btn-primary').click();
+  assert.equal(t.files.has('摘录/尚未保存的草稿.md'),false);
+  assert.equal(t.files.has('收藏/尚未保存的草稿.md'),false);
+  assert.match(Notice.last,/重新打开/);
+
+  // Only explicitly reopening the relocated file creates a valid new renderer.
+  await t.pane.openFile(t.files.get('收藏/首页.excerpts').file);
+  await waitFor(()=>t.pane.contentEl.querySelector('.ex-scan-status')?.dataset.state==='done',
+    'new home view indexed');
+  assert.equal([...t.plugin.rendered][0].homeInvalid,false);
+  assert.equal([...t.plugin.rendered][0].workspace.homePath,'收藏/首页.excerpts');
   await t.close();
 });
 
-test('renaming a saved excerpt page updates its title and scope without rebuilding the composer',async()=>{
+test('renamed saved excerpt pages become read-only until explicitly reopened',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const saved=await t.plugin.createSavedPage(t.home.path,'文学摘录',{tag:'哲学',query:''});
   await t.pane.openFile(saved);
   await waitFor(()=>root.querySelector('.ex-title')?.textContent==='文学摘录','saved page opened');
   const composer=root.querySelector('.ex-compose-text');
-  const oldPath=saved.path;
+  composer.value='保留的草稿';
+  composer.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  const renderer=[...t.plugin.rendered][0],oldPath=saved.path;
   t.files.delete(oldPath);saved.path='摘录/句子摘录.excerpts';saved.basename='句子摘录';
   t.files.set(saved.path,{file:saved,data:'version: 1\nfilter:\n  tag: "哲学"\n  query: ""'});
   t.vaultEvents.get('rename')(saved,oldPath);
-  assert.equal(root.querySelector('.ex-title').textContent,'句子摘录');
-  assert.equal(root.querySelector('.ex-compose-text'),composer,'do not drop an unsaved composer');
-  assert.equal([...t.plugin.rendered][0].workspace.homePath,saved.path);
+  assert.equal(renderer.homeInvalid,true);
+  assert.equal(renderer.workspace.homePath,oldPath,'do not migrate old view scope');
+  assert.equal(root.querySelector('.ex-title').textContent,'文学摘录','old title remains');
+  assert.equal(root.querySelector('.ex-compose-text'),composer);
+  assert.equal(composer.value,'保留的草稿');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.equal(root.querySelector('.ex-open-editor').disabled,true);
+  await t.pane.openFile(saved);
+  await waitFor(()=>t.pane.contentEl.querySelector('.ex-title')?.textContent==='句子摘录',
+    'explicitly reopened renamed view');
+  assert.equal([...t.plugin.rendered][0].homeInvalid,false);
   await t.close();
+});
+
+test('deleting a homepage or its parent invalidates the open view and clears its default pointer',async()=>{
+  for(const deleted of ['home','parent']){
+    const t=await fixture();
+    const renderer=[...t.plugin.rendered][0];
+    t.plugin.settings.defaultHome=t.home.path;
+    const removed=deleted==='home' ? t.home : t.files.get('摘录').file;
+    t.files.delete(removed.path);
+    t.vaultEvents.get('delete')(removed);
+    assert.equal(renderer.homeInvalid,true);
+    assert.equal(renderer.workspace.homePath,'摘录/首页.excerpts');
+    assert.equal(t.plugin.settings.defaultHome,'');
+    assert.equal(t.pane.contentEl.querySelector('.ex-scan-status').dataset.state,'invalid');
+    await t.close();
+  }
 });
 
 test('saving and native editor opening do not trigger an index scan',async()=>{
