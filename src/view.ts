@@ -654,6 +654,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.selectionScope.delete(path);
         this.selectedPaths.delete(path);
         this.selectedCandidates.delete(path);
+        this.items = this.items.filter(item => item.path !== path);
+        this.matches?.delete(path);
+        this.showSuggestions();
+        this.renderTagsFilter();
         this.drawCards();
         this.updateSelectionControls();
         new Notice("该摘录已不存在，已从选择范围移除");
@@ -679,7 +683,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectionBusy = paths.length > 200;
     this.selectionProcessed = 0;
     this.selectionBatchTotal = paths.length;
-    let pruned = false;
+    const prunedPaths = new Set<string>();
     if (this.selectionBusy) this.updateSelectionControls();
     try {
       for (let start = 0; start < paths.length; start += 200) {
@@ -693,7 +697,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           } else {
             // A file removed externally is no longer part of this frozen selection.
             this.selectionScope.delete(path);
-            pruned = true;
+            prunedPaths.add(path);
           }
         }
         this.selectionProcessed = Math.min(start + 200, paths.length);
@@ -706,7 +710,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     } finally {
       this.selectionBusy = false;
       if (!this.disposed) {
-        if (pruned) this.drawCards();
+        if (prunedPaths.size) {
+          this.items = this.items.filter(item => !prunedPaths.has(item.path));
+          for (const path of prunedPaths) this.matches?.delete(path);
+          this.showSuggestions();
+          this.renderTagsFilter();
+          this.drawCards();
+        }
         this.updateSelectionUI();
       }
     }
