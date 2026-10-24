@@ -604,3 +604,47 @@ test('switching away without closing native Markdown keeps an empty editor docum
   assert.equal(t.files.has(item[0]),true);
   await t.close();
 });
+
+
+test('double clicking editor action does not create duplicate Markdown documents',async()=>{
+  const t=await fixture();
+  const button=clickByLabel(t.pane.contentEl,'编辑文档');
+  button.click();
+  await wait();
+  const created=[...t.files].filter(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  assert.equal(created.length,1);
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  await t.close();
+});
+
+test('failed native open retries the already saved file instead of creating another',async()=>{
+  const t=await fixture();
+  const original=t.leaf.openFile;
+  t.leaf.openFile=async()=>{throw Error('editor temporarily unavailable');};
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  const created=[...t.files].filter(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  assert.equal(created.length,1);
+  t.leaf.openFile=original;
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  assert.equal([...t.files].filter(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md')).length,1);
+  assert.equal(t.leaf.lastFile,created[0][1].file);
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  await t.close();
+});
+
+test('manual file renaming disables blank-note auto cleanup',async()=>{
+  const t=await fixture();
+  clickByLabel(t.pane.contentEl,'编辑文档'); await wait();
+  const item=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  t.files.delete(item[0]);
+  item[1].file.path='摘录/用户手动命名.md';
+  t.files.set(item[1].file.path,item[1]);
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  assert.equal(t.files.has('摘录/用户手动命名.md'),true);
+  await t.close();
+});
