@@ -65,6 +65,8 @@ export class VirtualTimeline {
 
   setRows(rows: readonly TimelineRow[], resetScroll = true): void {
     this.clearMounted();
+    // An empty-state message may have been appended after the preceding snapshot.
+    this.host.replaceChildren(this.top, this.window, this.bottom);
     this.rows = [...rows];
     this.heights = new HeightIndex(rows.map(row => row.estimatedHeight));
     if (resetScroll) {
