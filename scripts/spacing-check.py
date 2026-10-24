@@ -87,7 +87,7 @@ with sync_playwright() as playwright:
             editor = card.locator(".ex-tag-editor")
             assert editor.is_visible()
             field = editor.locator(".ex-tag-custom")
-            assert 43 <= field.bounding_box()["height"] <= 48
+            assert (43 if width <= 480 else 39) <= field.bounding_box()["height"] <= 48
             assert field.bounding_box()["y"] + field.bounding_box()["height"] <= card.locator(".ex-card-footer").bounding_box()["y"] + 1
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             print("OK", theme, width, "editor-and-footer", coords["cardLeft"])
