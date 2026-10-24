@@ -313,7 +313,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
         if (openEditor) {
           const initialRaw = await this.repo.readRaw(file.path);
-          await this.plugin.openMarkdown(file.path);
+          await this.plugin.openMarkdown(file.path, undefined, true);
           this.plugin.trackNewEditor(file, initialRaw);
           retryOpenPath = null;
         } else if (resume) quote.focus();
