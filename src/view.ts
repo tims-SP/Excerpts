@@ -687,7 +687,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     this.showSuggestions();
     this.renderTagsFilter();
-    if (this.searchText) this.scheduleSearch();
+    // The selection scope is already frozen. Reindex paths without rerunning a full-text search.
+    if (this.selectionMode !== "normal") this.drawCards();
+    else if (this.searchText) this.scheduleSearch();
     else { this.matches = null; this.drawCards(); }
   }
   private scheduleSearch(): void {
