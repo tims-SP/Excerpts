@@ -39,3 +39,12 @@ test('fenced, indented, and inline code media syntax never changes card classifi
   assert.equal(classifyPreview(parsed('示例：\x60![[inline.jpg]]\x60 是代码')),'text');
   assert.equal(classifyPreview(parsed(fenced+'\n![[real.mp4]]')),'video');
 });
+
+test('Markdown list content is media while nested indented code remains plain text',()=>{
+  assert.equal(classifyPreview(parsed('- 引用\n    ![[清单图片.png]]')),'image');
+  assert.equal(classifyPreview(parsed('1. 项目\n   - 子项\n     ![[视频.mp4]]')),'video');
+  assert.equal(classifyPreview(parsed('- 项目\n      ![[这是代码.png]]')),'text');
+  assert.equal(classifyPreview(parsed('- 项目\n    \x60\x60\x60md\n    ![[隐藏媒体.png]]\n    \x60\x60\x60')),'text');
+  assert.equal(classifyPreview(parsed('    - ![[整段代码.png]]')),'text');
+  assert.equal(classifyPreview(parsed('~~~md\n![[片段.mp4]]\n~~~\n- ![[合法媒体.png]]')),'image');
+});

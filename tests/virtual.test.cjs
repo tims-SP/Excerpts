@@ -228,3 +228,42 @@ test('width changes remeasure retained rows before restoring the reading anchor'
   timeline.dispose();
   dom.window.close();
 });
+
+test('measured heights survive unchanged list rebuilds but invalidate on layout revisions',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:800});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  let calls=0, mounts=0, elementHeight=180;
+  let timeline;
+  const beforeMount=[];
+  timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:(row,index)=>{
+      mounts++;
+      beforeMount.push(timeline.heights.get(index)); 
+      const el=document.createElement('article');
+      el.getBoundingClientRect=()=>{calls++;return {height:elementHeight,width:700};};
+      return el;
+    },unmount:()=>{}
+  });
+  const rows=Array.from({length:16},(_,i)=>({
+    path:'p-'+i,firstOfDay:false,dayTitle:'',daySubtitle:'',
+    estimatedHeight:100,layoutKey:'v1'
+  }));
+  timeline.setRows(rows,'keep');
+  assert.equal(beforeMount[0],100,'first mount uses a metadata estimate');
+  assert.equal(timeline.getMeasuredAverageHeight(),180,'mounted statistics come from measurement events');
+  const beforeCalls=calls;
+  for(let i=0;i<50;i++)timeline.getMeasuredAverageHeight();
+  assert.equal(calls,beforeCalls,'scroll batch getter never forces a layout read');
+  beforeMount.length=0;
+  timeline.setRows(rows,'keep');
+  assert.equal(beforeMount[0],180,'rebuild uses the existing measured height before mounting');
+  beforeMount.length=0;
+  timeline.setRows(rows.map(row=>({...row,layoutKey:'v2'})),'keep');
+  assert.equal(beforeMount[0],100,'layout changes invalidate old heights');
+  timeline.dispose();dom.window.close();
+});
+

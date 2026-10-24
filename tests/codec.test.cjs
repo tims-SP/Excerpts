@@ -61,3 +61,25 @@ test('H2 source-line lookup skips YAML and fenced headings, preserves duplicates
   assert.equal(findSectionHeadingLine(raw, 2), null);
   assert.equal(findSectionHeadingLine(raw, -1), null);
 });
+
+test('media classification skips code but preserves list continuation indentation',()=>{
+  const {visibleMediaMarkdown}=require('../src/codec.ts');
+  const source=[
+    '- 引文',
+    '    ![[清单中的图.png]]',
+    '',
+    '1. 第二项',
+    '   - 子项',
+    '     ![[嵌套视频.mp4]]',
+    '    \x60\x60\x60md',
+    '    ![[代码中的图.jpg]]',
+    '    \x60\x60\x60',
+    '',
+    '    ![[独立缩进代码.png]]'
+  ].join('\n');
+  const visible=visibleMediaMarkdown(source);
+  assert.match(visible,/清单中的图/);
+  assert.match(visible,/嵌套视频/);
+  assert.doesNotMatch(visible,/代码中的图/);
+  assert.doesNotMatch(visible,/独立缩进代码/);
+});

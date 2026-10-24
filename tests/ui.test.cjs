@@ -324,6 +324,25 @@ test('bounded full-text search cache avoids rereading older excerpts',async()=>{
   await t.close();
 });
 
+
+test('oversized H2 files never create hundreds of per-section menu actions',async()=>{
+  for(const count of [24,25,300]){
+    const markdown='# 标题\n\n正文\n\n'+Array.from({length:count},(_,i)=>
+      '## 分组'+i+'\n\n第'+i+'段内容').join('\n\n');
+    const t=await fixture(false,markdown);
+    clickByLabel(t.pane.contentEl,'卡片选项');
+    await waitFor(()=>Menu.last?.items?.some(item=>item.title==='删除摘录'),
+      'H2 options menu '+count);
+    const names=Menu.last.items.map(item=>item.title);
+    const sectionOptions=names.filter(name=>name.startsWith('编辑分组：'));
+    assert.equal(sectionOptions.length,count<=24?count:0,
+      'per-section menu matches the card disclosure limit');
+    assert.deepEqual(names.slice(0,2),['阅读原文','编辑原文']);
+    assert.equal(names.at(-1),'删除摘录');
+    await t.close();
+  }
+});
+
 test('H2 menu targets the correct source line including repeated section names',async()=>{
   const source='---\ntags: [文学]\n---\n\n# 标题\n\n```md\n## 不是分组\n```\n\n## 来源\n甲\n\n## 来源\n乙';
   const t=await fixture(false,source);const root=t.pane.contentEl;
