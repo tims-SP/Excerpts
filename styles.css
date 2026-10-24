@@ -505,6 +505,114 @@
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
 }
 
+/* Multi-selection lives in the original timeline. No controls overlay Markdown. */
+.excerpts-root .ex-selection-toolbar[hidden],
+.excerpts-root .ex-selection-footer[hidden],
+.excerpts-root .ex-toolbar[hidden],
+.excerpts-root .ex-delete-error[hidden] { display: none !important; }
+.excerpts-root.ex-is-selecting .ex-composer,
+.excerpts-root.ex-is-selecting .ex-search-wrap,
+.excerpts-root.ex-is-selecting .ex-filter-tags { display: none !important; }
+.excerpts-root .ex-selection-count { font-size: 14px; font-weight: 600; color: var(--text-normal); }
+.excerpts-root .ex-selection-toolbar .ex-toolbar-actions { gap: 8px; }
+.excerpts-root button.ex-select-all,
+.excerpts-root button.ex-select-done { min-height: 36px; font-size: 13px; padding: 0 8px; }
+.excerpts-root button.ex-select-done { color: var(--text-accent); }
+.excerpts-root.ex-is-selecting { padding-bottom: 96px; }
+.excerpts-root.ex-is-selecting .ex-card {
+  cursor: pointer; transition: border-color 120ms ease;
+}
+.excerpts-root.ex-is-selecting .ex-card.ex-is-selected { border-color: var(--interactive-accent); }
+.excerpts-root.ex-is-selecting .ex-card:focus-visible {
+  outline: 2px solid var(--interactive-accent); outline-offset: 2px;
+}
+.excerpts-root .ex-selection-indicator { display: none; }
+.excerpts-root.ex-is-selecting .ex-selection-indicator {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; color: var(--text-muted);
+}
+.excerpts-root.ex-is-selecting .ex-selection-indicator svg { width: 20px; height: 20px; }
+.excerpts-root.ex-is-selecting .ex-card.ex-is-selected .ex-selection-indicator {
+  color: var(--interactive-accent);
+}
+.excerpts-root.ex-is-selecting .ex-card-options { display: none !important; }
+.excerpts-root .ex-selection-footer {
+  position: sticky; z-index: 10; bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  width: min(720px, calc(100% - 112px)); margin: 20px 0 0 112px;
+  min-height: 56px; padding: 8px 12px; gap: 12px;
+  background: var(--background-primary); border: 1px solid var(--ex-border);
+  border-radius: var(--ex-radius-surface); box-shadow: 0 2px 12px rgba(0,0,0,.08);
+}
+.excerpts-root .ex-selection-footer-count {
+  color: var(--text-muted); font-size: 13px; white-space: nowrap;
+}
+.excerpts-root .ex-selection-footer-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+}
+.excerpts-root button.ex-select-cancel,
+.excerpts-root button.ex-delete-selected {
+  min-height: 36px; padding: 0 14px; border-radius: var(--ex-radius-pill);
+  font-size: 13px; font-weight: 500;
+}
+.excerpts-root button.ex-select-cancel { color: var(--text-muted); background: transparent; }
+.excerpts-root button.ex-delete-selected {
+  color: var(--text-on-accent); background: var(--text-error);
+}
+.excerpts-root button.ex-delete-selected:hover:not(:disabled) {
+  color: var(--text-on-accent); background: var(--text-error);
+}
+.excerpts-root button.ex-delete-selected:disabled { opacity: .45; }
+@container (max-width: 700px) {
+  .excerpts-root .ex-selection-footer {
+    width: 100%; margin-left: 0; min-height: 64px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)); padding: 8px;
+  }
+  .excerpts-root .ex-selection-toolbar .ex-toolbar-actions { gap: 4px; }
+  .excerpts-root button.ex-select-all,
+  .excerpts-root button.ex-select-done { min-height: 44px; }
+  .excerpts-root button.ex-select-cancel,
+  .excerpts-root button.ex-delete-selected { min-height: 44px; padding-inline: 12px; }
+  .excerpts-root.ex-is-selecting .ex-selection-indicator { width: 44px; height: 44px; }
+}
+
+/* Native, single-purpose removal confirmation. */
+.ex-delete-modal { width: min(420px, calc(100vw - 32px)); max-width: 420px; }
+.ex-delete-modal .modal-content { padding: 20px; }
+.ex-delete-modal .ex-delete-title {
+  margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--text-normal);
+}
+.ex-delete-modal .ex-delete-description {
+  margin: 8px 0 16px; color: var(--text-muted); font-size: 13px; line-height: 1.5;
+}
+.ex-delete-modal .ex-delete-filename {
+  padding: 12px; background: var(--background-secondary);
+  border-radius: var(--radius-m, 8px); font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.ex-delete-modal .ex-delete-note {
+  margin: 16px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5;
+}
+.ex-delete-modal .ex-delete-error { margin: 12px 0 0; color: var(--text-error); font-size: 12px; }
+.ex-delete-modal .ex-delete-actions {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; margin-top: 24px;
+}
+.ex-delete-modal .ex-delete-actions button {
+  min-height: 36px; min-width: 80px; padding: 6px 14px;
+  border-radius: 999px; font-size: 13px; font-weight: 500;
+}
+.ex-delete-modal button.ex-delete-cancel {
+  color: var(--text-muted); border: 0; background: transparent; box-shadow: none;
+}
+.ex-delete-modal .ex-delete-submit:disabled { opacity: .5; }
+.ex-delete-modal :is(button):focus-visible {
+  outline: 2px solid var(--interactive-accent); outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .ex-delete-modal .ex-delete-actions button { min-height: 44px; }
+}
+
 /* Saved-filter dialog is a native Obsidian Modal, not part of the scrolling feed. */
 .ex-save-page-modal {
   --ex-modal-gap: 20px;
