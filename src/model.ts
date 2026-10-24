@@ -15,6 +15,7 @@ export interface CardIndex {
   size: number;
   tags: string[];
   inlineTags: string[];
+  frontmatterTags: string[];
 }
 export interface MarkdownSection { name: string; markdown: string; }
 export interface ParsedMarkdown { title: string; body: string; sections: MarkdownSection[]; }
