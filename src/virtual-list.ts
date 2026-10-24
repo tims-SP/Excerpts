@@ -1,5 +1,10 @@
 import { HeightIndex } from "./height-index";
 
+/** The caller must explicitly choose which user-visible scroll position to retain. */
+export type ScrollPolicy = "keep" | "top" | "anchor";
+
+interface ScrollAnchor { path: string; index: number; offset: number; }
+
 /** One logical row per excerpt. Date rails are only created for the first row of a day. */
 export interface TimelineRow {
   path: string;
@@ -64,41 +69,83 @@ export class VirtualTimeline {
     this.lastWidth = this.host.clientWidth;
   }
 
-  setRows(rows: readonly TimelineRow[], resetScroll = true): void {
+  setRows(rows: readonly TimelineRow[], policy: ScrollPolicy): void {
+    if (this.disposed) return;
+    const anchor = policy === "anchor" ? this.captureAnchor() : null;
+    const priorScroll = this.viewport.scrollTop;
+    // Prevent a momentary shrink to empty DOM from clamping the native scroll position.
+    const oldHeight = this.heights.total();
     this.clearMounted();
-    // An empty-state message may have been appended after the preceding snapshot.
     this.host.replaceChildren(this.top, this.window, this.bottom);
     this.rows = [...rows];
     this.heights = new HeightIndex(rows.map(row => row.estimatedHeight));
-    if (resetScroll) {
-      const relativeTop = this.host.getBoundingClientRect().top -
-        this.viewport.getBoundingClientRect().top + this.viewport.scrollTop;
-      this.viewport.scrollTop = Math.max(0, relativeTop);
+    this.host.style.minHeight = Math.max(oldHeight, this.heights.total()) + "px";
+    this.updateSpacers();
+    if (policy === "top" || (policy === "anchor" && !rows.length)) {
+      this.viewport.scrollTop = 0;
+    } else if (policy === "anchor" && anchor) {
+      this.restoreAnchor(anchor);
+    } else {
+      this.viewport.scrollTop = priorScroll;
     }
     this.lastAllowedScroll = this.viewport.scrollTop;
     this.firstVisible = 0;
-    this.updateSpacers();
     this.render();
+    this.host.style.removeProperty("min-height");
+    if (policy === "anchor" && anchor && rows.length) this.restoreAnchor(anchor);
+    this.lastAllowedScroll = this.viewport.scrollTop;
+    this.schedule();
   }
 
   refresh(): void { this.schedule(); }
 
-  /** Call on container width changes; old heights are no longer trustworthy. */
+  /** Resize is driven by the scroll container; never replace heights on height-only changes. */
   resize(): void {
     if (this.disposed) return;
     const width = this.host.clientWidth;
-    if (width && Math.abs(width - this.lastWidth) < 1) { this.schedule(); return; }
+    if (!width) return; // Hidden panes cannot provide trustworthy measurements.
+    if (Math.abs(width - this.lastWidth) < 1) { this.schedule(); return; }
+    const anchor = this.captureAnchor();
     this.lastWidth = width;
     const refreshed = this.options.resizeRows?.();
     if (refreshed && refreshed.length === this.rows.length &&
         refreshed.every((row, index) => row.path === this.rows[index].path)) this.rows = refreshed;
-    const anchorIndex = this.firstVisible;
-    const anchorDelta = this.currentOffset() - this.heights.prefix(anchorIndex);
     this.heights = new HeightIndex(this.rows.map(row => row.estimatedHeight));
-    this.viewport.scrollTop = Math.max(0, this.hostStart() +
-      this.heights.prefix(anchorIndex) + anchorDelta);
+    this.remeasureMountedRows();
     this.updateSpacers();
+    if (anchor) this.restoreAnchor(anchor);
     this.schedule();
+  }
+
+  /** Measure existing mounted rows without remounting or touching their Markdown renderers. */
+  private remeasureMountedRows(): void {
+    for (const [index, element] of this.mounted) {
+      const height = element.getBoundingClientRect().height;
+      if (height > 0 && Number.isFinite(height)) this.heights.set(index, height);
+    }
+  }
+
+  /** Null means the user is still above the feed, e.g. reading the composer. */
+  private captureAnchor(): ScrollAnchor | null {
+    if (!this.rows.length || this.viewport.scrollTop < this.hostStart()) return null;
+    const index = this.heights.indexAt(this.currentOffset());
+    const row = this.rows[index];
+    if (!row) return null;
+    const element = this.mounted.get(index);
+    const box = element?.getBoundingClientRect();
+    const offset = box && box.height > 0
+      ? box.top - this.viewport.getBoundingClientRect().top
+      : this.hostStart() + this.heights.prefix(index) - this.viewport.scrollTop;
+    return { path: row.path, index, offset };
+  }
+
+  private restoreAnchor(anchor: ScrollAnchor): void {
+    if (!this.rows.length) { this.viewport.scrollTop = 0; return; }
+    // If the original card was deleted, use the next row, then the previous row.
+    const found = this.rows.findIndex(row => row.path === anchor.path);
+    const index = found >= 0 ? found : Math.min(anchor.index, this.rows.length - 1);
+    this.viewport.scrollTop = Math.max(0,
+      this.hostStart() + this.heights.prefix(index) - anchor.offset);
   }
 
   private readonly handleScroll = (): void => { this.schedule(); };
