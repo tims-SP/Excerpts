@@ -147,9 +147,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Conflicting operations are refused, never queued or replayed. */
   isBusy(): boolean {
-    return this.scanStatus === "scanning" || !this.searchReady || this.saveBusy ||
-      this.deleteBusy || this.selectionMode !== "normal" ||
-      this.openTagEditors.size > 0 || this.pendingTags.size > 0;
+    // Scanning is owned by the plugin-level mutex, not inferred from view state.
+    return !this.searchReady || this.saveBusy || this.deleteBusy ||
+      this.selectionMode !== "normal" || this.openTagEditors.size > 0 ||
+      this.pendingTags.size > 0;
   }
   private reason(action: "save" | "refresh" | "search" | "filter" | "tag" | "select" | "delete" | "page"): string | null {
     if (this.disposed) return "页面已关闭";
@@ -209,7 +210,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         !isExcerptPath(path, this.workspace))) return;
     const staleSelection = this.scanStatus === "done" && this.selectionMode === "selecting";
     if (this.scanStatus === "scanning") this.scanDirty = true;
-    else this.scanStatus = "stale";
+    // A page without a committed index remains unscanned, even when Vault files change.
+    else if (this.scanStatus !== "blocked" && this.scanStatus !== "idle") this.scanStatus = "stale";
     if (!this.searchReady) {
       this.searchToken++;
       if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -948,8 +950,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private showSuggestions: () => void = () => {};
   private async reload(force = false): Promise<void> {
-    if (this.disposed || this.homeInvalid || this.isBusy()) return;
-    if (this.plugin.isBusy(this)) {
+    if (this.disposed || this.homeInvalid || this.scanStatus === "scanning" || this.isBusy()) return;
+    if (this.plugin.isBusy(this) || !this.plugin.tryAcquireScan(this)) {
       // The initial scan is refused, not queued. The user must refresh explicitly.
       if (this.scanStatus === "idle") {
         this.scanStatus = "blocked";
@@ -960,26 +962,26 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     const token = ++this.refreshToken;
     const cancelled = () => this.disposed || token !== this.refreshToken;
-    // Supersede in-flight full-text searches immediately, not after the scan completes.
-    this.searchToken++;
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = null;
-    this.searchReady = !this.searchText;
-    this.matches = null;
-    if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
-    this.scanDirty = false;
-    this.scanStatus = "scanning";
-    this.scanDone = 0;
-    this.scanTotal = 0;
-    this.scanVisible = false;
-    this.renderScanStatus();
-    this.updateAvailability();
-    this.scanRevealTimer = setTimeout(() => {
-      if (cancelled()) return;
-      this.scanVisible = true;
-      this.renderScanStatus();
-    }, 150);
     try {
+      // The mutex was acquired before any state changes or asynchronous work.
+      this.searchToken++;
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+      this.searchReady = !this.searchText;
+      this.matches = null;
+      if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+      this.scanDirty = false;
+      this.scanStatus = "scanning";
+      this.scanDone = 0;
+      this.scanTotal = 0;
+      this.scanVisible = false;
+      this.renderScanStatus();
+      this.updateAvailability();
+      this.scanRevealTimer = setTimeout(() => {
+        if (cancelled()) return;
+        this.scanVisible = true;
+        this.renderScanStatus();
+      }, 150);
       if (force) this.repo.invalidate();
       const cards = await this.repo.scan(this.workspace, this.plugin.settings.scanBatchSize,
         (done, total) => {
@@ -1008,12 +1010,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         notify(error);
       }
     } finally {
-      if (!cancelled()) {
-        if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
-        this.scanRevealTimer = null;
-        this.scanVisible = false;
-        this.renderScanStatus();
-        this.updateAvailability();
+      try {
+        if (!cancelled()) {
+          if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+          this.scanRevealTimer = null;
+          this.scanVisible = false;
+          this.renderScanStatus();
+          this.updateAvailability();
+        }
+      } finally {
+        // Never unlock when merely cancelling: await the scan's actual termination first.
+        this.plugin.releaseScan(this);
       }
     }
   }
