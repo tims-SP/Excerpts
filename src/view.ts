@@ -668,6 +668,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     } finally {
       this.deleteBusy = false;
       if (this.selectionMode === "deleting") this.selectionMode = "selecting";
+      // An unexpected repository error must not leave selection controls disabled.
+      if (!this.disposed) this.updateSelectionUI();
     }
     const removed = new Set(result.deleted);
     for (const path of removed) {
