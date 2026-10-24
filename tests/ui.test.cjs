@@ -40,6 +40,17 @@ const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,FileView,MarkdownVi
 const old=Module._load;Module._load=function(request,parent,isMain){if(request==='obsidian')return mocks;return old.apply(this,arguments);};
 const Excerpts=require('../main.js');Module._load=old;
 const wait=()=>new Promise(resolve=>setTimeout(resolve,70));
+async function waitFor(check, label='UI state', timeout=4000){
+  const started=Date.now();
+  while(!check()){
+    if(Date.now()-started>=timeout) assert.fail('Timed out waiting for '+label);
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+}
+function waitForIndex(t, total=t.plugin.app.vault.getMarkdownFiles().length){
+  return waitFor(()=>t.pane.contentEl.querySelector('.ex-scan-text')?.textContent===
+    '已扫描 · '+total+' 条', 'index count '+total);
+}
 function clickByLabel(container,label){const el=container.querySelector(`button[aria-label="${label}"]`);assert.ok(el,'Missing button: '+label);el.click();return el;}
 
 async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\n\n## 来源\n\n《某书》\n\n## 批注\n\n摘录笔记',inlineTags=[]){
@@ -66,7 +77,9 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
     }},workspace:{getLeaf(){return leaf;},getLeavesOfType(){return leaf.view instanceof MarkdownView?[leaf]:[];},on(){return {};},async revealLeaf(){}}};
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
-  await pane.openFile(home);await wait();
+  await pane.openFile(home);
+  await waitFor(()=>pane.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条' &&
+    pane.contentEl.querySelectorAll('.ex-card').length===1,'initial index');
   return {files,plugin,pane,leaf,md,home,tagState,getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
     document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
@@ -339,7 +352,7 @@ test('date groups keep cards in date order and load-more appends without replaci
     t.files.set(file.path,{file,data:'第 '+i+' 段文字'});
   }
   t.pane.renderer.requestRefresh(true);
-  await wait();
+  await waitForIndex(t,85);
   assert.equal(root.querySelectorAll('.ex-card').length,40);
   assert.equal(root.querySelectorAll('.ex-day-group').length,39); // fixture's original and first generated excerpt share the same date
   const first=root.querySelector('.ex-card');
@@ -520,7 +533,9 @@ test('saved query restores search UI; invalid or duplicate save names are blocke
   const t=await fixture();
   const saved=await t.plugin.createSavedPage(t.home.path,'检索摘录',{tag:'',query:'测试标题'});
   await t.pane.openFile(saved);
-  await new Promise(resolve=>setTimeout(resolve,500));
+  await waitFor(()=>t.pane.contentEl.querySelector('.ex-search')?.value==='测试标题' &&
+    t.pane.contentEl.querySelectorAll('.ex-card').length===1 &&
+    t.pane.contentEl.querySelector('.ex-count')?.textContent==='1 / 1','saved query results');
   const root=t.pane.contentEl;
   assert.equal(root.querySelector('.ex-search').value,'测试标题');
   assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
@@ -709,7 +724,7 @@ test('selection mode toggles cards without reopening Markdown or changing tags',
 test('bulk select-all includes unloaded cards while cancel preserves every Markdown file',async()=>{
   const t=await fixture();
   for(let i=0;i<85;i++) await t.plugin.app.vault.create('摘录/批量-'+String(i).padStart(3,'0')+'.md','例子 '+i);
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   assert.equal(root.querySelectorAll('.ex-card').length,40);
   clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
@@ -729,7 +744,7 @@ test('bulk select-all includes unloaded cards while cancel preserves every Markd
 test('bulk delete keeps modified snapshots and open editors safe; failed files remain selectable',async()=>{
   const t=await fixture();
   const second=await t.plugin.app.vault.create('摘录/其他.md','其他摘录');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
@@ -755,7 +770,7 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
 test('select all respects a tag filter and never includes out-of-scope Markdown',async()=>{
   const t=await fixture();
   const unrelated=await t.plugin.app.vault.create('摘录/无标签.md','无标签的正文');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   clickByLabel(root,'筛选标签');
   const tag=[...root.querySelectorAll('.ex-filter-tags button')].find(el=>el.textContent==='#哲学');
@@ -797,7 +812,7 @@ test('single deletion shows a spinner and blocks native modal close while file t
 test('bulk deletion reports actual processed counts and requires Done after completion',async()=>{
   const t=await fixture();
   const other=await t.plugin.app.vault.create('摘录/其他.md','其他正文');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   const original=t.plugin.app.fileManager.trashFile;
   t.plugin.app.fileManager.trashFile=async file=>{
@@ -827,7 +842,7 @@ test('bulk deletion reports actual processed counts and requires Done after comp
 test('select-all over 200 entries yields to UI and disables destructive actions until complete',async()=>{
   const t=await fixture();
   for(let i=0;i<425;i++) await t.plugin.app.vault.create('摘录/测试批量-'+i+'.md','摘录');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
@@ -864,7 +879,7 @@ test('clear filter during a canceled search restores bulk selection availability
 test('select all excludes externally missing files, and a second click cancels selection',async()=>{
   const t=await fixture();
   const missing=await t.plugin.app.vault.create('摘录/已不存在.md','外部删除的内容');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');
   Menu.last.items.find(item=>item.title==='批量选择').handler();
@@ -886,7 +901,7 @@ test('select all excludes externally missing files, and a second click cancels s
 test('clicking an externally removed card prunes it from the current selection',async()=>{
   const t=await fixture();
   const stale=await t.plugin.app.vault.create('摘录/失效.md','已不存在');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');
   Menu.last.items.find(item=>item.title==='批量选择').handler();
@@ -906,7 +921,7 @@ test('clicking an externally removed card prunes it from the current selection',
 test('batched selection keeps its original progress denominator when a file disappears',async()=>{
   const t=await fixture();
   for(let i=0;i<201;i++) await t.plugin.app.vault.create('摘录/候选-'+i+'.md','内容');
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);await waitForIndex(t);
   const root=t.pane.contentEl;
   clickByLabel(root,'页面选项');
   Menu.last.items.find(item=>item.title==='批量选择').handler();
@@ -935,7 +950,7 @@ test('manual refresh updates stale index without external auto-rescan',async()=>
   const refresh=Menu.last.items.find(item=>item.title==='刷新摘录');
   assert.ok(refresh);
   assert.equal(refresh.disabled,false);
-  refresh.handler();await wait();
+  refresh.handler();await waitForIndex(t,2);
   assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 2 条');
   assert.equal(root.querySelectorAll('.ex-card').length,2);
   await t.close();
@@ -967,15 +982,15 @@ test('scan indicator shows real running state and settles without progress',asyn
     return cancelled()?null:original(ws,batch,onProgress,cancelled);
   };
   t.plugin.refreshViews(true);
-  await new Promise(resolve=>setTimeout(resolve,190));
   const status=root.querySelector('.ex-scan-status');
+  await waitFor(()=>status.dataset.state==='scanning','visible scanning state');
   assert.equal(status.dataset.state,'scanning');
   assert.equal(root.querySelector('.ex-scan-progress').hidden,false);
   assert.match(root.querySelector('.ex-scan-text').textContent,/扫描中/);
   assert.equal(root.querySelector('.ex-scan-progress').getAttribute('aria-valuenow'),'0');
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,true);
-  await new Promise(resolve=>setTimeout(resolve,200));
+  await waitFor(()=>status.dataset.state==='done','scan completion');
   assert.equal(status.dataset.state,'done');
   assert.equal(root.querySelector('.ex-scan-progress').hidden,true);
   await t.close();
@@ -984,7 +999,8 @@ test('scan indicator shows real running state and settles without progress',asyn
 test('scan failure leaves previous cards visible and enables retry',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   t.plugin.repo.scan=async()=>{throw Error('test scan error');};
-  t.plugin.refreshViews(true);await wait();
+  t.plugin.refreshViews(true);
+  await waitFor(()=>root.querySelector('.ex-scan-status').dataset.state==='error','scan failure');
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'error');
   assert.equal(root.querySelector('.ex-scan-text').textContent,'扫描失败');
   assert.equal(root.querySelectorAll('.ex-card').length,1);
