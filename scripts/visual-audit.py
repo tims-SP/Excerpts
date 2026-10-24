@@ -259,10 +259,14 @@ with sync_playwright() as playwright:
               if (!tab) throw Error('setting tab was not registered');
               tab.display();
               document.body.append(tab.containerEl);
+              document.getElementById('mount').hidden = true;
             }""")
             assert page.locator(".ex-settings-fixture .setting-item").count() >= 4, (key, "settings")
             screenshot(page, theme, width, "settings", "settings")
-            page.locator(".ex-settings-fixture").evaluate("(el) => el.remove()")
+            page.evaluate("""() => {
+              document.querySelector('.ex-settings-fixture').remove();
+              document.getElementById('mount').hidden = false;
+            }""")
 
             # Status painter is exercised in isolation; no fake completed scan
             # or modified application business behavior.
