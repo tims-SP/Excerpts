@@ -1360,8 +1360,9 @@ test('moving an entire nested folder marks the index stale without rescanning',a
   const root=t.pane.contentEl;
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   assert.equal(scans,0,'folder rename may not launch a scan');
-  t.plugin.refreshViews(true);await waitForIndex(t,2);
+  t.plugin.refreshViews(true);
+  await waitFor(()=>[...root.querySelectorAll('.ex-card')].some(el=>el.dataset.path===nested.path),
+    'renamed child appears after the manual scan completes');
   assert.equal(scans,1);
-  assert.ok([...root.querySelectorAll('.ex-card')].some(el=>el.dataset.path===nested.path));
   await t.close();
 });
