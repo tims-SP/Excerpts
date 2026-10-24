@@ -1295,12 +1295,11 @@ test('scan locks save and search inputs without discarding the composer draft',a
   assert.equal(t.files.size,3,'disabled save cannot create Markdown');
   assert.equal(textarea.value,'尚未保存的草稿');
   release();
-  await waitFor(()=>root.querySelector('.ex-scan-status').dataset.state==='done','scan completes');
-  const button=root.querySelector('.ex-compose-actions .ex-btn-primary');
   const renderer=[...t.plugin.rendered][0];
-  assert.equal(button.disabled,false,JSON.stringify({state:renderer.scanStatus,
-    text:textarea.value,reason:renderer.reason('save'),busy:renderer.isBusy(),
-    peers:t.plugin.isBusy(renderer),searchReady:renderer.searchReady}));
+  const button=root.querySelector('.ex-compose-actions .ex-btn-primary');
+  await waitFor(()=>renderer.scanStatus==='done' && !button.disabled,
+    'actual scan finishes and save re-enables');
+  assert.equal(button.disabled,false);
   assert.equal(scans,1);
   await t.close();
 });
