@@ -1197,6 +1197,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.observer = null;
     this.queue = [];
     this.unmountMarkdown();
+    const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
+      (this.scanStatus === "stale" || (this.scanStatus === "scanning" && this.scanDirty));
+    if (resultsUnavailable) {
+      this.timeline?.setRows([]);
+      this.countEl.textContent = "搜索结果暂不可用";
+      const empty = node("section", "ex-empty");
+      empty.append(node("div", "ex-empty-title", "搜索结果暂不可用"));
+      empty.append(node("p", "ex-empty-description",
+        "摘录内容在扫描期间发生变化。请清除搜索词，然后手动刷新。"));
+      this.listEl.append(empty);
+      this.updateAvailability();
+      return;
+    }
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
     if (visible.length && typeof IntersectionObserver !== "undefined") {
@@ -1337,7 +1350,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
     body.replaceChildren();
     const mediaFirst = !parsed.title &&
-      /^\\s*(?:!\\[\\[[^\\]]+\\]\\]|!\\[[^\\]]*\\]\\([^)]+\\)|<img\\b[^>]*>|<video\\b[^>]*>)(?:\\s*\\n\\s*\\n|\\s*$)/.test(parsed.body);
+      /^\s*(?:!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>|<video\b[^>]*>)(?:\s*\n\s*\n|\s*$)/.test(parsed.body);
     card.classList.toggle("ex-media-first", mediaFirst);
     if (parsed.title) body.append(node("h4", "ex-note-heading", parsed.title));
     const content = node("div", "ex-content-viewport");
