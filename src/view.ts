@@ -691,8 +691,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       (current.tag ? "#" + current.tag : "全部标签") +
       (current.query ? " · 搜索「" + current.query + "」" : "");
     new SavePageModal(this.plugin.app, suggested,
-      name => this.plugin.savedPageNameIssue(this.workspace.homePath, name),
+      name => this.reason("page") ?? this.plugin.savedPageNameIssue(this.workspace.homePath, name),
       async name => {
+        if (!this.guard("page")) throw new Error("摘录页已失效，请重新打开");
         const file = await this.plugin.createSavedPage(this.workspace.homePath, name, current);
         new Notice("已创建摘录页：" + file.basename);
         await this.plugin.openHome(file.path);
