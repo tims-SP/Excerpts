@@ -2606,3 +2606,123 @@ test('moving a folder invalidates an open folder-based feed',async()=>{
   assert.equal(view.getState().folderPath,'摘录');
   await view.onClose();view.contentEl.remove();await t.close();
 });
+
+function installFolderTabs(t){
+  const originalGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=(mode)=>{
+    if(mode!=='tab')return originalGetLeaf(mode);
+    const tab={view:null,async setViewState(state){
+      this.state=state;
+      this.view=t.plugin.factories[state.type](tab);
+      document.body.append(this.view.contentEl);
+      await this.view.setState(state.state,{});
+    }};
+    t.folderLeaves.push(tab);
+    return tab;
+  };
+}
+
+test('clicking folder context menu invokes navigation, stale menu refuses moved folder',async()=>{
+  const t=await fixture();
+  await t.pane.onUnloadFile(t.home);
+  installFolderTabs(t);
+  const folder=t.files.get('摘录').file;
+  const menu=new Menu();
+  t.workspaceEvents.get('file-menu')(menu,folder);
+  menu.items[0].handler();
+  await waitFor(()=>t.folderLeaves.length===1 && !!t.folderLeaves[0].view,'menu action opened folder');
+  await waitFor(()=>t.folderLeaves[0].view.contentEl.querySelector('.ex-scan-status')?.dataset.state==='done');
+  const stale=new Menu();
+  t.workspaceEvents.get('file-menu')(stale,folder);
+  t.files.delete('摘录');folder.path='改名';t.files.set('改名',{file:folder});
+  t.vaultEvents.get('rename')(folder,'摘录');
+  stale.items[0].handler();
+  assert.equal(t.folderLeaves.length,1,'menu captured before rename does not navigate');
+  assert.match(Notice.last,/位置已变化.*右键/);
+  await t.folderLeaves[0].view.onClose();
+  t.folderLeaves[0].view.contentEl.remove();
+  await t.close();
+});
+
+test('renamed-back folder does not reuse a previously invalidated view',async()=>{
+  const t=await fixture();
+  await t.pane.onUnloadFile(t.home);
+  installFolderTabs(t);
+  const folder=t.files.get('摘录').file;
+  await t.plugin.openFolder(folder);
+  const stale=t.folderLeaves[0].view;
+  await waitFor(()=>stale.contentEl.querySelector('.ex-scan-status')?.dataset.state==='done');
+  t.files.delete('摘录');folder.path='收藏';t.files.set('收藏',{file:folder});
+  t.vaultEvents.get('rename')(folder,'摘录');
+  assert.equal(stale.contentEl.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.match(stale.contentEl.querySelector('.ex-page-hint').textContent,/文件夹右键菜单重新打开/);
+  t.files.delete('收藏');folder.path='摘录';t.files.set('摘录',{file:folder});
+  t.vaultEvents.get('rename')(folder,'收藏');
+  assert.equal(stale.matchesFolder(folder),false);
+  await t.plugin.openFolder(folder);
+  assert.equal(t.folderLeaves.length,2,'new open creates a fresh tab instead of reusing invalid view');
+  const fresh=t.folderLeaves[1].view;
+  await waitFor(()=>fresh.contentEl.querySelector('.ex-scan-status')?.dataset.state==='done');
+  assert.equal(fresh.matchesFolder(folder),true);
+  assert.equal(stale.contentEl.querySelector('.ex-scan-status').dataset.state,'invalid');
+  await t.plugin.openFolder(folder);
+  assert.equal(t.folderLeaves.length,2,'valid folder tab can still be reused');
+  await fresh.onClose();fresh.contentEl.remove();
+  await stale.onClose();stale.contentEl.remove();
+  await t.close();
+});
+
+test('two folder views isolate cards, drafts and saved page directories',async()=>{
+  const t=await fixture();
+  await t.pane.onUnloadFile(t.home);
+  installFolderTabs(t);
+  const first=t.files.get('摘录').file;
+  const second=new TFolder('电影');
+  t.files.set(second.path,{file:second});
+  const secondFile=new TFile('电影/对白.md');
+  t.files.set(secondFile.path,{file:secondFile,data:'# 电影台词'});
+  await t.plugin.openFolder(first);
+  const v1=t.folderLeaves[0].view;
+  await waitFor(()=>v1.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条');
+  const input=v1.contentEl.querySelector('.ex-compose-text');
+  input.value='独立的文学草稿';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await t.plugin.openFolder(second);
+  const v2=t.folderLeaves[1].view;
+  await waitFor(()=>v2.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条');
+  assert.equal(v1.contentEl.querySelector('.ex-card').dataset.path,'摘录/测试.md');
+  assert.equal(v2.contentEl.querySelector('.ex-card').dataset.path,'电影/对白.md');
+  assert.equal(v2.contentEl.querySelector('.ex-compose-text').value,'');
+  const ws=[...t.plugin.rendered].find(child=>child.workspace.rootFolder==='电影').workspace;
+  const created=await t.plugin.repo.create(ws,'# 第二目录摘录');
+  assert.equal(created.path,'电影/第二目录摘录.md');
+  const saved=await t.plugin.createSavedPage(ws,'电影精选',{tag:'台词',query:''});
+  assert.equal(saved.path,'电影/电影精选.excerpts');
+  assert.equal(v1.contentEl.querySelector('.ex-compose-text').value,'独立的文学草稿');
+  await v2.onClose();v2.contentEl.remove();
+  await v1.onClose();v1.contentEl.remove();
+  await t.close();
+});
+
+test('folder identity is checked during scans and before delete writes',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  const ws=t.plugin.workspaceForFolder(folder);
+  const candidate=t.plugin.repo.snapshotForDelete(t.md.path,ws);
+  assert.ok(candidate);
+  await t.pane.onUnloadFile(t.home);
+  const replacement=new TFolder('摘录');
+  t.files.set('摘录',{file:replacement});
+  assert.equal(t.plugin.repo.snapshotForDelete(t.md.path,ws),null);
+  const deleted=await t.plugin.repo.deleteEntries(ws,[candidate]);
+  assert.equal(deleted.deleted.length,0);
+  assert.equal(deleted.failed.length,1);
+  assert.match(deleted.failed[0].reason,/文件夹已移动|不存在/);
+  assert.equal(t.files.has(t.md.path),true,'replaced folder cannot authorize old note deletion');
+  await assert.rejects(t.plugin.repo.scan(ws,32,()=>{},()=>false),/文件夹已移动|不存在/);
+  await assert.rejects(t.plugin.repo.create(ws,'# 不能保存'),/文件夹已移动|不存在/);
+  const valid=t.plugin.workspaceForFolder(replacement);
+  const scanned=await t.plugin.repo.scan(valid,32,()=>{},()=>false);
+  assert.equal(scanned.length,1,'explicit reopened folder can scan');
+  await t.close();
+});

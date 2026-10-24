@@ -176,6 +176,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = [];
   }
   /** Conflicting operations are refused, never queued or replayed. */
+  isInvalid(): boolean { return this.homeInvalid || this.disposed; }
   isBusy(): boolean {
     // Scanning is owned by the plugin-level mutex, not inferred from view state.
     return !this.searchReady || this.saveBusy || this.deleteBusy ||
@@ -185,7 +186,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reason(action: "save" | "refresh" | "search" | "filter" | "tag" | "select" | "delete" | "page"): string | null {
     if (this.disposed) return "页面已关闭";
     if (this.homeInvalid) return this.homeInvalidCause === "configuration"
-      ? "摘录页配置已变化，请从文件列表重新打开" : "摘录页位置已变化，请从文件列表重新打开";
+      ? "摘录页配置已变化，请从文件列表重新打开"
+      : this.workspace.kind === "folder"
+        ? "文件夹位置已变化，请从文件夹右键菜单重新打开摘录"
+        : "摘录页位置已变化，请从文件列表重新打开";
     if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
     if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
     if (this.saveBusy) return "正在保存，请完成后再操作";
@@ -316,7 +320,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.renderScanStatus();
     const message = cause === "configuration"
       ? "摘录页配置已变化，请从文件列表重新打开"
-      : "摘录页位置已变化，请从文件列表重新打开";
+      : this.workspace.kind === "folder"
+        ? "文件夹位置已变化，请从文件夹右键菜单重新打开摘录"
+        : "摘录页位置已变化，请从文件列表重新打开";
     this.announceScan(message);
     this.updateAvailability();
     new Notice(message);
@@ -340,7 +346,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const hint = this.homeInvalid
       ? this.homeInvalidCause === "configuration"
         ? "筛选配置已变化，当前页面无法继续操作。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
-        : "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
+        : this.workspace.kind === "folder"
+          ? "文件夹摘录视图已失效。如有未保存的草稿，请先复制，再从文件夹右键菜单重新打开摘录。"
+          : "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
       : this.scanStatus === "blocked"
         ? "因其他摘录页正在操作，本页未扫描。待操作结束后，请从页面选项手动刷新。"
         : "";

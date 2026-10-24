@@ -18,7 +18,9 @@ export class ExcerptsFolderView extends ItemView {
   getIcon(): string { return "bookmark"; }
   getState(): { folderPath: string } { return { folderPath: this.folderPath }; }
   matchesFolder(folder: TFolder): boolean {
-    return this.sourceFolder === folder && this.folderPath === folder.path;
+    // An invalid view stays read-only even if its original folder name returns.
+    return Boolean(this.renderer) && !this.renderer!.isInvalid() &&
+      this.sourceFolder === folder && this.folderPath === folder.path;
   }
   requestRefresh(force = false): void { this.renderer?.requestRefresh(force); }
   async setState(state: { folderPath?: string }, result: ViewStateResult): Promise<void> {

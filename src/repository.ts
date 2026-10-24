@@ -28,6 +28,15 @@ export class EntryRepository {
   private searchCacheBytes = 0;
   private reservedPaths = new Set<string>();
   constructor(private readonly app: App) {}
+  private folderSourceValid(ws: Workspace): boolean {
+    if (ws.kind !== "folder") return true;
+    const folder = this.app.vault.getAbstractFileByPath(ws.homePath);
+    return folder instanceof TFolder && folder === ws.sourceFolder && folder.path === ws.rootFolder;
+  }
+  private assertFolderSource(ws: Workspace): void {
+    if (!this.folderSourceValid(ws))
+      throw new Error("文件夹已移动或不存在，请从文件夹右键菜单重新打开摘录");
+  }
   async ensureFolder(path: string): Promise<void> {
     let cursor = "";
     for (const part of validateRelativePath(path).split("/")) {
@@ -42,6 +51,7 @@ export class EntryRepository {
     onProgress: (done: number, total: number) => void,
     isCancelled: () => boolean): Promise<CardIndex[] | null> {
     if (isCancelled()) return null;
+    this.assertFolderSource(ws);
     const files = this.app.vault.getMarkdownFiles().filter(file => isExcerptPath(file.path, ws));
     const total = files.length;
     onProgress(0, total);
@@ -49,11 +59,14 @@ export class EntryRepository {
     const cards: CardIndex[] = [];
     for (let start = 0; start < total; start += stride) {
       if (isCancelled()) return null;
+      this.assertFolderSource(ws);
       for (const file of files.slice(start, start + stride)) cards.push(this.indexFile(file));
       onProgress(cards.length, total);
       if (cards.length < total) await new Promise<void>(resolve => setTimeout(resolve, 0));
     }
-    return isCancelled() ? null : cards;
+    if (isCancelled()) return null;
+    this.assertFolderSource(ws);
+    return cards;
   }
   private indexFile(file: TFile): CardIndex {
     const cache = this.app.metadataCache.getFileCache(file);
@@ -168,12 +181,8 @@ export class EntryRepository {
     return matches;
   }
   async create(ws: Workspace, markdown = "", tags: string[] = []): Promise<TFile> {
-    if (ws.kind === "folder") {
-      const current = this.app.vault.getAbstractFileByPath(ws.rootFolder);
-      // A moved or deleted folder must never be silently recreated.
-      if (!(current instanceof TFolder) || current !== ws.sourceFolder ||
-          current.path !== ws.homePath) throw new Error("文件夹已移动或不存在，请重新打开摘录");
-    } else if (ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
+    this.assertFolderSource(ws);
+    if (ws.kind === "file" && ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
     const base = excerptFileStem(markdown);
     const prefix = ws.rootFolder === "/" ? "" : ws.rootFolder + "/";
     const occupied = new Set(this.app.vault.getAllLoadedFiles().map(file => filenameKey(file.path)));
@@ -192,6 +201,7 @@ export class EntryRepository {
       if (occupied.has(key) || this.reservedPaths.has(key) || this.app.vault.getAbstractFileByPath(path)) continue;
       this.reservedPaths.add(key);
       try {
+        this.assertFolderSource(ws);
         return await this.app.vault.create(path, content);
       } catch (error) {
         // Retry only when another writer really created the path, not on unrelated IO errors.
@@ -209,7 +219,7 @@ export class EntryRepository {
     throw new Error("无法生成唯一文件名");
   }
   snapshotForDelete(path: string, ws: Workspace): DeleteCandidate | null {
-    if (!isExcerptPath(path, ws)) return null;
+    if (!this.folderSourceValid(ws) || !isExcerptPath(path, ws)) return null;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile) || file.extension !== "md") return null;
     return { path, file, mtime: file.stat.mtime, size: file.stat.size };
@@ -225,6 +235,7 @@ export class EntryRepository {
     for (const candidate of unique) {
       const { path } = candidate;
       try {
+        this.assertFolderSource(ws);
         const current = this.app.vault.getAbstractFileByPath(path);
         if (!(current instanceof TFile) || current !== candidate.file ||
             current.extension !== "md" || !isExcerptPath(path, ws)) {

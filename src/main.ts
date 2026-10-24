@@ -47,8 +47,16 @@ export default class ExcerptsPlugin extends Plugin {
     this.addCommand({ id: "open-home", name: "打开摘录首页", callback: () => void this.openHome().catch(showError) });
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFolder) || !file.path || file.path === "/") return;
+      const selectedPath = file.path;
       menu.addItem(item => item.setTitle("打开摘录").setIcon("bookmark")
-        .onClick(() => void this.openFolder(file).catch(showError)));
+        .onClick(() => {
+          // Do not follow a folder that moved after its context menu was opened.
+          if (file.path !== selectedPath) {
+            new Notice("文件夹位置已变化，请重新右键选择文件夹");
+            return;
+          }
+          void this.openFolder(file).catch(showError);
+        }));
     }));
     this.addCommand({ id: "refresh-home", name: "刷新摘录", callback: () => {
       const view = this.app.workspace.activeLeaf?.view;
