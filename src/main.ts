@@ -38,29 +38,31 @@ export default class ExcerptsPlugin extends Plugin {
     this.registerEvent(this.app.vault.on("modify", file => this.onFileChange(file.path)));
     this.registerEvent(this.app.vault.on("create", file => this.onFileChange(file.path, file instanceof TFolder)));
     this.registerEvent(this.app.vault.on("delete", file => {
-      if (file.path === this.settings.defaultHome) {
+      const path = file.path;
+      if (this.settings.defaultHome === path ||
+          this.settings.defaultHome.startsWith(path + "/")) {
         this.settings.defaultHome = "";
         void this.saveSettings();
       }
-      this.onFileChange(file.path, file instanceof TFolder);
+      for (const child of this.rendered) {
+        const home = child.workspace.homePath;
+        if (home === path || home.startsWith(path + "/")) child.invalidateHome();
+      }
+      this.onFileChange(path, file instanceof TFolder);
     }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      if (oldPath === this.settings.defaultHome) {
-        this.settings.defaultHome = file.path;
+      // Do not migrate default-home pointers or running views to renamed paths.
+      if (this.settings.defaultHome === oldPath ||
+          this.settings.defaultHome.startsWith(oldPath + "/")) {
+        this.settings.defaultHome = "";
         void this.saveSettings();
-      } else if (this.settings.defaultHome.startsWith(oldPath + "/")) {
-        this.settings.defaultHome = file.path + this.settings.defaultHome.slice(oldPath.length);
-        void this.saveSettings();
+      }
+      for (const child of this.rendered) {
+        const home = child.workspace.homePath;
+        if (home === oldPath || home.startsWith(oldPath + "/")) child.invalidateHome();
       }
       this.onFileChange(oldPath, file instanceof TFolder);
       this.onFileChange(file.path, file instanceof TFolder);
-      // Vault updates TFile paths in-place; existing renderers still hold their old scope.
-      for (const child of this.rendered) {
-        const home = child.workspace.homePath;
-        if (home === oldPath || home.startsWith(oldPath + "/")) {
-          child.relocateHomePath(file.path + home.slice(oldPath.length));
-        }
-      }
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleEditorCleanup()));
