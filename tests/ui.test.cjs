@@ -947,6 +947,65 @@ test('batched selection keeps its original progress denominator when a file disa
   await t.close();
 });
 
+test('rapid bulk deletion yields between early progress and subsequent chunks',async()=>{
+  const t=await fixture();
+  for(let i=0;i<17;i++) await t.plugin.app.vault.create('摘录/快速删除-'+i+'.md','待删除');
+  const workspace=t.plugin.workspaceForHome(t.home);
+  const candidates=t.plugin.app.vault.getMarkdownFiles().map(file=>
+    t.plugin.repo.snapshotForDelete(file.path,workspace));
+  assert.equal(candidates.length,18);
+  const progress=[];
+  let firstYielded=false, chunkYielded=false;
+  const result=await t.plugin.repo.deleteEntries(workspace,candidates,state=>{
+    progress.push(state);
+    if(state.processed===1) setTimeout(()=>{firstYielded=true;},0);
+    if(state.processed===2)
+      assert.equal(firstYielded,true,'the first progress update must reach another UI task');
+    if(state.processed===16) setTimeout(()=>{chunkYielded=true;},0);
+    if(state.processed===17)
+      assert.equal(chunkYielded,true,'a long batch must yield after every 16 entries');
+  });
+  assert.equal(result.deleted.length,18);
+  assert.equal(result.failed.length,0);
+  assert.deepEqual(progress.map(state=>state.processed),Array.from({length:18},(_,i)=>i+1));
+  assert.equal(progress.at(-1).total,18);
+  assert.equal(progress.at(-1).deleted,18);
+  assert.ok(t.files.has(t.home.path),'home configuration file must not be touched');
+  await t.close();
+});
+
+test('an old selection menu cannot enter selection after a new index scan starts',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  const staleSelect=Menu.last.items.find(item=>item.title==='批量选择');
+  assert.ok(staleSelect && !staleSelect.disabled);
+  const realScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let releaseScan, finished=false;
+  t.plugin.repo.scan=async(...args)=>{
+    await new Promise(resolve=>{releaseScan=resolve;});
+    const cards=await realScan(...args);
+    finished=true;
+    return cards;
+  };
+  t.plugin.refreshViews(true);
+  assert.equal(typeof releaseScan,'function','manual refresh must start an async scan');
+  staleSelect.handler();
+  assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false,
+    'previously enabled menu handlers must recheck scan state');
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
+  releaseScan();
+  await waitFor(()=>finished && root.querySelector('.ex-scan-status').dataset.state==='done',
+    'the active scan has fully completed');
+  clickByLabel(root,'页面选项');
+  const freshSelect=Menu.last.items.find(item=>item.title==='批量选择');
+  assert.equal(freshSelect.disabled,false);
+  freshSelect.handler();
+  assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),true);
+  root.querySelector('.ex-select-done').click();
+  await t.close();
+});
+
 test('manual refresh updates stale index without external auto-rescan',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const next=await t.plugin.app.vault.create('摘录/新增.md','新内容');
