@@ -15,6 +15,7 @@ export default class ExcerptsPlugin extends Plugin {
   private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
   private editorCleanupTimer: ReturnType<typeof setTimeout> | null = null;
   private editorCleanupRunning = false;
+  private unloading = false;
   async onload(): Promise<void> {
     const data = await this.loadData() as Partial<PluginSettings> | null;
     // This is a breaking development release. Ignore the former collections schema.
@@ -53,8 +54,11 @@ export default class ExcerptsPlugin extends Plugin {
     }));
     this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleEditorCleanup()));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.scheduleEditorCleanup()));
+    this.registerEvent(this.app.workspace.on("file-open", () => this.scheduleEditorCleanup()));
   }
   onunload(): void {
+    this.unloading = true;
     if (this.editorCleanupTimer) clearTimeout(this.editorCleanupTimer);
     this.temporaryEditors.clear();
   }
@@ -65,10 +69,10 @@ export default class ExcerptsPlugin extends Plugin {
   }
   private isEditorOpen(file: TFile): boolean {
     return this.app.workspace.getLeavesOfType("markdown")
-      .some(leaf => leaf.view instanceof MarkdownView && leaf.view.file === file);
+      .some(leaf => leaf.view instanceof MarkdownView && leaf.view.file?.path === file.path);
   }
   private scheduleEditorCleanup(): void {
-    if (!this.temporaryEditors.size) return;
+    if (this.unloading || !this.temporaryEditors.size) return;
     if (this.editorCleanupTimer) clearTimeout(this.editorCleanupTimer);
     this.editorCleanupTimer = setTimeout(() => {
       this.editorCleanupTimer = null;
@@ -77,10 +81,12 @@ export default class ExcerptsPlugin extends Plugin {
   }
   /** Conservative removal: wait for native editor writes and compare persisted content twice. */
   private async cleanupClosedEditors(): Promise<void> {
+    if (this.unloading) return;
     if (this.editorCleanupRunning) { this.scheduleEditorCleanup(); return; }
     this.editorCleanupRunning = true;
     try {
       for (const [file, candidate] of this.temporaryEditors) {
+        if (this.unloading) return;
         if (this.isEditorOpen(file)) continue; // Switching tabs is not closing.
         // Do not delete a document if the user renamed or moved it.
         if (file.path !== candidate.path ||
@@ -101,7 +107,7 @@ export default class ExcerptsPlugin extends Plugin {
         // Any changed frontmatter, body, media, comments or other data preserves the file.
         if (!after.startsWith(candidate.frontmatter) ||
             after.slice(candidate.frontmatter.length).trim() !== "") continue;
-        if (this.isEditorOpen(file) || file.path !== candidate.path ||
+        if (this.unloading || this.isEditorOpen(file) || file.path !== candidate.path ||
             this.app.vault.getAbstractFileByPath(candidate.path) !== file) continue;
         await this.app.fileManager.trashFile(file);
       }
