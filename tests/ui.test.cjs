@@ -949,6 +949,112 @@ test('batched selection keeps its original progress denominator when a file disa
   await t.close();
 });
 
+test('deletion keeps its lock and modal loading until the index refresh completes',async()=>{
+  const t=await fixture();
+  const survivor=await t.plugin.app.vault.create('摘录/保留.md','应当保留');
+  t.plugin.refreshViews(true);await waitForIndex(t,2);
+  const root=t.pane.contentEl, renderer=[...t.plugin.rendered][0];
+  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let unblockScan, scans=0;
+  t.plugin.repo.scan=async(...args)=>{
+    scans++;
+    await new Promise(resolve=>{unblockScan=resolve;});
+    return originalScan(...args);
+  };
+  const target=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===t.md.path);
+  assert.ok(target);
+  target.querySelector('.ex-card-options').click();
+  await waitFor(()=>Menu.last?.items?.some(it=>it.title==='删除摘录'),'card delete menu');
+  Menu.last.items.find(it=>it.title==='删除摘录').handler();
+  const modal=Modal.last;
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  await waitFor(()=>typeof unblockScan==='function','post-delete scan has started');
+  assert.equal(renderer.deleteBusy,true,'lock must remain held during indexing');
+  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').textContent,'删除中…');
+  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').disabled,true);
+  modal.close();
+  assert.equal(modal.modalEl.isConnected,true,'cannot dismiss a pending delete');
+  const otherCard=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===survivor.path);
+  assert.ok(otherCard,'unaffected card remains available');
+  otherCard.querySelector('.ex-card-options').click();
+  await waitFor(()=>Menu.last.items.at(-1).title==='删除摘录','survivor menu');
+  Menu.last.items.at(-1).handler();
+  assert.equal(document.querySelectorAll('.ex-delete-modal').length,1,
+    'another delete confirmation cannot open while the first refresh is active');
+  assert.equal(t.files.has(survivor.path),true);
+  unblockScan();
+  await waitFor(()=>!renderer.deleteBusy && !modal.modalEl.isConnected,'deletion and scan settled');
+  assert.equal(scans,1);
+  assert.equal(t.files.has(t.md.path),false);
+  assert.equal(t.files.has(survivor.path),true);
+  await t.close();
+});
+
+test('queued refresh is absorbed by the successful bulk deletion index scan',async()=>{
+  const t=await fixture();
+  const nested=await t.plugin.app.vault.create('摘录/子目录/嵌套.md','嵌套');
+  const survivor=await t.plugin.app.vault.create('摘录/保留.md','根目录');
+  t.plugin.refreshViews(true);await waitForIndex(t,3);
+  const root=t.pane.contentEl, renderer=[...t.plugin.rendered][0];
+  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let scans=0;
+  t.plugin.repo.scan=async(...args)=>{scans++;return originalScan(...args);};
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(it=>it.title==='批量选择').handler();
+  const target=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===t.md.path);
+  target.click();
+  t.plugin.settings.recursive=false;
+  t.plugin.refreshViews(true);
+  assert.equal(renderer.refreshQueued,true);
+  assert.equal(renderer.workspace.recursive,true,'selection still uses old scope');
+  root.querySelector('.ex-delete-selected').click();
+  const modal=Modal.last;
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  await waitFor(()=>!renderer.deleteBusy &&
+    !modal.modalEl.isConnected && renderer.scanStatus==='done','single reconciled deletion scan');
+  assert.equal(scans,1,'queued scan should merge with the mandatory deletion scan');
+  assert.equal(renderer.refreshQueued,false);
+  assert.equal(renderer.workspace.recursive,false);
+  assert.deepEqual(renderer.items.map(item=>item.path),[survivor.path]);
+  assert.equal(t.files.has(nested.path),true,'excluded nested file is not deleted');
+  assert.equal(t.files.has(survivor.path),true);
+  await t.close();
+});
+
+test('partial bulk deletion keeps deferred scope changes until selection exits',async()=>{
+  const t=await fixture();
+  const nested=await t.plugin.app.vault.create('摘录/子目录/嵌套.md','嵌套');
+  t.plugin.refreshViews(true);await waitForIndex(t,2);
+  const root=t.pane.contentEl, renderer=[...t.plugin.rendered][0];
+  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let scans=0;
+  t.plugin.repo.scan=async(...args)=>{scans++;return originalScan(...args);};
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(it=>it.title==='批量选择').handler();
+  root.querySelector('.ex-select-all').click();
+  t.md.stat.mtime++; // One file must survive the delete attempt.
+  t.plugin.settings.recursive=false;
+  t.plugin.refreshViews(true);
+  root.querySelector('.ex-delete-selected').click();
+  const modal=Modal.last;
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  await waitFor(()=>!renderer.deleteBusy && modal.modalEl.querySelector('.ex-delete-submit').textContent==='完成',
+    'partial deletion completed');
+  assert.equal(scans,1);
+  assert.equal(renderer.refreshQueued,true,'scope change remains deferred while selection is active');
+  assert.equal(renderer.workspace.recursive,true);
+  assert.equal(renderer.selectionMode,'selecting');
+  assert.equal(t.files.has(t.md.path),true);
+  assert.equal(t.files.has(nested.path),false);
+  modal.modalEl.querySelector('.ex-delete-submit').click();
+  root.querySelector('.ex-select-done').click();
+  await waitFor(()=>!renderer.refreshQueued && renderer.workspace.recursive===false &&
+    renderer.scanStatus==='done','deferred scope refresh after exit');
+  assert.equal(scans,2,'scope change requires one later scan after selection exit');
+  assert.equal(t.files.has(t.md.path),true);
+  await t.close();
+});
+
 test('rapid bulk deletion yields between early progress and subsequent chunks',async()=>{
   const t=await fixture();
   for(let i=0;i<17;i++) await t.plugin.app.vault.create('摘录/快速删除-'+i+'.md','待删除');
