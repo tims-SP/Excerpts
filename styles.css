@@ -375,6 +375,9 @@
 .excerpts-root .ex-group-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .excerpts-root .ex-group-body { min-width: 0; margin-bottom: var(--ex-space-2); margin-left: 7px; padding: var(--ex-space-1) 0 var(--ex-space-2) var(--ex-space-3); border-left: 2px solid var(--ex-border); }
 .excerpts-root .ex-group-body > :first-child { margin-top: 0; }
+.excerpts-root .ex-long-content-hint { margin: 0; color: var(--text-muted); font-size: var(--font-ui-small, 13px); }
+.excerpts-root button.ex-group-read { align-self: flex-start; min-height: 32px; font-size: var(--font-ui-smaller, 12px); }
+.excerpts-root button.ex-group-read[hidden] { display: none !important; }
 
 /* Tag editing belongs directly above the footer, never between prose and H2 content. */
 .excerpts-root .ex-tag-editor {

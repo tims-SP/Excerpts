@@ -96,6 +96,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reading = 0;
   private markdownChildren = new Map<string, Array<{ mount: HTMLElement; child: MarkdownRenderChild }>>();
   private previewObservers = new Map<string, ResizeObserver>();
+  private sectionObservers = new Map<string, Map<number, ResizeObserver>>();
   private lastAverageHeight = 0;
   private lastBatchViewportHeight = 0;
   private adaptiveBatch = 40;
@@ -1127,6 +1128,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const current of paths) {
       this.previewObservers.get(current)?.disconnect();
       this.previewObservers.delete(current);
+      for (const observer of this.sectionObservers.get(current)?.values() ?? []) observer.disconnect();
+      this.sectionObservers.delete(current);
       for (const { child } of this.markdownChildren.get(current) ?? []) this.removeChild(child);
       this.markdownChildren.delete(current);
     }
@@ -1418,7 +1421,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       expand.textContent = action === "read" ? "阅读原文 ↗" : expanded ? "收起正文" : "展开正文";
       expand.setAttribute("aria-expanded", String(expanded));
     };
-    if (parsed.body) {
+    if (parsed.body.length > 50000) {
+      content.append(node("p", "ex-long-content-hint", "正文过长，请在原文阅读模式中查看。"));
+      content.classList.remove("ex-content-clamped");
+      expand.hidden = false;
+      expand.dataset.action = "read";
+      expand.textContent = "阅读原文 ↗";
+      expand.setAttribute("aria-expanded", "false");
+    } else if (parsed.body) {
       void this.renderMarkdown(content, parsed.body, item.path).then(() => {
         if (!content.isConnected || this.disposed) return;
         updatePreview();
@@ -1452,38 +1462,43 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     mount.replaceChildren();
     if (!parsed.sections.length) return;
+    const readOriginal = () => {
+      if (!this.guard("page")) return;
+      void this.plugin.openMarkdownPreview(item.path).catch(notify);
+    };
+    // Huge notes are documents, not card-sized stacks of hundreds of disclosures.
+    if (parsed.sections.length > 24) {
+      mount.append(node("p", "ex-long-content-hint",
+        "包含 " + parsed.sections.length + " 个分组，请在阅读模式查看。"));
+      mount.append(button("阅读原文 ↗", readOriginal, "ex-group-read"));
+      return;
+    }
     const shown = this.sectionsShown.get(item.path) ?? new Set<number>();
     const card = mount.closest<HTMLElement>(".ex-card");
+    const safe = previewPolicy(classifyPreview(parsed), this.compactLayout()).expandedLimit;
     parsed.sections.forEach((section, index) => {
       const wrapper = node("section", "ex-section");
       const expanded = shown.has(index);
+      const region = node("div", "ex-group-body");
+      region.hidden = !expanded;
+      let exceeded = false;
+      const read = button("阅读原文 ↗", readOriginal, "ex-group-read");
+      read.hidden = true;
+      const chevron = node("span", "ex-group-chevron");
       const trigger = button("", () => {
-        const opened = region.hidden;
-        region.hidden = !opened;
-        trigger.setAttribute("aria-expanded", String(opened));
-        trigger.setAttribute("aria-label", (opened ? "收起" : "展开") + "分组：" + section.name);
-        trigger.querySelector(".ex-group-chevron")?.replaceChildren();
-        setIcon(trigger.querySelector(".ex-group-chevron") as HTMLElement, opened ? "chevron-down" : "chevron-right");
-        if (opened) {
+        if (exceeded) { readOriginal(); return; }
+        const opening = region.hidden;
+        region.hidden = !opening;
+        trigger.setAttribute("aria-expanded", String(opening));
+        trigger.setAttribute("aria-label", (opening ? "收起" : "展开") + "分组：" + section.name);
+        setIcon(chevron, opening ? "chevron-down" : "chevron-right");
+        if (opening) {
           shown.add(index);
-          if (!region.childElementCount && section.markdown) {
-            void this.renderMarkdown(region, section.markdown, item.path).then(() => {
-              if (!card?.isConnected || region.hidden) return;
-              const safe = previewPolicy(classifyPreview(parsed), this.compactLayout()).expandedLimit;
-              if (region.scrollHeight <= safe && card.getBoundingClientRect().height <= safe + 320) return;
-              shown.delete(index);
-              region.hidden = true;
-              trigger.setAttribute("aria-expanded", "false");
-              trigger.setAttribute("aria-label", "展开分组：" + section.name);
-              setIcon(trigger.querySelector(".ex-group-chevron") as HTMLElement, "chevron-right");
-              this.unmountMarkdownIn(region, item.path);
-              region.replaceChildren();
-              new Notice("分组超出卡片阅读上限，请使用阅读原文");
-              void this.plugin.openMarkdownPreview(item.path).catch(notify);
-            });
-          }
+          mountSection();
         } else {
           shown.delete(index);
+          this.sectionObservers.get(item.path)?.get(index)?.disconnect();
+          this.sectionObservers.get(item.path)?.delete(index);
           this.unmountMarkdownIn(region, item.path);
           region.replaceChildren();
         }
@@ -1491,17 +1506,60 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }, "ex-group-trigger");
       trigger.setAttribute("aria-expanded", String(expanded));
       trigger.setAttribute("aria-label", (expanded ? "收起" : "展开") + "分组：" + section.name);
-      const chevron = node("span", "ex-group-chevron");
       setIcon(chevron, expanded ? "chevron-down" : "chevron-right");
       trigger.append(chevron, node("span", "ex-group-name", section.name));
-      const region = node("div", "ex-group-body");
-      region.hidden = !expanded;
-      if (expanded && section.markdown) void this.renderMarkdown(region, section.markdown, item.path);
-      wrapper.append(trigger, region);
+      wrapper.append(trigger, read, region);
       mount.append(wrapper);
+
+      const enforceSafeHeight = () => {
+        if (!card?.isConnected || region.hidden || exceeded) return;
+        if (region.scrollHeight <= safe && card.getBoundingClientRect().height <= safe + 320) return;
+        exceeded = true;
+        shown.delete(index);
+        this.sectionsShown.set(item.path, shown);
+        this.sectionObservers.get(item.path)?.get(index)?.disconnect();
+        this.sectionObservers.get(item.path)?.delete(index);
+        this.unmountMarkdownIn(region, item.path);
+        region.replaceChildren();
+        region.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.setAttribute("aria-label", "阅读原文：" + section.name);
+        setIcon(chevron, "arrow-up-right");
+        read.hidden = false;
+        new Notice("分组超过卡片阅读上限，请在阅读模式查看");
+      };
+      let mountSection: () => void = () => {};
+      // Declaration is intentionally outside the click callback so restored sections
+      // and newly opened sections use the same bounded native renderer.
+      const renderSection = () => {
+        if (!section.markdown || region.childElementCount) return;
+        if (section.markdown.length > 50000) {
+          exceeded = true;
+          shown.delete(index);
+          region.hidden = true;
+          trigger.setAttribute("aria-expanded", "false");
+          trigger.setAttribute("aria-label", "阅读原文：" + section.name);
+          setIcon(chevron, "arrow-up-right");
+          read.hidden = false;
+          return;
+        }
+        void this.renderMarkdown(region, section.markdown, item.path).then(() => {
+          if (this.disposed || !region.isConnected || region.hidden) return;
+          enforceSafeHeight();
+          if (exceeded || typeof ResizeObserver === "undefined") return;
+          const observer = new ResizeObserver(() => enforceSafeHeight());
+          const list = this.sectionObservers.get(item.path) ?? new Map<number, ResizeObserver>();
+          list.get(index)?.disconnect();
+          list.set(index, observer);
+          this.sectionObservers.set(item.path, list);
+          observer.observe(region);
+        });
+      };
+      // Bind the shared renderer without rebuilding the main Markdown body.
+      mountSection = renderSection;
+      if (expanded) renderSection();
     });
   }
-
 
   private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();

@@ -131,6 +131,8 @@ export class EntryRepository {
     const bytes = lowerText.length * 2;
     // A single unusually large note is searched without being retained.
     if (bytes > 16 * 1024 * 1024) return lowerText;
+    // Another search may have finished the same path while this read was awaiting.
+    this.forgetSearchText(card.path);
     this.searchCache.set(card.path, { stamp, lowerText, bytes });
     this.searchCacheBytes += bytes;
     while (this.searchCache.size > 4000 || this.searchCacheBytes > 16 * 1024 * 1024) {
