@@ -7,7 +7,7 @@ import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath } from "./model";
 import { PageFilter, isFiltered } from "./page-config";
 import { classifyPreview, previewAction, previewPolicy } from "./card-preview";
-import { TimelineRow, VirtualTimeline } from "./virtual-list";
+import { ScrollPolicy, TimelineRow, VirtualTimeline } from "./virtual-list";
 import { SavePageModal } from "./page-modal";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
@@ -67,6 +67,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private filterOpen = false;
   private matches: Set<string> | null = null;
   private searchToken = 0;
+  private searchScrollPolicy: ScrollPolicy = "top";
   private scanStatus: "idle" | "blocked" | "scanning" | "done" | "stale" | "error" = "idle";
   private scanDirty = false;
   private homeInvalid = false;
@@ -255,7 +256,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.searchTimer = null;
       this.searchReady = true;
       this.matches = null;
-      if (this.listEl) this.drawCards();
+      if (this.listEl) this.drawCards("keep");
     }
     this.renderScanStatus();
     if (this.selectionMode !== "normal") this.updateSelectionControls();
@@ -718,7 +719,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchButton.setAttribute("aria-expanded", String(Boolean(filter.query)));
     this.renderTagsFilter();
     if (filter.query) this.scheduleSearch();
-    else { this.drawCards(); this.updateAvailability(); }
+    else { this.drawCards("top"); this.updateAvailability(); }
   }
   private showPageMenu(buttonEl: HTMLButtonElement): void {
     const current = this.currentFilter();
@@ -801,7 +802,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectedPaths.clear();
     this.selectedCandidates.clear();
     this.updateSelectionUI();
-    this.drawCards();
+    this.drawCards("anchor");
     this.updateAvailability();
   }
   private paintCardSelection(card: HTMLElement, path: string): void {
@@ -869,7 +870,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.matches?.delete(path);
         this.showSuggestions();
         this.renderTagsFilter();
-        this.drawCards();
+        this.drawCards("anchor");
         this.updateSelectionControls();
         new Notice("该摘录已不存在，已从选择范围移除");
         return;
@@ -926,7 +927,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           for (const path of prunedPaths) this.matches?.delete(path);
           this.showSuggestions();
           this.renderTagsFilter();
-          this.drawCards();
+          this.drawCards("anchor");
         }
         this.updateSelectionUI();
       }
@@ -984,7 +985,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       this.items = this.items.filter(item => !removed.has(item.path));
       if (result.deleted.length) this.markStale();
-      this.drawCards();
+      this.drawCards("anchor");
       this.updateSelectionUI();
       const details = result.failed.map(item => item.path.split("/").pop() + "：" + item.reason);
       if (!bulk && result.failed.length) new Notice(details[0] ?? "摘录删除失败", 9000);
@@ -1039,6 +1040,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }, cancelled);
       if (cancelled() || !cards) return;
       cards.sort((a, b) => b.ctime - a.ctime);
+      const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
       this.itemByPath = new Map(cards.map(card => [card.path, card]));
       this.lastScanCount = cards.length;
@@ -1046,8 +1048,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.showSuggestions();
       this.renderTagsFilter();
       // Scanning is prohibited during selection; there is no scope to reconcile.
-      if (this.searchText && !this.scanDirty) this.scheduleSearch();
-      else { this.searchReady = true; this.matches = null; this.drawCards(); }
+      if (this.searchText && !this.scanDirty) this.scheduleSearch(scannedScrollPolicy);
+      else { this.searchReady = true; this.matches = null; this.drawCards(scannedScrollPolicy); }
       this.announceScan("摘录扫描完成，共 " + cards.length + " 条");
     } catch (error) {
       if (!cancelled()) {
@@ -1072,12 +1074,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     }
   }
-  private scheduleSearch(): void {
+  private scheduleSearch(policy: ScrollPolicy = "top"): void {
+    this.searchScrollPolicy = policy;
     if (this.searchTimer) clearTimeout(this.searchTimer);
     const token = ++this.searchToken;
     // Search only against a committed index; keep the latest query for scan completion.
     if (!this.searchText) {
-      this.searchReady = true; this.matches = null; this.drawCards();
+      this.searchReady = true; this.matches = null; this.drawCards(policy);
       this.updateAvailability(); return;
     }
     if (this.scanStatus !== "done" || this.plugin.isBusy(this)) return;
@@ -1094,7 +1097,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.disposed || token !== this.searchToken) return;
       this.matches = matches;
       this.searchReady = true;
-      this.drawCards();
+      this.drawCards(this.searchScrollPolicy);
       this.updateAvailability();
     } catch (error) {
       if (!this.disposed && token === this.searchToken) {
@@ -1119,7 +1122,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.filterButton.setAttribute("aria-expanded", String(!this.tagBar.hidden));
     this.filterButton.disabled = !this.items.some(item => item.tags.length) && !this.tagFilter;
     if (this.tagBar.hidden) return;
-    const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards(); },
+    const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards("top"); },
       this.tagFilter ? "ex-btn-quiet" : "ex-selected");
     this.tagBar.append(all);
     const tags = [...new Set(this.items.flatMap(item => item.tags))].sort((a,b) => a.localeCompare(b, "zh"));
@@ -1127,7 +1130,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const tag of tags.slice(0, limit)) this.tagBar.append(button("#" + tag, () => {
       if (!this.guard("filter")) return;
       this.tagFilter = this.tagFilter === tag ? "" : tag;
-      this.renderTagsFilter(); this.drawCards();
+      this.renderTagsFilter(); this.drawCards("top");
     }, this.tagFilter === tag ? "ex-selected" : "ex-btn-quiet"));
     if (tags.length > limit) {
       const more = button("更多标签 · " + (tags.length-limit), () => {
@@ -1135,7 +1138,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         const menu = new Menu();
         for (const tag of tags.slice(limit)) menu.addItem(item => item.setTitle("#" + tag).onClick(() => {
           if (!this.guard("filter")) return;
-          this.tagFilter = tag; this.renderTagsFilter(); this.drawCards();
+          this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("top");
         }));
         const rect = more.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet");
@@ -1232,7 +1235,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = this.queue.filter(task => task.path !== row.path);
     this.unmountMarkdown(row.path);
   }
-  private drawCards(): void {
+  private drawCards(policy: ScrollPolicy): void {
     const token = ++this.renderToken;
     this.observer?.disconnect();
     this.mediaObserver?.disconnect();
@@ -1243,7 +1246,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
       (this.scanStatus === "stale" || (this.scanStatus === "scanning" && this.scanDirty));
     if (resultsUnavailable) {
-      this.timeline?.setRows([]);
+      this.timeline?.setRows([], "keep");
       this.countEl.textContent = "搜索结果暂不可用";
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", "搜索结果暂不可用"));
@@ -1275,7 +1278,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
       }, { root, rootMargin: "350px 0px" });
     }
-    this.timeline?.setRows(this.timelineRows(visible));
+    this.timeline?.setRows(this.timelineRows(visible), policy);
     if (!visible.length) {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
@@ -1592,7 +1595,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const pill = button("", () => {
         if (editorOpen || !this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
-        this.renderTagsFilter(); this.drawCards();
+        this.renderTagsFilter(); this.drawCards("top");
       }, "ex-tag");
       pill.setAttribute("aria-label", "筛选标签：" + tag);
       pill.replaceChildren(node("span", "ex-tag-label", "#" + tag));
