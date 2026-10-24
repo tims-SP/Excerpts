@@ -1342,3 +1342,26 @@ test('only one card can edit its tags and a blocked refresh never replays',async
   assert.equal(renderer.scanStatus,'done');
   await t.close();
 });
+
+test('moving an entire nested folder marks the index stale without rescanning',async()=>{
+  const t=await fixture();
+  await t.plugin.app.vault.createFolder('摘录/子目录');
+  const nested=await t.plugin.app.vault.create('摘录/子目录/笔记.md','子目录内容');
+  t.plugin.refreshViews(true);await waitForIndex(t,2);
+  const folder=t.files.get('摘录/子目录').file;
+  t.files.delete('摘录/子目录');folder.path='摘录/重命名';t.files.set(folder.path,{file:folder});
+  t.files.delete(nested.path);
+  nested.path='摘录/重命名/笔记.md';
+  nested.parent={path:'摘录/重命名'};
+  t.files.set(nested.path,{file:nested,data:'子目录内容'});
+  let scans=0;const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return original(...args);};
+  t.vaultEvents.get('rename')(folder,'摘录/子目录');
+  const root=t.pane.contentEl;
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  assert.equal(scans,0,'folder rename may not launch a scan');
+  t.plugin.refreshViews(true);await waitForIndex(t,2);
+  assert.equal(scans,1);
+  assert.ok([...root.querySelectorAll('.ex-card')].some(el=>el.dataset.path===nested.path));
+  await t.close();
+});
