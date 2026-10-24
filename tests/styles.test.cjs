@@ -91,7 +91,7 @@ test('section and footer vertical rhythm is compact without shrinking touch cont
 test('flomo composer controls remain aligned, single-row and distinct from markdown cards',()=>{
   const composer=css.match(/\.excerpts-root \.ex-composer \{([\s\S]*?)\}/)?.[1]||'';
   const actions=css.match(/\.excerpts-root \.ex-compose-actions \{([\s\S]*?)\}/)?.[1]||'';
-  assert.match(composer,/border-radius: 12px/);
+  assert.match(composer,/border-radius:\s*var\(--ex-radius-surface\)/);
   assert.match(composer,/background: var\(--background-primary\)/);
   assert.match(composer,/padding: var\(--ex-compose-pad-top\) var\(--ex-compose-pad-x\) var\(--ex-compose-pad-bottom\)/);
   assert.match(actions,/margin-top: 12px/);
@@ -99,7 +99,7 @@ test('flomo composer controls remain aligned, single-row and distinct from markd
   assert.match(css,/\.excerpts-root \.ex-capture-options \{[\s\S]*?flex-wrap: nowrap/);
   assert.match(css,/\.excerpts-root \.ex-capture-selected \{[\s\S]*?overflow: hidden/);
   assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?width: 64px/);
-  assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?border-radius: 8px/);
+  assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?border-radius:\s*var\(--ex-radius-pill\)/);
   assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-suggestions \{ max-height: 192px/);
   assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-search \{ background: var\(--background-secondary\)/);
   assert.match(css,/@container \(max-width: 700px\)[\s\S]*?width: 72px/);
@@ -128,4 +128,27 @@ test('saved page controls preserve native toolbar sizing and modal input geometr
   assert.match(css,/\.ex-save-page-modal \.ex-save-page-footer/);
   assert.match(css,/\.ex-save-page-modal \.ex-save-page-hint\.ex-is-error/);
   assert.match(css,/@media \(max-width: 500px\)/);
+});
+
+test('semantic shape tokens distinguish themed surfaces, inputs, options and pills',()=>{
+  const root=css.match(/\.excerpts-root\s*\{([\s\S]*?)\}/)?.[1]||'';
+  assert.match(root,/--ex-radius-surface:\s*var\(--radius-l, 12px\)/);
+  assert.match(root,/--ex-radius-input:\s*var\(--radius-m, 8px\)/);
+  assert.match(root,/--ex-radius-option:\s*var\(--radius-s, 4px\)/);
+  assert.match(root,/--ex-radius-pill:\s*999px/);
+  assert.match(css,/\.excerpts-root \.ex-composer\s*\{[^}]*border-radius:\s*var\(--ex-radius-surface\)/);
+  assert.match(css,/\.excerpts-root \.ex-card\s*\{[^}]*border-radius:\s*var\(--ex-radius-surface\)/);
+  assert.match(css,/\.excerpts-root button\.ex-icon-button\s*\{[^}]*border-radius:\s*50%/);
+  assert.match(css,/\.excerpts-root button\.ex-tag-done\s*\{[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
+  assert.match(css,/\.ex-save-page-modal \.ex-save-page-footer button\s*\{[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
+});
+
+test('filter pills and overflow pills retain small visual surfaces over large touch targets',()=>{
+  assert.match(css,/\.excerpts-root \.ex-filter-tags button\.ex-btn\s*\{[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
+  assert.match(css,/\.excerpts-root \.ex-filter-tags button\.ex-btn::before\s*\{[^}]*height:\s*30px/);
+  assert.match(css,/\.excerpts-root button\.ex-tag::before\s*\{[^}]*height:\s*22px[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
+  assert.match(css,/\.excerpts-root button\.ex-tag-overflow::before\s*\{[^}]*height:\s*22px/);
+  assert.match(css,/@media \(pointer: coarse\)\s*\{[\s\S]*?\.excerpts-root \.ex-filter-tags button\.ex-btn,/);
+  assert.match(css,/\.excerpts-root button\.ex-capture-tag-toggle\s*\{[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
+  assert.match(css,/\.excerpts-root \.ex-filter-tags button\.ex-btn\.ex-selected::before/);
 });
