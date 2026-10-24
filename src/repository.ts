@@ -14,6 +14,12 @@ export interface DeleteCandidate {
 }
 export interface DeleteFailure { path: string; reason: string }
 export interface DeleteResult { deleted: string[]; failed: DeleteFailure[] }
+export interface DeleteProgress {
+  processed: number;
+  total: number;
+  deleted: number;
+  failed: number;
+}
 
 export class EntryRepository {
   private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
@@ -154,13 +160,15 @@ export class EntryRepository {
     return { path, file, mtime: file.stat.mtime, size: file.stat.size };
   }
   /** Serialize trash operations; a stale, moved, open or modified file must never be removed. */
-  async deleteEntries(ws: Workspace, candidates: readonly DeleteCandidate[]): Promise<DeleteResult> {
+  async deleteEntries(ws: Workspace, candidates: readonly DeleteCandidate[],
+    onProgress?: (progress: DeleteProgress) => void): Promise<DeleteResult> {
     const result: DeleteResult = { deleted: [], failed: [] };
-    const seen = new Set<string>();
-    for (const candidate of candidates) {
+    // Each path is processed once; progress counts completed attempts, including failures.
+    const unique = [...new Map(candidates.map(candidate => [candidate.path, candidate])).values()];
+    const total = unique.length;
+    let processed = 0;
+    for (const candidate of unique) {
       const { path } = candidate;
-      if (seen.has(path)) continue;
-      seen.add(path);
       try {
         const current = this.app.vault.getAbstractFileByPath(path);
         if (!(current instanceof TFile) || current !== candidate.file ||
@@ -183,6 +191,9 @@ export class EntryRepository {
         result.deleted.push(path);
       } catch (error) {
         result.failed.push({ path, reason: error instanceof Error ? error.message : String(error) });
+      } finally {
+        processed++;
+        onProgress?.({ processed, total, deleted: result.deleted.length, failed: result.failed.length });
       }
     }
     return result;
