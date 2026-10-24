@@ -1232,6 +1232,55 @@ test('renamed saved excerpt pages become read-only until explicitly reopened',as
   await t.close();
 });
 
+test('a save-filter dialog opened before home relocation cannot write after invalidation',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'筛选标签');
+  [...root.querySelectorAll('.ex-filter-tags button')].find(el=>el.textContent==='#哲学').click();
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(el=>el.title==='保存当前筛选…').handler();
+  const dialog=document.querySelector('.ex-save-page-modal');
+  assert.ok(dialog);
+  assert.equal(dialog.querySelector('.ex-save-page-submit').disabled,false);
+  const originalPath=t.home.path;
+  t.files.delete(originalPath);
+  t.home.path='摘录/改名首页.excerpts';t.home.basename='改名首页';
+  t.files.set(t.home.path,{file:t.home,data:''});
+  t.vaultEvents.get('rename')(t.home,originalPath);
+  dialog.querySelector('.ex-save-page-submit').click();
+  assert.match(dialog.querySelector('.ex-save-page-hint').textContent,/重新打开/);
+  assert.equal(dialog.querySelector('.ex-save-page-submit').disabled,true);
+  assert.equal(t.files.has('摘录/哲学摘录.excerpts'),false,
+    'a stale modal must not write a new saved page');
+  await t.close();
+});
+
+test('an in-flight scan is cancelled when its source .excerpts page is moved',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const renderer=[...t.plugin.rendered][0];
+  const realScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release,checkedCancel;
+  t.plugin.repo.scan=async(ws,batch,onProgress,cancel)=>{
+    checkedCancel=cancel;
+    await new Promise(resolve=>{release=resolve;});
+    return realScan(ws,batch,onProgress,cancel);
+  };
+  t.plugin.refreshViews(true);
+  await waitFor(()=>typeof release==='function','scan started');
+  assert.equal(renderer.scanStatus,'scanning');
+  const prior=t.home.path;
+  t.files.delete(prior);t.home.path='摘录/另一首页.excerpts';
+  t.files.set(t.home.path,{file:t.home,data:''});
+  t.vaultEvents.get('rename')(t.home,prior);
+  assert.equal(checkedCancel(),true);
+  release();
+  await waitFor(()=>renderer.homeInvalid && root.querySelector('.ex-scan-status').dataset.state==='invalid',
+    'invalid view stays blocked');
+  assert.equal(root.querySelectorAll('.ex-card').length,1,'old cards remain readable');
+  t.plugin.refreshViews(true);
+  assert.equal(renderer.scanStatus,'stale','cancelled scan cannot revive the old view');
+  await t.close();
+});
+
 test('deleting a homepage or its parent invalidates the open view and clears its default pointer',async()=>{
   for(const deleted of ['home','parent']){
     const t=await fixture();
