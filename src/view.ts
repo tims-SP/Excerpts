@@ -1,10 +1,10 @@
 import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { findSectionHeadingLine } from "./codec";
 import type ExcerptsPlugin from "./main";
-import { DeleteCandidate, DeleteProgress, DeleteResult, EntryRepository } from "./repository";
+import { DeleteCandidate, DeleteProgress, EntryRepository } from "./repository";
 import { DeleteExcerptModal, DeleteOutcome } from "./delete-modal";
 import { TagPicker } from "./tag-picker";
-import { CardIndex, ParsedMarkdown, Workspace } from "./model";
+import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath } from "./model";
 import { PageFilter, isFiltered } from "./page-config";
 import { SavePageModal } from "./page-modal";
 
@@ -65,7 +65,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private filterOpen = false;
   private matches: Set<string> | null = null;
   private searchToken = 0;
-  private scanStatus: "idle" | "scanning" | "done" | "error" = "idle";
+  private scanStatus: "idle" | "scanning" | "done" | "stale" | "error" = "idle";
+  private scanDirty = false;
   private scanDone = 0;
   private scanTotal = 0;
   private lastScanCount: number | null = null;
@@ -79,8 +80,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanAnnouncementEl!: HTMLElement;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshToken = 0;
-  private refreshQueued = false;
-  private refreshQueuedForce = false;
+  private saveBusy = false;
+  private updateComposerControls: () => void = () => {};
   private renderToken = 0;
   private pageSize = 40;
   private observer: IntersectionObserver | null = null;
@@ -138,25 +139,82 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.tagResizeObserver?.disconnect();
     this.selectedPaths.clear(); this.selectedCandidates.clear(); this.selectionScope.clear();
     this.unmountMarkdown();
+    this.plugin.notifyActivityChange(this);
     this.queue = [];
   }
-  requestRefresh(force = false): void {
-    if (this.disposed) return;
-    if (this.deleteBusy || this.selectionMode !== "normal" ||
-        this.pendingTags.size || this.openTagEditors.size) {
-      this.refreshQueued = true;
-      this.refreshQueuedForce ||= force;
-      return;
-    }
-    const effectiveForce = force || this.refreshQueuedForce;
-    this.refreshQueued = false;
-    this.refreshQueuedForce = false;
-    // Apply a changed scope only when the frozen selection/editor session has ended.
-    this.workspace.recursive = this.plugin.settings.recursive;
-    void this.reload(effectiveForce);
+  /** Conflicting operations are refused, never queued or replayed. */
+  isBusy(): boolean {
+    return this.scanStatus === "scanning" || !this.searchReady || this.saveBusy ||
+      this.deleteBusy || this.selectionMode !== "normal" ||
+      this.openTagEditors.size > 0 || this.pendingTags.size > 0;
   }
-  private flushQueuedRefresh(): void {
-    if (this.refreshQueued) this.requestRefresh();
+  private reason(action: "save" | "refresh" | "search" | "filter" | "tag" | "select" | "delete" | "page"): string | null {
+    if (this.disposed) return "页面已关闭";
+    if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
+    if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
+    if (this.saveBusy) return "正在保存，请完成后再操作";
+    if (this.deleteBusy) return "正在删除，请完成后再操作";
+    if (this.selectionMode !== "normal") return "请先退出批量选择";
+    if (this.pendingTags.size) return "正在保存标签，请完成后再操作";
+    if (this.openTagEditors.size && action !== "tag") return "请先完成或取消标签编辑";
+    if (!this.searchReady) return "正在搜索，请先清除搜索条件";
+    if (this.searchText && ["select", "refresh", "tag", "delete", "filter"].includes(action))
+      return "请先清除搜索条件，再进行此操作";
+    if (this.scanStatus === "stale" || this.scanStatus === "error" || this.scanStatus === "idle") {
+      if (action === "select" || action === "search" || action === "filter" || action === "tag" || action === "delete")
+        return "摘录索引需要刷新，请先手动刷新";
+    }
+    return null;
+  }
+  private guard(action: Parameters<ExcerptsRenderChild["reason"]>[0]): boolean {
+    const blocked = this.reason(action);
+    if (blocked) { new Notice(blocked); return false; }
+    return true;
+  }
+  syncControls(): void { this.updateAvailability(false); }
+  private updateAvailability(broadcast = true): void {
+    if (this.disposed || !this.searchButton) return;
+    const searching = !this.searchReady;
+    this.searchInput.disabled = Boolean(this.reason("search")) || searching;
+    const canClear = this.scanStatus !== "scanning" && Boolean(this.searchText) &&
+      (searching || this.scanStatus === "stale" || this.scanStatus === "error");
+    this.searchButton.disabled = !canClear && Boolean(this.reason("search"));
+    this.searchButton.title = canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
+    this.filterButton.disabled = Boolean(this.reason("filter"));
+    this.updateComposerControls();
+    for (const button of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(".ex-filter-tags button")))
+      button.disabled = Boolean(this.reason("filter"));
+    for (const el of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(
+      ".ex-card .ex-card-options, .ex-card .ex-add-tag, .ex-card .ex-tag"))) {
+      const isTagFilter = el.classList.contains("ex-tag");
+      const otherTagEditor = el.classList.contains("ex-add-tag") &&
+        this.openTagEditors.size > 0 && !this.openTagEditors.has(el.closest<HTMLElement>(".ex-card")?.dataset.path ?? "");
+      el.disabled = otherTagEditor || Boolean(this.reason(isTagFilter ? "filter" :
+        el.classList.contains("ex-add-tag") ? "tag" : "page"));
+    }
+    if (broadcast) this.plugin.notifyActivityChange(this);
+  }
+  /** Mark cached results obsolete without scheduling any scan. */
+  markStale(path?: string): void {
+    if (this.disposed || (path && path !== this.workspace.homePath &&
+        !isExcerptPath(path, this.workspace))) return;
+    if (this.scanStatus === "scanning") this.scanDirty = true;
+    else this.scanStatus = "stale";
+    if (!this.searchReady) {
+      this.searchToken++;
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+      this.searchReady = true;
+      this.matches = null;
+      if (this.listEl) this.drawCards();
+    }
+    this.renderScanStatus();
+    this.updateAvailability();
+  }
+  requestRefresh(force = false): void {
+    if (!this.guard("refresh")) return;
+    this.workspace.recursive = this.plugin.settings.recursive;
+    void this.reload(force);
   }
   /** Follow moves of the open .excerpts file or one of its parent folders. */
   relocateHomePath(path: string): void {
@@ -169,7 +227,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.workspace.rootFolder = slash >= 0 ? path.slice(0, slash) || "/" : "/";
     const title = this.containerEl.querySelector<HTMLElement>(".ex-title");
     if (title && this.savedFilter) title.textContent = path.split("/").pop()?.replace(/\.excerpts$/i, "") ?? "摘录";
-    this.requestRefresh(true);
+    // An external rename changes the scope; cancel the old scan instead of restarting it.
+    this.refreshToken++;
+    if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+    this.scanVisible = false;
+    this.scanStatus = "stale";
+    this.scanDirty = false;
+    this.markStale();
   }
   private renderScanStatus(): void {
     const status = this.scanStatus === "scanning" && !this.scanVisible
@@ -179,12 +243,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       scanning: "扫描中 " + this.scanDone.toLocaleString("zh-CN") + "/" +
         this.scanTotal.toLocaleString("zh-CN"),
       done: "已扫描 · " + (this.lastScanCount ?? 0).toLocaleString("zh-CN") + " 条",
+      stale: "待刷新 · " + (this.lastScanCount ?? 0).toLocaleString("zh-CN") + " 条",
       error: "扫描失败"
     };
     this.scanStatusEl.dataset.state = status;
     this.scanTextEl.textContent = labels[status];
     setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
-      status === "done" ? "check" : status === "error" ? "alert-circle" : "circle-dashed");
+      status === "done" ? "check" : status === "stale" ? "refresh-cw" :
+      status === "error" ? "alert-circle" : "circle-dashed");
     this.scanProgressEl.hidden = status !== "scanning";
     if (status === "scanning") {
       this.scanProgressEl.setAttribute("aria-valuenow", String(this.scanDone));
@@ -350,8 +416,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     setIcon(editorIcon, "file-pen-line");
     editorButton.append(editorIcon, node("span", "ex-open-editor-label", "编辑文档"));
     const saveButton = button("保存", () => void save(false), "ex-btn-primary mod-cta");
-    saveButton.disabled = !quote.value.trim();
-    quote.addEventListener("input", () => { if (!saving) saveButton.disabled = !quote.value.trim(); });
+    this.updateComposerControls = () => {
+      const blocked = Boolean(this.reason("save"));
+      saveButton.disabled = blocked || !quote.value.trim();
+      editorButton.disabled = blocked;
+      saveButton.title = blocked ? (this.reason("save") ?? "") : "保存摘录";
+      editorButton.title = blocked ? (this.reason("save") ?? "") : "进入 Markdown 编辑器";
+    };
+    this.updateComposerControls();
+    quote.addEventListener("input", () => { if (!saving) this.updateComposerControls(); });
     composeActions.append(options, editorButton, saveButton);
     const picker = new TagPicker({
       available: () => this.items.flatMap(item => item.tags),
@@ -375,10 +448,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
 
     const save = async (openEditor = false) => {
-      if (saving) return;
+      if (!this.guard("save") || saving) return;
       const markdown = quote.value.trim();
       if (!openEditor && !markdown) { new Notice("请输入摘录内容"); return; }
       saving = true;
+      this.saveBusy = true;
+      this.updateAvailability();
       quote.disabled = true; picker.setDisabled(true); tagToggle.disabled = true;
       saveButton.disabled = true; editorButton.disabled = true;
       selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = true; });
@@ -404,6 +479,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           quote.value = ""; tagSearch.value = ""; selectedTags.clear();
           picker.refresh(); repaintSelected(); persistDraft();
           closeTagPanel(false); fit(); form.classList.remove("ex-is-composing");
+          this.markStale(file.path);
         }
         if (openEditor) {
           const initialRaw = await this.repo.readRaw(file.path);
@@ -417,13 +493,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           new Notice("文件已创建；再次点击「编辑文档」可重试打开");
       } finally {
         saving = false; resume = false;
+        this.saveBusy = false;
         quote.disabled = false; picker.setDisabled(false); tagToggle.disabled = false;
         editorButton.disabled = false;
         saveButton.disabled = !quote.value.trim();
         selectedChips.querySelectorAll("button").forEach(btn => { btn.disabled = false; });
         saveButton.textContent = "保存";
-        // Show the new file without making save or native editor opening wait for a full index scan.
-        if (created) this.requestRefresh();
+        this.updateAvailability();
       }
     };
     quote.addEventListener("blur", () => {
@@ -451,6 +527,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchInput.setAttribute("aria-label", "搜索摘录");
     this.searchWrap.append(this.searchInput);
     const searchButton = iconButton("search", "搜索", () => {
+      if (this.scanStatus === "scanning" || this.saveBusy || this.deleteBusy ||
+          this.selectionMode !== "normal" || this.openTagEditors.size || this.plugin.isBusy(this)) {
+        this.guard("search"); return;
+      }
+      if (!this.searchReady || (this.searchText &&
+          (this.scanStatus === "stale" || this.scanStatus === "error"))) {
+        this.searchText = ""; this.searchInput.value = "";
+        this.scheduleSearch(); this.searchWrap.hidden = true;
+        searchButton.setAttribute("aria-expanded", "false");
+        return;
+      }
+      if (!this.guard("search")) return;
       this.searchWrap.hidden = !this.searchWrap.hidden;
       searchButton.setAttribute("aria-expanded", String(!this.searchWrap.hidden));
       if (!this.searchWrap.hidden) this.searchInput.focus();
@@ -459,6 +547,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchButton = searchButton;
     searchButton.setAttribute("aria-expanded", String(!this.searchWrap.hidden));
     this.searchInput.addEventListener("input", () => {
+      if (!this.guard("search")) { this.searchInput.value = this.searchText; return; }
       this.searchText = this.searchInput.value.trim();
       this.scheduleSearch();
     });
@@ -470,6 +559,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
     actions.append(searchButton);
     this.filterButton = iconButton("tags", "筛选标签", () => {
+      if (!this.guard("filter")) return;
       this.filterOpen = !this.filterOpen;
       this.renderTagsFilter();
     });
@@ -511,6 +601,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     footerActions.append(this.deleteSelectedButton);
     this.selectionFooterEl.append(this.selectedFooterCountEl, footerActions);
     root.append(this.selectionFooterEl);
+    this.updateAvailability();
   }
   private currentFilter(): PageFilter {
     return { tag: this.tagFilter.trim(), query: this.searchText.trim() };
@@ -521,6 +612,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return current.tag !== this.savedFilter.tag || current.query !== this.savedFilter.query;
   }
   private applyPageFilter(filter: PageFilter): void {
+    if (!this.guard("filter")) return;
     this.searchToken++; // Cancel any previous async search before replacing its query.
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = null;
@@ -535,43 +627,43 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchButton.setAttribute("aria-expanded", String(Boolean(filter.query)));
     this.renderTagsFilter();
     if (filter.query) this.scheduleSearch();
-    else this.drawCards();
+    else { this.drawCards(); this.updateAvailability(); }
   }
   private showPageMenu(buttonEl: HTMLButtonElement): void {
     const current = this.currentFilter();
     const changed = this.isPageDirty();
     const menu = new Menu();
     menu.addItem(item => item.setTitle("刷新摘录").setIcon("refresh-cw")
-      .setDisabled(this.scanStatus === "scanning" || this.deleteBusy ||
-        this.selectionMode !== "normal" || this.pendingTags.size > 0 ||
-        this.openTagEditors.size > 0)
+      .setDisabled(Boolean(this.reason("refresh")))
       .onClick(() => this.requestRefresh(true)));
     menu.addSeparator();
     menu.addItem(item => item.setTitle("批量选择").setIcon("check-square")
-      .setDisabled(this.scanStatus === "scanning" || !this.searchReady ||
-        !this.visibleItems().length || this.pendingTags.size > 0 || this.refreshQueued)
+      .setDisabled(Boolean(this.reason("select")) || !this.visibleItems().length)
       .onClick(() => this.enterSelectionMode()));
     menu.addSeparator();
     if (this.savedFilter && changed) {
       menu.addItem(item => item.setTitle("更新当前页面").setIcon("save")
+        .setDisabled(Boolean(this.reason("page")))
         .onClick(() => void this.updateCurrentPage().catch(notify)));
     }
     menu.addItem(item => item
       .setTitle(this.savedFilter ? "另存为摘录页…" : "保存当前筛选…")
       .setIcon("bookmark-plus")
-      .setDisabled(!isFiltered(current))
+      .setDisabled(!isFiltered(current) || Boolean(this.reason("page")))
       .onClick(() => this.openSavePageModal()));
     if (this.savedFilter && changed) {
       menu.addItem(item => item.setTitle("恢复已保存的筛选").setIcon("undo-2")
+        .setDisabled(Boolean(this.reason("filter")))
         .onClick(() => this.applyPageFilter(this.savedFilter!)));
     }
     menu.addItem(item => item.setTitle("清除筛选").setIcon("rotate-ccw")
-      .setDisabled(!isFiltered(current))
+      .setDisabled(!isFiltered(current) || Boolean(this.reason("filter")))
       .onClick(() => this.applyPageFilter({ tag: "", query: "" })));
     const rect = buttonEl.getBoundingClientRect();
     menu.showAtPosition({ x: rect.right, y: rect.bottom }, buttonEl.ownerDocument);
   }
   private openSavePageModal(): void {
+    if (!this.guard("page")) return;
     const current = this.currentFilter();
     if (!isFiltered(current)) return;
     const stem = (current.tag ? current.tag + "摘录" : "摘录筛选")
@@ -593,7 +685,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }, summary).open();
   }
   private async updateCurrentPage(): Promise<void> {
-    if (!this.savedFilter || this.savedPageRaw === null || !this.isPageDirty()) return;
+    if (!this.guard("page") || !this.savedFilter || this.savedPageRaw === null || !this.isPageDirty()) return;
     const filter = this.currentFilter();
     this.savedPageRaw = await this.plugin.updateSavedPage(this.workspace.homePath, this.savedPageRaw, filter);
     this.savedFilter = filter;
@@ -602,21 +694,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   /** Freeze the current filtered result set; no Markdown bodies are read for selection. */
   private enterSelectionMode(): void {
     // A menu can remain open when a scan starts; recheck at invocation time.
-    if (this.disposed || this.scanStatus === "scanning" ||
-        this.selectionMode !== "normal" || this.deleteBusy || !this.searchReady ||
-        this.pendingTags.size || this.refreshQueued || !this.visibleItems().length) return;
-    for (const path of [...this.openTagEditors]) {
-      const item = this.items.find(card => card.path === path);
-      if (!item) continue;
-      const card = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
-        .find(element => element.dataset.path === path);
-      this.closeTagEditor(item, card);
-    }
+    if (!this.guard("select") || !this.visibleItems().length) return;
     this.selectionScope = new Set(this.visibleItems().map(item => item.path));
     this.selectedPaths.clear();
     this.selectedCandidates.clear();
     this.selectionMode = "selecting";
     this.updateSelectionUI();
+    this.updateAvailability();
   }
   private exitSelectionMode(): void {
     if (this.selectionMode !== "selecting" || this.selectionBusy) return;
@@ -626,7 +710,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectedCandidates.clear();
     this.updateSelectionUI();
     this.drawCards();
-    this.flushQueuedRefresh();
+    this.updateAvailability();
   }
   private paintCardSelection(card: HTMLElement, path: string): void {
     const active = this.selectionMode !== "normal";
@@ -664,7 +748,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const cancel = this.selectionFooterEl.querySelector<HTMLButtonElement>(".ex-select-cancel");
     if (cancel) cancel.disabled = this.deleteBusy || this.selectionBusy;
     this.deleteSelectedButton.textContent = "删除 (" + chosen + ")";
-    this.deleteSelectedButton.disabled = this.deleteBusy || this.selectionBusy || chosen === 0;
+    this.deleteSelectedButton.disabled = this.deleteBusy || this.selectionBusy || chosen === 0 ||
+      this.scanStatus !== "done" || Boolean(this.plugin.isBusy(this));
   }
   private updateSelectionUI(): void {
     const active = this.selectionMode !== "normal";
@@ -756,14 +841,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
   }
   private confirmSingleDelete(path: string): void {
-    if (this.deleteBusy || this.selectionMode !== "normal") return;
+    if (!this.guard("delete")) return;
     const snapshot = this.repo.snapshotForDelete(path, this.workspace);
     if (!snapshot) { new Notice("该摘录已不存在"); return; }
     new DeleteExcerptModal(this.plugin.app, [path],
       async onProgress => this.performDeletion([snapshot], false, onProgress)).open();
   }
   private confirmBulkDelete(): void {
-    if (this.deleteBusy || this.selectionBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size) return;
+    if (this.deleteBusy || this.selectionBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size ||
+        this.scanStatus !== "done" || this.plugin.isBusy(this)) return;
     const candidates = [...this.selectedPaths].map(path => this.selectedCandidates.get(path))
       .filter((candidate): candidate is DeleteCandidate => Boolean(candidate));
     if (!candidates.length) return;
@@ -772,32 +858,24 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private async performDeletion(candidates: readonly DeleteCandidate[], bulk: boolean,
     onProgress: (progress: DeleteProgress) => void): Promise<DeleteOutcome> {
-    if (this.deleteBusy) throw new Error("另一项删除任务仍在进行");
+    if (this.deleteBusy || this.scanStatus !== "done" || this.plugin.isBusy(this))
+      throw new Error("当前操作未完成，请先结束后再删除");
     this.deleteBusy = true;
-    // A deletion supersedes any in-flight index scan.
-    this.refreshToken++;
-    if (this.scanRevealTimer) { clearTimeout(this.scanRevealTimer); this.scanRevealTimer = null; }
-    this.scanVisible = false;
-    this.scanStatus = this.lastScanCount === null ? "idle" : "done";
-    this.renderScanStatus();
-    this.searchToken++; // Discard a pending search that could restore deleted paths.
-    if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
     if (bulk) this.selectionMode = "deleting";
     this.updateSelectionUI();
+    this.updateAvailability();
     try {
       const result = await this.repo.deleteEntries(this.workspace, candidates, onProgress);
       const removed = new Set(result.deleted);
       for (const path of removed) {
         this.selectedPaths.delete(path); this.selectedCandidates.delete(path);
-        this.selectionScope.delete(path);
-        this.matches?.delete(path);
+        this.selectionScope.delete(path); this.matches?.delete(path);
         this.sectionsShown.delete(path); this.expandedBodies.delete(path);
         this.expandedTagRows.delete(path); this.openTagEditors.delete(path);
       }
       for (const failed of result.failed) {
         if (failed.reason.includes("已被修改") || failed.reason.includes("已不存在")) {
-          this.selectedPaths.delete(failed.path);
-          this.selectedCandidates.delete(failed.path);
+          this.selectedPaths.delete(failed.path); this.selectedCandidates.delete(failed.path);
         }
       }
       if (bulk && !result.failed.length) {
@@ -805,39 +883,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
       }
       this.items = this.items.filter(item => !removed.has(item.path));
-      this.drawCards(); // Remove successful deletions before the index scan completes.
+      if (result.deleted.length) this.markStale();
+      this.drawCards();
       this.updateSelectionUI();
-      this.repo.invalidate();
-
-      // A queued settings/scope refresh is subsumed by this required post-delete
-      // scan only after selection has fully ended. A failed batch keeps its
-      // selection and its queued scope change until the user exits that mode.
-      let force = false;
-      if (this.selectionMode === "normal" && !this.pendingTags.size && !this.openTagEditors.size) {
-        force = this.refreshQueuedForce;
-        this.refreshQueued = false;
-        this.refreshQueuedForce = false;
-        this.workspace.recursive = this.plugin.settings.recursive;
-      }
-      await this.reload(force, true);
-      const details = result.failed.map(item =>
-        item.path.split("/").pop() + "：" + item.reason);
+      const details = result.failed.map(item => item.path.split("/").pop() + "：" + item.reason);
       if (!bulk && result.failed.length) new Notice(details[0] ?? "摘录删除失败", 9000);
       return { deleted: result.deleted.length, failed: result.failed.length, details };
     } finally {
-      // Keep every destructive operation locked until post-delete reconciliation
-      // finishes; any refresh received during the scan remains queued.
       this.deleteBusy = false;
       if (this.selectionMode === "deleting") this.selectionMode = "selecting";
-      if (!this.disposed) {
-        this.updateSelectionUI();
-        this.flushQueuedRefresh();
-      }
+      if (!this.disposed) { this.updateSelectionUI(); this.updateAvailability(); }
     }
   }
   private showSuggestions: () => void = () => {};
-  private async reload(force = false, fromDeletion = false): Promise<void> {
-    if (this.disposed || (this.deleteBusy && !fromDeletion)) return;
+  private async reload(force = false): Promise<void> {
+    if (this.disposed || this.isBusy() || this.plugin.isBusy(this)) return;
     const token = ++this.refreshToken;
     const cancelled = () => this.disposed || token !== this.refreshToken;
     // Supersede in-flight full-text searches immediately, not after the scan completes.
@@ -847,11 +907,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchReady = !this.searchText;
     this.matches = null;
     if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+    this.scanDirty = false;
     this.scanStatus = "scanning";
     this.scanDone = 0;
     this.scanTotal = 0;
     this.scanVisible = false;
     this.renderScanStatus();
+    this.updateAvailability();
     this.scanRevealTimer = setTimeout(() => {
       if (cancelled()) return;
       this.scanVisible = true;
@@ -870,7 +932,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       cards.sort((a, b) => b.ctime - a.ctime);
       this.items = cards;
       this.lastScanCount = cards.length;
-      this.scanStatus = "done";
+      this.scanStatus = this.scanDirty ? "stale" : "done";
       if (this.selectionMode !== "normal") {
         const indexed = new Set(cards.map(card => card.path));
         for (const path of this.selectionScope) {
@@ -884,16 +946,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.renderTagsFilter();
       // The selection scope is frozen; do not rerun a full-text search.
       if (this.selectionMode !== "normal") this.drawCards();
-      else if (this.searchText) this.scheduleSearch();
-      else { this.matches = null; this.drawCards(); }
+      else if (this.searchText && !this.scanDirty) this.scheduleSearch();
+      else { this.searchReady = true; this.matches = null; this.drawCards(); }
       this.announceScan("摘录扫描完成，共 " + cards.length + " 条");
     } catch (error) {
       if (!cancelled()) {
         this.scanStatus = "error";
         this.announceScan("摘录扫描失败");
         // The old feed remains usable after a failed scan.
-        if (this.searchText) this.scheduleSearch();
-        else this.searchReady = true;
+        this.searchReady = true;
         notify(error);
       }
     } finally {
@@ -902,6 +963,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.scanRevealTimer = null;
         this.scanVisible = false;
         this.renderScanStatus();
+        this.updateAvailability();
       }
     }
   }
@@ -909,15 +971,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     const token = ++this.searchToken;
     // Search only against a committed index; keep the latest query for scan completion.
-    if (this.scanStatus === "scanning") {
-      this.searchReady = !this.searchText;
-      this.matches = null;
-      this.countEl.textContent = "扫描中…";
-      return;
+    if (!this.searchText) {
+      this.searchReady = true; this.matches = null; this.drawCards();
+      this.updateAvailability(); return;
     }
-    if (!this.searchText) { this.searchReady = true; this.matches = null; this.drawCards(); return; }
+    if (this.scanStatus !== "done" || this.plugin.isBusy(this)) return;
     this.searchReady = false;
     this.countEl.textContent = "搜索准备中…";
+    this.updateAvailability();
     this.searchTimer = setTimeout(() => void this.search(token), 350);
   }
   private async search(token: number): Promise<void> {
@@ -930,10 +991,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.searchReady = true;
       this.pageSize = 40;
       this.drawCards();
+      this.updateAvailability();
     } catch (error) {
       if (!this.disposed && token === this.searchToken) {
         this.searchReady = true;
         this.countEl.textContent = "搜索失败，请重试";
+        this.updateAvailability();
         notify(error);
       }
     }
@@ -952,25 +1015,29 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.filterButton.setAttribute("aria-expanded", String(!this.tagBar.hidden));
     this.filterButton.disabled = !this.items.some(item => item.tags.length) && !this.tagFilter;
     if (this.tagBar.hidden) return;
-    const all = button("全部", () => { this.tagFilter = ""; this.renderTagsFilter(); this.drawCards(); },
+    const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards(); },
       this.tagFilter ? "ex-btn-quiet" : "ex-selected");
     this.tagBar.append(all);
     const tags = [...new Set(this.items.flatMap(item => item.tags))].sort((a,b) => a.localeCompare(b, "zh"));
     const limit = 8;
     for (const tag of tags.slice(0, limit)) this.tagBar.append(button("#" + tag, () => {
+      if (!this.guard("filter")) return;
       this.tagFilter = this.tagFilter === tag ? "" : tag;
       this.renderTagsFilter(); this.drawCards();
     }, this.tagFilter === tag ? "ex-selected" : "ex-btn-quiet"));
     if (tags.length > limit) {
       const more = button("更多标签 · " + (tags.length-limit), () => {
+        if (!this.guard("filter")) return;
         const menu = new Menu();
         for (const tag of tags.slice(limit)) menu.addItem(item => item.setTitle("#" + tag).onClick(() => {
+          if (!this.guard("filter")) return;
           this.tagFilter = tag; this.renderTagsFilter(); this.drawCards();
         }));
         const rect = more.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet");
       this.tagBar.append(more);
     }
+    this.updateAvailability();
   }
   private unmountMarkdown(path?: string): void {
     const paths = path ? [path] : [...this.markdownChildren.keys()];
@@ -995,6 +1062,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         "试试其他关键词，或清除筛选条件。" : "写下喜欢的句子，未来的某一天再读到它。"));
       this.listEl.append(empty);
       if (this.selectionMode !== "normal") this.updateSelectionControls();
+      this.updateAvailability();
       return;
     }
     if (typeof IntersectionObserver !== "undefined") {
@@ -1010,6 +1078,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     this.appendPage(visible, 0, Math.min(this.pageSize, visible.length), token);
     if (this.selectionMode !== "normal") this.updateSelectionControls();
+    this.updateAvailability();
   }
   private appendPage(visible: CardIndex[], start: number, end: number, token: number): void {
     if (this.disposed || token !== this.renderToken) return;
@@ -1095,12 +1164,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     return card;
   }
   private async showCardMenu(item: CardIndex, anchor: HTMLButtonElement): Promise<void> {
+    if (!this.guard("page")) return;
     let parsed: ParsedMarkdown | null = null;
     try { parsed = await this.repo.read(item.path); } catch { /* Deletion remains available if parsing fails. */ }
-    if (this.disposed || !anchor.isConnected) return;
+    if (this.disposed || !anchor.isConnected || !this.guard("page")) return;
     const menu = new Menu();
-    menu.addItem(entry => entry.setTitle("编辑原文").onClick(() =>
-      void this.plugin.openMarkdown(item.path).catch(notify)));
+    menu.addItem(entry => entry.setTitle("编辑原文").onClick(() => {
+      if (!this.guard("page")) return;
+      void this.plugin.openMarkdown(item.path).catch(notify);
+    }));
     const seen = new Map<string, number>();
     for (let index = 0; index < (parsed?.sections.length ?? 0); index++) {
       const section = parsed!.sections[index];
@@ -1108,12 +1180,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       seen.set(section.name, count);
       const suffix = parsed!.sections.filter(part => part.name === section.name).length > 1
         ? "（第 " + count + " 个）" : "";
-      menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() =>
-        void this.openSection(item.path, index).catch(notify)));
+      menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() => {
+        if (!this.guard("page")) return;
+        void this.openSection(item.path, index).catch(notify);
+      }));
     }
     menu.addSeparator();
     menu.addItem(entry => {
       entry.setTitle("删除摘录").setIcon("trash-2")
+        .setDisabled(Boolean(this.reason("delete")))
         .onClick(() => this.confirmSingleDelete(item.path));
       // Obsidian's warning styling exists in some releases but is not part of the public MenuItem API.
       (entry as typeof entry & { setWarning?: (warning: boolean) => void }).setWarning?.(true);
@@ -1225,7 +1300,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     mount.classList.toggle("ex-tags-expanded", !editorOpen && this.expandedTagRows.has(item.path));
     for (const tag of item.tags) {
       const pill = button("", () => {
-        if (editorOpen) return;
+        if (editorOpen || !this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
         this.pageSize = 40;
         this.renderTagsFilter(); this.drawCards();
@@ -1256,7 +1331,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.pendingTags.has(item.path)) return;
       if (this.openTagEditors.has(item.path)) this.closeTagEditor(item, card);
       else {
+        if (this.openTagEditors.size && !this.openTagEditors.has(item.path)) {
+          new Notice("请先完成或取消当前卡片的标签编辑");
+          return;
+        }
+        if (!this.guard("tag")) return;
         this.openTagEditors.add(item.path);
+        this.updateAvailability();
         this.renderTags(mount, item, true);
         if (editor) this.renderTagEditor(editor, item);
       }
@@ -1276,7 +1357,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.renderTags(mount, item, false);
       mount.querySelector<HTMLButtonElement>(".ex-add-tag")?.focus();
     }
-    this.flushQueuedRefresh();
+    this.updateAvailability();
   }
 
   private renderTagEditor(editor: HTMLElement, item: CardIndex): void {
@@ -1329,7 +1410,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         item.tags = [...new Set([...selected, ...item.inlineTags])];
         this.closeTagEditor(item, card);
         this.showSuggestions(); this.renderTagsFilter();
-        if (this.scanStatus === "scanning") void this.reload();
+        this.markStale(item.path);
       } catch (error) {
         notify(error);
         if (editor.isConnected) {
@@ -1339,7 +1420,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
       } finally {
         this.pendingTags.delete(item.path);
-        this.flushQueuedRefresh();
+        this.updateAvailability();
       }
     };
     editor.append(heading, picker.element);

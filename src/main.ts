@@ -11,6 +11,7 @@ export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   repo!: EntryRepository;
   private rendered = new Set<ExcerptsRenderChild>();
+  private settingsTab: ExcerptsSettingTab | null = null;
   /** Session-only candidates: never sweep unrelated or pre-existing notes. */
   private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
   private editorCleanupTimer: ReturnType<typeof setTimeout> | null = null;
@@ -29,7 +30,8 @@ export default class ExcerptsPlugin extends Plugin {
     this.repo = new EntryRepository(this.app);
     this.registerView(EXCERPTS_HOME_VIEW, leaf => new ExcerptsHomeFileView(leaf, this, this.repo));
     this.registerExtensions(["excerpts"], EXCERPTS_HOME_VIEW);
-    this.addSettingTab(new ExcerptsSettingTab(this.app, this));
+    this.settingsTab = new ExcerptsSettingTab(this.app, this);
+    this.addSettingTab(this.settingsTab);
     this.addRibbonIcon("bookmark", "打开摘录首页", () => void this.openHome().catch(showError));
     this.addCommand({ id: "open-home", name: "打开摘录首页", callback: () => void this.openHome().catch(showError) });
     this.addCommand({ id: "refresh-home", name: "刷新摘录", callback: () => this.refreshViews(true) });
@@ -126,11 +128,27 @@ export default class ExcerptsPlugin extends Plugin {
   private onFileChange(path: string): void {
     // Vault events invalidate cached content without triggering a feed scan.
     this.repo.invalidate(path);
+    for (const child of this.rendered) child.markStale(path);
   }
-  trackRenderer(child: ExcerptsRenderChild): void { this.rendered.add(child); }
-  untrackRenderer(child: ExcerptsRenderChild): void { this.rendered.delete(child); }
+  isBusy(except?: ExcerptsRenderChild): boolean {
+    return [...this.rendered].some(child => child !== except && child.isBusy());
+  }
+  notifyActivityChange(sender: ExcerptsRenderChild): void {
+    for (const child of this.rendered) if (child !== sender) child.syncControls();
+    this.settingsTab?.syncBusy();
+  }
+  markAllStale(): void {
+    for (const child of this.rendered) child.markStale();
+  }
+  trackRenderer(child: ExcerptsRenderChild): void {
+    this.rendered.add(child);
+    this.notifyActivityChange(child);
+  }
+  untrackRenderer(child: ExcerptsRenderChild): void {
+    this.rendered.delete(child);
+    this.notifyActivityChange(child);
+  }
   refreshViews(force = false): void {
-    if (force) this.repo.invalidate();
     for (const child of this.rendered) child.requestRefresh(force);
   }
   async saveSettings(): Promise<void> {

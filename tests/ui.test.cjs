@@ -716,7 +716,7 @@ test('selection mode toggles cards without reopening Markdown or changing tags',
   assert.equal(card.getAttribute('aria-checked'),'true');
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
   card.querySelector('.ex-add-tag').click();
-  assert.equal(card.getAttribute('aria-checked'),'false','nested tag action selects instead');
+  assert.equal(card.getAttribute('aria-checked'),'true','disabled tag action cannot alter selection');
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   root.querySelector('.ex-select-done').click();
   assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false);
@@ -763,10 +763,10 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
   assert.match(document.querySelector('.ex-delete-modal .ex-delete-progress-summary').textContent,/2 \/ 2/);
   document.querySelector('.ex-delete-modal .ex-delete-submit').click();
   root.querySelector('.ex-select-done').click();
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   await t.plugin.openMarkdown(t.md.path);await wait();
   clickByLabel(root,'卡片选项');await wait();
-  Menu.last.items.at(-1).handler();
-  document.querySelector('.ex-delete-modal .ex-delete-submit').click();await wait();
+  assert.equal(Menu.last.items.at(-1).disabled,true,'stale index prohibits another deletion');
   assert.ok(t.files.has(t.md.path),'open Markdown editors are protected');
   await t.close();
 });
@@ -874,8 +874,7 @@ test('clear filter during a canceled search restores bulk selection availability
   search.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
-  const clear=Menu.last.items.find(item=>item.title==='清除筛选');
-  clear.handler();
+  clickByLabel(root,'搜索'); // Explicitly clear a running query; no hidden recovery.
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,false);
   Menu.last.items.find(item=>item.title==='批量选择').handler();
@@ -949,111 +948,62 @@ test('batched selection keeps its original progress denominator when a file disa
   await t.close();
 });
 
-test('deletion keeps its lock and modal loading until the index refresh completes',async()=>{
+test('deletion completes without automatic indexing and marks the feed stale',async()=>{
   const t=await fixture();
-  const survivor=await t.plugin.app.vault.create('摘录/保留.md','应当保留');
-  t.plugin.refreshViews(true);await waitForIndex(t,2);
   const root=t.pane.contentEl, renderer=[...t.plugin.rendered][0];
-  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
-  let unblockScan, scans=0;
-  t.plugin.repo.scan=async(...args)=>{
-    scans++;
-    await new Promise(resolve=>{unblockScan=resolve;});
-    return originalScan(...args);
-  };
-  const target=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===t.md.path);
-  assert.ok(target);
-  Menu.last=null;
-  target.querySelector('.ex-card-options').click();
-  await waitFor(()=>Menu.last?.items?.some(it=>it.title==='删除摘录'),'card delete menu');
-  Menu.last.items.find(it=>it.title==='删除摘录').handler();
-  const modal=Modal.last;
-  modal.modalEl.querySelector('.ex-delete-submit').click();
-  await waitFor(()=>typeof unblockScan==='function','post-delete scan has started');
-  assert.equal(renderer.deleteBusy,true,'lock must remain held during indexing');
-  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').textContent,'删除中…');
-  assert.equal(modal.modalEl.querySelector('.ex-delete-submit').disabled,true);
-  modal.close();
-  assert.equal(modal.modalEl.isConnected,true,'cannot dismiss a pending delete');
-  const otherCard=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===survivor.path);
-  assert.ok(otherCard,'unaffected card remains available');
-  Menu.last=null;
-  otherCard.querySelector('.ex-card-options').click();
-  await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录','survivor menu');
+  let scans=0;
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
+  let release;
+  t.plugin.app.fileManager.trashFile=()=>new Promise(resolve=>{release=resolve;});
+  clickByLabel(root,'卡片选项');await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录');
   Menu.last.items.at(-1).handler();
-  assert.equal(document.querySelectorAll('.ex-delete-modal').length,1,
-    'another delete confirmation cannot open while the first refresh is active');
-  assert.equal(t.files.has(survivor.path),true);
-  unblockScan();
-  await waitFor(()=>!renderer.deleteBusy && !modal.modalEl.isConnected,'deletion and scan settled');
-  assert.equal(scans,1);
-  assert.equal(t.files.has(t.md.path),false);
-  assert.equal(t.files.has(survivor.path),true);
-  await t.close();
-});
-
-test('queued refresh is absorbed by the successful bulk deletion index scan',async()=>{
-  const t=await fixture();
-  const nested=await t.plugin.app.vault.create('摘录/子目录/嵌套.md','嵌套');
-  const survivor=await t.plugin.app.vault.create('摘录/保留.md','根目录');
-  t.plugin.refreshViews(true);await waitForIndex(t,3);
-  const root=t.pane.contentEl, renderer=[...t.plugin.rendered][0];
-  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
-  let scans=0;
-  t.plugin.repo.scan=async(...args)=>{scans++;return originalScan(...args);};
-  clickByLabel(root,'页面选项');
-  Menu.last.items.find(it=>it.title==='批量选择').handler();
-  const target=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===t.md.path);
-  target.click();
-  t.plugin.settings.recursive=false;
-  t.plugin.refreshViews(true);
-  assert.equal(renderer.refreshQueued,true);
-  assert.equal(renderer.workspace.recursive,true,'selection still uses old scope');
-  root.querySelector('.ex-delete-selected').click();
   const modal=Modal.last;
   modal.modalEl.querySelector('.ex-delete-submit').click();
-  await waitFor(()=>!renderer.deleteBusy &&
-    !modal.modalEl.isConnected && renderer.scanStatus==='done','single reconciled deletion scan');
-  assert.equal(scans,1,'queued scan should merge with the mandatory deletion scan');
-  assert.equal(renderer.refreshQueued,false);
-  assert.equal(renderer.workspace.recursive,false);
-  assert.deepEqual(renderer.items.map(item=>item.path),[survivor.path]);
-  assert.equal(t.files.has(nested.path),true,'excluded nested file is not deleted');
-  assert.equal(t.files.has(survivor.path),true);
+  assert.equal(renderer.deleteBusy,true);
+  t.plugin.refreshViews(true); // Explicit refresh is refused during deletion.
+  assert.equal(scans,0);
+  release();await waitFor(()=>!renderer.deleteBusy,'delete finishes');
+  assert.equal(scans,0,'no index scan is launched by deletion');
+  assert.equal(renderer.scanStatus,'stale');
   await t.close();
 });
 
-test('partial bulk deletion keeps deferred scope changes until selection exits',async()=>{
+test('manual refresh is refused during selection and is never queued',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const renderer=[...t.plugin.rendered][0];
+  let scans=0;const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  t.plugin.refreshViews(true);
+  assert.equal(scans,0,'blocked refresh starts no scan');
+  root.querySelector('.ex-select-done').click();
+  await wait();
+  assert.equal(scans,0,'exiting selection does not replay blocked refresh');
+  t.plugin.refreshViews(true);await waitFor(()=>scans===1,'explicit manual refresh');
+  await t.close();
+});
+
+test('partial bulk deletion retains failures and requires explicit refresh',async()=>{
   const t=await fixture();
-  const nested=await t.plugin.app.vault.create('摘录/子目录/嵌套.md','嵌套');
+  await t.plugin.app.vault.create('摘录/第二条.md','文本');
   t.plugin.refreshViews(true);await waitForIndex(t,2);
   const root=t.pane.contentEl, renderer=[...t.plugin.rendered][0];
-  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
-  let scans=0;
-  t.plugin.repo.scan=async(...args)=>{scans++;return originalScan(...args);};
-  clickByLabel(root,'页面选项');
-  Menu.last.items.find(it=>it.title==='批量选择').handler();
+  let scans=0;const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
   root.querySelector('.ex-select-all').click();
-  t.md.stat.mtime++; // One file must survive the delete attempt.
-  t.plugin.settings.recursive=false;
-  t.plugin.refreshViews(true);
+  t.md.stat.mtime++;
   root.querySelector('.ex-delete-selected').click();
-  const modal=Modal.last;
-  modal.modalEl.querySelector('.ex-delete-submit').click();
-  await waitFor(()=>!renderer.deleteBusy && modal.modalEl.querySelector('.ex-delete-submit').textContent==='完成',
-    'partial deletion completed');
-  assert.equal(scans,1);
-  assert.equal(renderer.refreshQueued,true,'scope change remains deferred while selection is active');
-  assert.equal(renderer.workspace.recursive,true);
-  assert.equal(renderer.selectionMode,'selecting');
-  assert.equal(t.files.has(t.md.path),true);
-  assert.equal(t.files.has(nested.path),false);
-  modal.modalEl.querySelector('.ex-delete-submit').click();
+  document.querySelector('.ex-delete-modal .ex-delete-submit').click();
+  await waitFor(()=>renderer.scanStatus==='stale' && !renderer.deleteBusy,'partial delete completed');
+  assert.equal(scans,0,'partial deletion never automatically reindexes');
+  document.querySelector('.ex-delete-modal .ex-delete-submit').click();
   root.querySelector('.ex-select-done').click();
-  await waitFor(()=>!renderer.refreshQueued && renderer.workspace.recursive===false &&
-    renderer.scanStatus==='done','deferred scope refresh after exit');
-  assert.equal(scans,2,'scope change requires one later scan after selection exit');
-  assert.equal(t.files.has(t.md.path),true);
+  assert.equal(renderer.scanStatus,'stale');
+  t.plugin.refreshViews(true);await waitFor(()=>scans===1 && renderer.scanStatus==='done','manual refresh completed');
+  assert.ok(t.files.has(t.md.path),'modified file protected');
   await t.close();
 });
 
@@ -1121,7 +1071,7 @@ test('manual refresh updates stale index without external auto-rescan',async()=>
   const next=await t.plugin.app.vault.create('摘录/新增.md','新内容');
   t.plugin.onFileChange(next.path);
   await wait();
-  assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'待刷新 · 1 条');
   clickByLabel(root,'页面选项');
   const refresh=Menu.last.items.find(item=>item.title==='刷新摘录');
   assert.ok(refresh);
@@ -1185,41 +1135,21 @@ test('scan failure leaves previous cards visible and enables retry',async()=>{
   await t.close();
 });
 
-test('refresh cancels an already running full-text search before scanning starts',async()=>{
+test('search blocks refresh until the user explicitly clears the query',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
+  let scans=0;const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   clickByLabel(root,'搜索');
-  let oldCancel, oldRelease, searchCount=0;
-  const originalSearch=t.plugin.repo.search.bind(t.plugin.repo);
-  t.plugin.repo.search=async(files,query,cancel,onProgress)=>{
-    searchCount++;
-    if(searchCount===1){
-      oldCancel=cancel;
-      await new Promise(resolve=>{oldRelease=resolve;});
-      return new Set([t.md.path]);
-    }
-    return originalSearch(files,query,cancel,onProgress);
-  };
   const input=root.querySelector('.ex-search');
-  input.value='旧关键词';
+  input.value='测试';
   input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
-  await waitFor(()=>typeof oldRelease==='function','old full-text search started');
-  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
-  let scanRelease;
-  t.plugin.repo.scan=async(...args)=>{
-    await new Promise(resolve=>{scanRelease=resolve;});
-    return originalScan(...args);
-  };
   t.plugin.refreshViews(true);
-  assert.equal(oldCancel(),true,'old search must become cancelled immediately');
-  input.value='测试标题';
-  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
-  oldRelease();
-  await wait();
-  assert.equal(searchCount,1,'do not start another search until the refreshed index commits');
-  scanRelease();
-  await waitFor(()=>searchCount===2 && root.querySelector('.ex-card'),'new search after scan');
-  await waitFor(()=>root.querySelector('.ex-count').textContent==='1 / 1','current query applied');
-  assert.equal(t.pane.contentEl.querySelector('.ex-search').value,'测试标题');
+  assert.equal(scans,0,'refresh is refused while search is active');
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  clickByLabel(root,'搜索');
+  assert.equal(root.querySelector('.ex-search').value,'');
+  t.plugin.refreshViews(true);
+  await waitFor(()=>scans===1,'user explicitly refreshes after clearing query');
   await t.close();
 });
 
@@ -1242,7 +1172,11 @@ test('moving a homepage folder updates its active scope and saves new notes into
   const renderer=[...t.plugin.rendered][0];
   assert.equal(renderer.workspace.homePath,'收藏/首页.excerpts');
   assert.equal(renderer.workspace.rootFolder,'收藏');
-  await waitFor(()=>root.querySelector('.ex-card')?.dataset.path==='收藏/测试.md','moved card index');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  assert.equal(root.querySelector('.ex-card')?.dataset.path,'摘录/测试.md',
+    'external move does not rescan automatically');
+  t.plugin.refreshViews(true);
+  await waitFor(()=>root.querySelector('.ex-card')?.dataset.path==='收藏/测试.md','manual refresh after move');
   const quote=root.querySelector('.ex-compose-text');
   quote.value='# 新目录下的摘录';
   quote.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
@@ -1268,53 +1202,32 @@ test('renaming a saved excerpt page updates its title and scope without rebuildi
   await t.close();
 });
 
-test('saving and native editor opening do not wait for a blocked index scan',async()=>{
+test('saving and native editor opening do not trigger an index scan',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
-  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
-  let releaseScan, scanCount=0;
-  t.plugin.repo.scan=async(...args)=>{
-    scanCount++;
-    await new Promise(resolve=>{releaseScan=resolve;});
-    return scan(...args);
-  };
+  let scans=0;const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   const textarea=root.querySelector('.ex-compose-text');
   textarea.value='# 立即编辑';
   textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'编辑文档');
-  await waitFor(()=>t.leaf.lastFile?.basename==='立即编辑','native editor opens before rescan finishes');
-  assert.equal(textarea.disabled,false,'composer reenabled before scan completion');
+  await waitFor(()=>t.leaf.lastFile?.basename==='立即编辑','native editor opens without scan');
+  assert.equal(textarea.disabled,false);
   assert.equal(textarea.value,'');
-  await waitFor(()=>scanCount===1,'post-save scan started');
-  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done',
-    'short scans do not flash a spinner before 150ms');
-  releaseScan();
-  await waitForIndex(t,2);
+  assert.equal(scans,0);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   await t.close();
 });
 
-test('settings-triggered refresh is queued during bulk selection and applied after exit',async()=>{
+test('selection denies configuration-triggered refresh rather than deferring it',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
-  await t.plugin.app.vault.create('摘录/子目录/子项.md','nested text');
-  t.plugin.refreshViews(true);
-  await waitForIndex(t,2);
-  clickByLabel(root,'页面选项');
-  Menu.last.items.find(item=>item.title==='批量选择').handler();
   const renderer=[...t.plugin.rendered][0];
-  t.plugin.settings.recursive=false;
+  clickByLabel(root,'页面选项');Menu.last.items.find(item=>item.title==='批量选择').handler();
+  const before=renderer.workspace.recursive;
   t.plugin.refreshViews(true);
-  assert.equal(renderer.workspace.recursive,true,
-    'selection must retain the original recursive scope until exit');
-  assert.equal(renderer.refreshQueued,true);
-  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 2/);
-  root.querySelector('.ex-select-all').click();
-  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 2 \/ 2/);
-  assert.equal(renderer.selectedPaths.size,2,
-    'nested selection snapshots must not be invalidated by a pending setting');
+  assert.equal(renderer.workspace.recursive,before);
+  assert.equal(renderer.scanStatus,'done');
   root.querySelector('.ex-select-done').click();
-  await waitForIndex(t,1);
-  assert.equal(renderer.workspace.recursive,false,'new scope becomes active after selection exit');
-  assert.equal(renderer.refreshQueued,false);
-  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(renderer.scanStatus,'done');
   await t.close();
 });
 
@@ -1338,26 +1251,90 @@ test('scan yields to the main thread across ten thousand metadata entries',async
   await t.close();
 });
 
-test('settings refresh preserves a staged card tag editor until it is closed',async()=>{
-  const t=await fixture();
-  const root=t.pane.contentEl, card=root.querySelector('.ex-card');
+test('tag edits reject refresh and save once, without deferred work',async()=>{
+  const t=await fixture();const root=t.pane.contentEl, card=root.querySelector('.ex-card');
   card.querySelector('.ex-add-tag').click();
   const input=card.querySelector('.ex-tag-custom');
   input.value='暂存标签';
   input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
-  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2');
-  const renderer=[...t.plugin.rendered][0];
+  let scans=0;const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   t.plugin.refreshViews(true);
-  assert.equal(renderer.refreshQueued,true,'open tag editor defers refresh');
-  assert.equal(card.querySelector('.ex-tag-custom'),input,'the editor must not be rebuilt');
-  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
-  const freshMenu=()=>{clickByLabel(root,'页面选项');return Menu.last.items;};
-  assert.equal(freshMenu().find(item=>item.title==='刷新摘录').disabled,true);
+  assert.equal(scans,0);
   card.querySelector('.ex-tag-done').click();
-  await waitFor(()=>t.getTagWrites()===1,'single staged tag write');
-  await waitFor(()=>!renderer.refreshQueued && root.querySelector('.ex-scan-status').dataset.state==='done','deferred refresh completed');
+  await waitFor(()=>t.getTagWrites()===1,'single tag write');
+  assert.equal(scans,0);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   assert.deepEqual(t.tagState.get(t.md.path),['哲学','暂存标签']);
-  assert.equal(renderer.pendingTags.size,0);
+  await t.close();
+});
+
+
+test('scan locks save and search inputs without discarding the composer draft',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release, scans=0;
+  t.plugin.repo.scan=async(...args)=>{
+    scans++;
+    await new Promise(resolve=>{release=resolve;});
+    return scan(...args);
+  };
+  const textarea=root.querySelector('.ex-compose-text');
+  textarea.value='尚未保存的草稿';
+  textarea.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  t.plugin.refreshViews(true);
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
+  assert.equal(root.querySelector('.ex-compose-text').disabled,false);
+  t.plugin.refreshViews(true);
+  assert.equal(scans,1,'repeat scan is rejected, not queued');
+  root.querySelector('.ex-compose-actions .ex-btn-primary').click();
+  assert.equal(t.files.size,3,'disabled save cannot create Markdown');
+  assert.equal(textarea.value,'尚未保存的草稿');
+  release();
+  await waitFor(()=>root.querySelector('.ex-scan-status').dataset.state==='done','scan completes');
+  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,false);
+  assert.equal(scans,1);
+  await t.close();
+});
+
+test('external file change marks stale but never auto scans',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const next=await t.plugin.app.vault.create('摘录/新卡片.md','内容');
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let scans=0;t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
+  t.plugin.onFileChange(next.path);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'待刷新 · 1 条');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  assert.equal(scans,0);
+  Menu.last.items.find(item=>item.title==='刷新摘录').handler();
+  await waitForIndex(t,2);
+  assert.equal(scans,1);
+  await t.close();
+});
+
+test('only one card can edit its tags and a blocked refresh never replays',async()=>{
+  const t=await fixture();
+  await t.plugin.app.vault.create('摘录/第二.md','第二条');
+  t.plugin.refreshViews(true);await waitForIndex(t,2);
+  const root=t.pane.contentEl;
+  const cards=[...root.querySelectorAll('.ex-card')];
+  cards[0].querySelector('.ex-add-tag').click();
+  assert.equal(cards[1].querySelector('.ex-add-tag').disabled,true);
+  const renderer=[...t.plugin.rendered][0];
+  let scans=0;const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
+  t.plugin.refreshViews(true);
+  assert.equal(scans,0);
+  cards[0].querySelector('.ex-tag-cancel').click();
+  assert.equal(cards[1].querySelector('.ex-add-tag').disabled,false);
+  assert.equal(scans,0,'no delayed refresh after closing tag editor');
+  assert.equal(renderer.scanStatus,'done');
   await t.close();
 });
