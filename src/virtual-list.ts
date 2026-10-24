@@ -15,6 +15,7 @@ interface VirtualOptions {
   unmount: (row: TimelineRow, element: HTMLElement) => void;
   pinnedPath?: () => string | null;
   onScrollBlocked?: () => void;
+  resizeRows?: () => TimelineRow[];
 }
 
 export class VirtualTimeline {
@@ -88,6 +89,9 @@ export class VirtualTimeline {
     const width = this.host.clientWidth;
     if (width && Math.abs(width - this.lastWidth) < 1) { this.schedule(); return; }
     this.lastWidth = width;
+    const refreshed = this.options.resizeRows?.();
+    if (refreshed && refreshed.length === this.rows.length &&
+        refreshed.every((row, index) => row.path === this.rows[index].path)) this.rows = refreshed;
     const anchorIndex = this.firstVisible;
     const anchorDelta = this.currentOffset() - this.heights.prefix(anchorIndex);
     this.heights = new HeightIndex(this.rows.map(row => row.estimatedHeight));

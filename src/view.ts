@@ -139,7 +139,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       mount: (row, index) => this.mountTimelineRow(row, index),
       unmount: (row, element) => this.unmountTimelineRow(row, element),
       pinnedPath: () => this.openTagEditors.values().next().value ?? null,
-      onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动")
+      onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动"),
+      resizeRows: () => this.timelineRows(this.visibleItems())
     });
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
@@ -1182,9 +1183,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const item = this.itemByPath.get(row.path);
     if (!item) throw new Error("摘录索引已失效，请手动刷新");
     const wrapper = node("section", "ex-virtual-row");
-    const compact = this.compactLayout();
-    const gap = index === 0 ? 0 : row.firstOfDay ? (compact ? 24 : 32) : 16;
-    wrapper.style.paddingTop = gap + "px";
+    wrapper.classList.toggle("ex-virtual-day-start", row.firstOfDay);
+    wrapper.classList.toggle("ex-virtual-first-row", index === 0);
     const rail = node("header", "ex-day-rail");
     if (row.firstOfDay) {
       rail.append(node("h4", "ex-day-title", row.dayTitle));
@@ -1387,6 +1387,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const policy = previewPolicy(classifyPreview(parsed), this.compactLayout());
     card.dataset.previewKind = policy.kind;
     content.style.setProperty("--ex-preview-limit", policy.limit + "px");
+    // Clamp before rendering to prevent transient full-height layout shifts.
+    content.classList.add("ex-content-clamped");
     body.append(content);
     const expand = button("", () => {
       if (!this.guard("page")) return;
