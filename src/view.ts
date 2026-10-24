@@ -106,6 +106,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private deleteBusy = false;
   private selectionBusy = false;
   private selectionProcessed = 0;
+  private selectionBatchTotal = 0;
   private searchReady = true;
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
@@ -619,7 +620,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const chosen = this.selectedPaths.size, total = this.selectionScope.size;
     this.containerEl.classList.toggle("ex-is-selecting-busy", this.selectionBusy);
     this.selectionCountEl.textContent = this.selectionBusy ?
-      "正在选择 " + this.selectionProcessed + " / " + total : "已选 " + chosen + " / " + total;
+      "正在选择 " + this.selectionProcessed + " / " + this.selectionBatchTotal :
+      "已选 " + chosen + " / " + total;
     this.selectedFooterCountEl.textContent = this.selectionBusy ?
       "正在选择…" : "已选择 " + chosen + " 条";
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
@@ -648,7 +650,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.selectedCandidates.delete(path);
     } else {
       const snapshot = this.repo.snapshotForDelete(path, this.workspace);
-      if (!snapshot) { new Notice("该摘录已不存在，请刷新后重试"); return; }
+      if (!snapshot) {
+        this.selectionScope.delete(path);
+        this.selectedPaths.delete(path);
+        this.selectedCandidates.delete(path);
+        this.drawCards();
+        this.updateSelectionControls();
+        new Notice("该摘录已不存在，已从选择范围移除");
+        return;
+      }
       this.selectedPaths.add(path);
       this.selectedCandidates.set(path, snapshot);
     }
@@ -668,6 +678,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const paths = [...this.selectionScope];
     this.selectionBusy = paths.length > 200;
     this.selectionProcessed = 0;
+    this.selectionBatchTotal = paths.length;
+    let pruned = false;
     if (this.selectionBusy) this.updateSelectionControls();
     try {
       for (let start = 0; start < paths.length; start += 200) {
@@ -678,6 +690,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           if (snapshot) {
             this.selectedPaths.add(path);
             this.selectedCandidates.set(path, snapshot);
+          } else {
+            // A file removed externally is no longer part of this frozen selection.
+            this.selectionScope.delete(path);
+            pruned = true;
           }
         }
         this.selectionProcessed = Math.min(start + 200, paths.length);
@@ -689,7 +705,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     } finally {
       this.selectionBusy = false;
-      if (!this.disposed) this.updateSelectionUI();
+      if (!this.disposed) {
+        if (pruned) this.drawCards();
+        this.updateSelectionUI();
+      }
     }
   }
   private confirmSingleDelete(path: string): void {
