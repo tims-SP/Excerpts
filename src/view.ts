@@ -947,20 +947,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.items = cards;
       this.lastScanCount = cards.length;
       this.scanStatus = this.scanDirty ? "stale" : "done";
-      if (this.selectionMode !== "normal") {
-        const indexed = new Set(cards.map(card => card.path));
-        for (const path of this.selectionScope) {
-          if (!indexed.has(path)) {
-            this.selectionScope.delete(path); this.selectedPaths.delete(path);
-            this.selectedCandidates.delete(path);
-          }
-        }
-      }
       this.showSuggestions();
       this.renderTagsFilter();
-      // The selection scope is frozen; do not rerun a full-text search.
-      if (this.selectionMode !== "normal") this.drawCards();
-      else if (this.searchText && !this.scanDirty) this.scheduleSearch();
+      // Scanning is prohibited during selection; there is no scope to reconcile.
+      if (this.searchText && !this.scanDirty) this.scheduleSearch();
       else { this.searchReady = true; this.matches = null; this.drawCards(); }
       this.announceScan("摘录扫描完成，共 " + cards.length + " 条");
     } catch (error) {
