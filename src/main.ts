@@ -74,7 +74,8 @@ export default class ExcerptsPlugin extends Plugin {
       }
       this.onFileChange(file.path);
     }));
-    this.registerEvent(this.app.vault.on("create", file => this.onFileChange(file.path, file instanceof TFolder)));
+    this.registerEvent(this.app.vault.on("create", file =>
+      this.onFileChange(file.path, file instanceof TFolder, "create", file instanceof TFile ? file : undefined)));
     this.registerEvent(this.app.vault.on("delete", file => {
       const path = file.path;
       if (this.settings.defaultHome === path ||
@@ -102,7 +103,8 @@ export default class ExcerptsPlugin extends Plugin {
       this.onFileChange(oldPath, file instanceof TFolder);
       this.onFileChange(file.path, file instanceof TFolder);
     }));
-    this.registerEvent(this.app.metadataCache.on("changed", file => this.onFileChange(file.path)));
+    this.registerEvent(this.app.metadataCache.on("changed", file =>
+      this.onFileChange(file.path, false, "metadata", file)));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleEditorCleanup()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.scheduleEditorCleanup()));
     this.registerEvent(this.app.workspace.on("file-open", () => this.scheduleEditorCleanup()));
@@ -165,14 +167,15 @@ export default class ExcerptsPlugin extends Plugin {
       this.editorCleanupRunning = false;
     }
   }
-  private onFileChange(path: string, folder = false): void {
+  private onFileChange(path: string, folder = false,
+    event: "create" | "metadata" | "other" = "other", file?: TFile): void {
     // A .excerpts file is page configuration, not a Markdown card.
     // Only a real vault "modify" event invalidates its active page.
     if (!folder && path.toLowerCase().endsWith(".excerpts")) return;
     // Vault events only invalidate the visible index; they never launch a scan.
     this.repo.invalidate(path);
     for (const child of this.rendered) {
-      if (!folder) { child.markStale(path); continue; }
+      if (!folder) { child.markStale(path, event, file); continue; }
       const root = child.workspace.rootFolder;
       if (root === "/" || path === root || path.startsWith(root + "/") ||
           root.startsWith(path + "/")) child.markStale();
