@@ -693,7 +693,8 @@ test('single-card deletion requires native confirmation and uses the vault trash
   Menu.last.items.at(-1).handler();
   modal=document.querySelector('.ex-delete-modal');
   modal.querySelector('.ex-delete-submit').click();
-  await wait();
+  await waitFor(()=>!t.files.has(t.md.path) && root.querySelectorAll('.ex-card').length===0,
+    'single deletion and card removal');
   assert.equal(t.files.has(t.md.path),false);
   assert.equal(root.querySelectorAll('.ex-card').length,0);
   assert.ok(t.files.has(t.home.path),'the .excerpts file is never deleted');
@@ -751,7 +752,8 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
   t.md.stat.mtime++;
   root.querySelector('.ex-delete-selected').click();
   document.querySelector('.ex-delete-modal .ex-delete-submit').click();
-  await wait();
+  await waitFor(()=>document.querySelector('.ex-delete-modal .ex-delete-submit')?.textContent==='完成',
+    'partial deletion summary');
   assert.ok(t.files.has(t.md.path),'modified original remains intact');
   assert.equal(t.files.has(second.path),false,'unmodified peer is trashed');
   assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
@@ -781,7 +783,8 @@ test('select all respects a tag filter and never includes out-of-scope Markdown'
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
   root.querySelector('.ex-delete-selected').click();
   const modal=document.querySelector('.ex-delete-modal');
-  modal.querySelector('.ex-delete-submit').click();await wait();
+  modal.querySelector('.ex-delete-submit').click();
+  await waitFor(()=>!t.files.has(t.md.path),'filtered deletion');
   assert.equal(t.files.has(t.md.path),false);
   assert.equal(t.files.has(unrelated.path),true);
   assert.equal(t.files.has(t.home.path),true);
@@ -803,7 +806,8 @@ test('single deletion shows a spinner and blocks native modal close while file t
   modal.close();
   assert.ok(modal.modalEl.isConnected,'the native close action must be ignored while busy');
   assert.equal(modal.modalEl.querySelector('.ex-delete-submit').disabled,true);
-  finishTrash();await wait();
+  finishTrash();
+  await waitFor(()=>!modal.modalEl.isConnected && !t.files.has(t.md.path),'single deletion completed');
   assert.equal(t.files.has(t.md.path),false);
   assert.equal(modal.modalEl.isConnected,false);
   await t.close();
@@ -828,7 +832,8 @@ test('bulk deletion reports actual processed counts and requires Done after comp
   assert.equal(modal.modalEl.querySelector('progress').max,2);
   modal.close();
   assert.equal(modal.modalEl.isConnected,true,'bulk deletion modal must remain open while working');
-  await wait();
+  await waitFor(()=>modal.modalEl.querySelector('.ex-delete-submit').textContent==='完成',
+    'bulk deletion completed');
   assert.equal(modal.modalEl.querySelector('progress').value,2);
   assert.equal(modal.modalEl.querySelector('.ex-delete-progress-summary').textContent,'2 / 2');
   assert.equal(modal.modalEl.querySelector('.ex-delete-submit').textContent,'完成');
@@ -849,7 +854,8 @@ test('select-all over 200 entries yields to UI and disables destructive actions 
   assert.match(root.querySelector('.ex-selection-count').textContent,/正在选择 200 \/ 426/);
   assert.equal(root.querySelector('.ex-select-all').disabled,true);
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
-  await wait();
+  await waitFor(()=>root.querySelector('.ex-selection-count').textContent==='已选 426 / 426',
+    'large selection completed');
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 426 \/ 426/);
   assert.equal(root.querySelector('.ex-delete-selected').disabled,false);
   assert.equal(root.querySelectorAll('.ex-card').length,40);
@@ -929,7 +935,8 @@ test('batched selection keeps its original progress denominator when a file disa
   root.querySelector('.ex-select-all').click();
   assert.match(root.querySelector('.ex-selection-count').textContent,/正在选择 200 \/ 202/);
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
-  await wait();
+  await waitFor(()=>root.querySelector('.ex-selection-count').textContent==='已选 201 / 201',
+    'filtered selection with stale file completed');
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 201 \/ 201/);
   assert.equal(root.querySelector('.ex-select-all').textContent,'取消全选');
   root.querySelector('.ex-select-all').click();
