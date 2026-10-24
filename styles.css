@@ -23,6 +23,8 @@
 }
 .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { box-sizing: border-box; }
 .excerpts-native-host { container-type: inline-size; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+/* The Obsidian mobile FileView may provide its own gutters; this view sizes its own. */
+.is-mobile .excerpts-native-host { padding-inline: 0; }
 .excerpts-root .ex-header,
 .excerpts-root .ex-composer,
 .excerpts-root .ex-toolbar,
@@ -391,9 +393,9 @@
   border: 1px solid var(--ex-border); transform: translateX(-50%);
 }
 @container (max-width: 700px) {
-  .excerpts-root { padding: var(--ex-space-4) var(--ex-space-4) 56px; }
+  .excerpts-root { padding: var(--ex-space-4) 12px 56px; }
   .excerpts-root .ex-composer {
-    --ex-compose-pad-x: 16px; --ex-compose-pad-top: 14px;
+    --ex-compose-pad-x: 14px; --ex-compose-pad-top: 14px;
     --ex-compose-pad-bottom: 10px; margin-bottom: 24px;
   }
   .excerpts-root .ex-composer textarea.ex-compose-text {
@@ -417,16 +419,16 @@
   .excerpts-root .ex-filter-tags { width: 100%; margin-left: 0; }
   .excerpts-root .ex-card-list { gap: var(--ex-space-5); }
   .excerpts-root .ex-day-group { grid-template-columns: minmax(0, 1fr); gap: var(--ex-space-2); }
-  .excerpts-root .ex-day-rail { padding: 0 2px; flex-direction: row; align-items: baseline; gap: var(--ex-space-2); }
+  .excerpts-root .ex-day-rail { padding: 0; flex-direction: row; align-items: baseline; gap: var(--ex-space-2); }
   .excerpts-root .ex-day-cards { width: 100%; max-width: none; }
   .excerpts-root .ex-card {
-    --ex-card-pad: 16px;
+    --ex-card-pad: 14px;
     --ex-card-pad-bottom: 10px;
   }
   .excerpts-root button.ex-loadmore { margin-left: 50%; }
 }
 @container (max-width: 400px) {
-  .excerpts-root { padding: var(--ex-space-3) var(--ex-space-4) 48px; }
+  .excerpts-root { padding: var(--ex-space-3) 8px 48px; }
   .excerpts-root .ex-card-footer { gap: var(--ex-space-2); }
   .excerpts-root .ex-composer { margin-bottom: 24px; }
 }
