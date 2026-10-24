@@ -4,6 +4,8 @@ import type ExcerptsPlugin from "./main";
 import { EntryRepository } from "./repository";
 import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace } from "./model";
+import { PageFilter, isFiltered } from "./page-config";
+import { SavePageModal } from "./page-modal";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
   const result = document.createElement(tag);
@@ -53,6 +55,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private searchInput!: HTMLInputElement;
+  private searchButton!: HTMLButtonElement;
   private searchWrap!: HTMLElement;
   private tagBar!: HTMLElement;
   private filterButton!: HTMLButtonElement;
@@ -79,7 +82,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private pendingTags = new Set<string>();
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
-    private repo: EntryRepository) { super(container); }
+    private repo: EntryRepository, private savedFilter: PageFilter | null = null,
+    private savedPageRaw: string | null = null) {
+    super(container);
+    this.tagFilter = savedFilter?.tag ?? "";
+    this.searchText = savedFilter?.query ?? "";
+  }
   onload(): void {
     this.build();
     if (typeof ResizeObserver !== "undefined") {
@@ -115,7 +123,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.classList.add("excerpts-root");
     const header = node("div", "ex-header");
     header.append(node("div", "ex-brand"));
-    header.firstElementChild!.append(node("h2", "ex-title", "摘录"));
+    const fileName = this.workspace.homePath.split("/").pop()?.replace(/\.excerpts$/i, "") ?? "摘录";
+    header.firstElementChild!.append(node("h2", "ex-title", this.savedFilter ? fileName : "摘录"));
     root.append(header);
 
     // The outer composer is the only rounded surface; textarea has no native chrome.
@@ -305,8 +314,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toolbar.append(title);
     const actions = node("div", "ex-toolbar-actions");
     this.searchWrap = node("div", "ex-search-wrap");
-    this.searchWrap.hidden = true;
+    this.searchWrap.hidden = !this.searchText;
     this.searchInput = node("input", "ex-input ex-search");
+    this.searchInput.value = this.searchText;
     this.searchInput.type = "search";
     this.searchInput.placeholder = "搜索摘录内容或标签…";
     this.searchInput.setAttribute("aria-label", "搜索摘录");
@@ -317,7 +327,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!this.searchWrap.hidden) this.searchInput.focus();
       else if (this.searchText) { this.searchInput.value = ""; this.searchText = ""; this.scheduleSearch(); }
     });
-    searchButton.setAttribute("aria-expanded", "false");
+    this.searchButton = searchButton;
+    searchButton.setAttribute("aria-expanded", String(!this.searchWrap.hidden));
     this.searchInput.addEventListener("input", () => {
       this.searchText = this.searchInput.value.trim();
       this.scheduleSearch();
@@ -335,12 +346,91 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
     this.filterButton.setAttribute("aria-expanded", "false");
     actions.append(this.filterButton);
+    const pageMenuButton = iconButton("ellipsis", "页面选项", () => this.showPageMenu(pageMenuButton),
+      "ex-page-options");
+    pageMenuButton.setAttribute("aria-haspopup", "menu");
+    actions.append(pageMenuButton);
     toolbar.append(actions);
     root.append(toolbar, this.searchWrap);
     this.tagBar = node("div", "ex-filter-tags");
     root.append(this.tagBar);
     this.listEl = node("div", "ex-card-list");
     root.append(this.listEl);
+  }
+  private currentFilter(): PageFilter {
+    return { tag: this.tagFilter.trim(), query: this.searchText.trim() };
+  }
+  private isPageDirty(): boolean {
+    if (!this.savedFilter) return false;
+    const current = this.currentFilter();
+    return current.tag !== this.savedFilter.tag || current.query !== this.savedFilter.query;
+  }
+  private applyPageFilter(filter: PageFilter): void {
+    this.searchToken++; // Cancel any previous async search before replacing its query.
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    this.matches = null;
+    this.pageSize = 40;
+    this.tagFilter = filter.tag;
+    this.searchText = filter.query;
+    this.filterOpen = Boolean(filter.tag);
+    this.searchInput.value = filter.query;
+    this.searchWrap.hidden = !filter.query;
+    this.searchButton.setAttribute("aria-expanded", String(Boolean(filter.query)));
+    this.renderTagsFilter();
+    if (filter.query) this.scheduleSearch();
+    else this.drawCards();
+  }
+  private showPageMenu(buttonEl: HTMLButtonElement): void {
+    const current = this.currentFilter();
+    const changed = this.isPageDirty();
+    const menu = new Menu();
+    if (this.savedFilter && changed) {
+      menu.addItem(item => item.setTitle("更新当前页面").setIcon("save")
+        .onClick(() => void this.updateCurrentPage().catch(notify)));
+    }
+    menu.addItem(item => item
+      .setTitle(this.savedFilter ? "另存为摘录页…" : "保存当前筛选…")
+      .setIcon("bookmark-plus")
+      .setDisabled(!isFiltered(current))
+      .onClick(() => this.openSavePageModal()));
+    if (this.savedFilter && changed) {
+      menu.addItem(item => item.setTitle("恢复已保存的筛选").setIcon("undo-2")
+        .onClick(() => this.applyPageFilter(this.savedFilter!)));
+    }
+    menu.addItem(item => item.setTitle("清除筛选").setIcon("rotate-ccw")
+      .setDisabled(!isFiltered(current))
+      .onClick(() => this.applyPageFilter({ tag: "", query: "" })));
+    const rect = buttonEl.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.right, y: rect.bottom }, buttonEl.ownerDocument);
+  }
+  private openSavePageModal(): void {
+    const current = this.currentFilter();
+    if (!isFiltered(current)) return;
+    const stem = (current.tag ? current.tag + "摘录" : "摘录筛选")
+      .replace(/[\\/:*?"<>|\x00-\x1f]/g, "").slice(0, 60) || "摘录筛选";
+    let suggested = stem;
+    for (let index = 2; index <= 100; index++) {
+      if (!this.plugin.savedPageNameIssue(this.workspace.homePath, suggested)) break;
+      suggested = stem.slice(0, 54) + "-" + index;
+    }
+    const summary = "当前条件：" +
+      (current.tag ? "#" + current.tag : "全部标签") +
+      (current.query ? " · 搜索「" + current.query + "」" : "");
+    new SavePageModal(this.plugin.app, suggested,
+      name => this.plugin.savedPageNameIssue(this.workspace.homePath, name),
+      async name => {
+        const file = await this.plugin.createSavedPage(this.workspace.homePath, name, current);
+        new Notice("已创建摘录页：" + file.basename);
+        await this.plugin.openHome(file.path);
+      }, summary).open();
+  }
+  private async updateCurrentPage(): Promise<void> {
+    if (!this.savedFilter || this.savedPageRaw === null || !this.isPageDirty()) return;
+    const filter = this.currentFilter();
+    this.savedPageRaw = await this.plugin.updateSavedPage(this.workspace.homePath, this.savedPageRaw, filter);
+    this.savedFilter = filter;
+    new Notice("已更新当前摘录页");
   }
   private showSuggestions: () => void = () => {};
   private async reload(): Promise<void> {
