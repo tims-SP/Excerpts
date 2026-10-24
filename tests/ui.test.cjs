@@ -452,10 +452,12 @@ test('page actions appear only in the timeline toolbar and disabled actions have
   assert.ok(more.closest('.ex-toolbar-actions'));
   assert.equal(root.querySelectorAll('.ex-page-options').length,1);
   assert.equal(root.querySelectorAll('.ex-card-options').length,1);
-  assert.deepEqual(Menu.last.items.map(item=>item.title),['批量选择','保存当前筛选…','清除筛选']);
-  assert.equal(Menu.last.items[0].disabled,false);
-  assert.equal(Menu.last.items[1].disabled,true);
-  assert.equal(Menu.last.items[2].disabled,true);
+  assert.deepEqual(Menu.last.items.map(item=>item.title),
+    ['刷新摘录','批量选择','保存当前筛选…','清除筛选']);
+  assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,false);
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,false);
+  assert.equal(Menu.last.items.find(item=>item.title==='保存当前筛选…').disabled,true);
+  assert.equal(Menu.last.items.find(item=>item.title==='清除筛选').disabled,true);
   await t.close();
 });
 
@@ -464,8 +466,9 @@ test('save current filter creates a reusable .excerpts file without replacing th
   clickByLabel(root,'筛选标签');
   [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='#哲学').click();
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[1].disabled,false);
-  Menu.last.items[1].handler();
+  const save=Menu.last.items.find(item=>item.title==='保存当前筛选…');
+  assert.equal(save.disabled,false);
+  save.handler();
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   assert.equal(dialog.querySelector('.ex-save-page-input').value,'哲学摘录');
@@ -497,12 +500,12 @@ test('saved page restores filters and can update only after explicit confirmatio
   assert.equal(t.files.get(saved.path).data,initial,'temporary filter changes must not rewrite file');
   clickByLabel(root,'页面选项');
   assert.deepEqual(Menu.last.items.map(item=>item.title),
-    ['批量选择','更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
-  Menu.last.items[3].handler();
+    ['刷新摘录','批量选择','更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
+  Menu.last.items.find(item=>item.title==='恢复已保存的筛选').handler();
   assert.equal(root.querySelector('.ex-selected').textContent,'#哲学');
   [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='全部').click();
   clickByLabel(root,'页面选项');
-  Menu.last.items[1].handler();await wait();
+  Menu.last.items.find(item=>item.title==='更新当前页面').handler();await wait();
   assert.match(t.files.get(saved.path).data,/tag: ""/);
   assert.equal(root.querySelector('.ex-title').textContent,'文学摘录');
   await t.pane.openFile(t.home);await wait();
@@ -523,7 +526,7 @@ test('saved query restores search UI; invalid or duplicate save names are blocke
   assert.equal(t.plugin.savedPageNameIssue(saved.path,'检索摘录')!==null,true);
   assert.equal(t.plugin.savedPageNameIssue(saved.path,'异常/名称')!==null,true);
   clickByLabel(root,'页面选项');
-  Menu.last.items[1].handler();
+  Menu.last.items.find(item=>item.title==='另存为摘录页…').handler();
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   const input=dialog.querySelector('.ex-save-page-input');
@@ -839,11 +842,11 @@ test('clear filter during a canceled search restores bulk selection availability
   search.value='不存在的搜索条件';
   search.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[0].disabled,true);
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
   const clear=Menu.last.items.find(item=>item.title==='清除筛选');
   clear.handler();
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[0].disabled,false);
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,false);
   Menu.last.items.find(item=>item.title==='批量选择').handler();
   assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   root.querySelector('.ex-select-done').click();
