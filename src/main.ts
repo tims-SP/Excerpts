@@ -191,7 +191,7 @@ export default class ExcerptsPlugin extends Plugin {
     await leaf.openFile(file);
     await this.app.workspace.revealLeaf(leaf);
   }
-  async openMarkdown(path: string, line?: number): Promise<void> {
+  async openMarkdown(path: string, line?: number, atEnd = false): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) throw new Error("Markdown 文件不存在：" + path);
     // A new tab keeps the .excerpts homepage, its filters and scroll position intact.
@@ -204,8 +204,10 @@ export default class ExcerptsPlugin extends Plugin {
     await this.app.workspace.revealLeaf(leaf);
     const view = leaf.view;
     if (view instanceof MarkdownView) {
-      if (line !== undefined) {
-        const cursor = { line, ch: 0 };
+      if (line !== undefined || atEnd) {
+        const lastLine = atEnd ? view.editor.lastLine() : 0;
+        const cursor = line !== undefined ? { line, ch: 0 } :
+          { line: lastLine, ch: view.editor.getLine(lastLine).length };
         view.editor.setCursor(cursor);
         view.editor.scrollIntoView({ from: cursor, to: cursor }, true);
       }
