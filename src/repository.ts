@@ -133,13 +133,11 @@ export class EntryRepository {
     if (bytes > 16 * 1024 * 1024) return lowerText;
     // Another search may have finished the same path while this read was awaiting.
     this.forgetSearchText(card.path);
+    // Keep a stable bounded subset rather than thrashing the cache during a 10k+ full scan.
+    if (this.searchCache.size >= 30000 || this.searchCacheBytes + bytes > 16 * 1024 * 1024)
+      return lowerText;
     this.searchCache.set(card.path, { stamp, lowerText, bytes });
     this.searchCacheBytes += bytes;
-    while (this.searchCache.size > 4000 || this.searchCacheBytes > 16 * 1024 * 1024) {
-      const oldest = this.searchCache.keys().next().value as string | undefined;
-      if (oldest === undefined) break;
-      this.forgetSearchText(oldest);
-    }
     return lowerText;
   }
   async search(files: CardIndex[], query: string,
