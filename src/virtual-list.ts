@@ -133,7 +133,7 @@ export class VirtualTimeline {
     if (!row) return null;
     const element = this.mounted.get(index);
     const box = element?.getBoundingClientRect();
-    const offset = box && box.height > 0
+    const offset = box && box.height > 0 && Number.isFinite(box.top)
       ? box.top - this.viewport.getBoundingClientRect().top
       : this.hostStart() + this.heights.prefix(index) - this.viewport.scrollTop;
     return { path: row.path, index, offset };
