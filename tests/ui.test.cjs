@@ -1969,7 +1969,21 @@ test('settings create action locks synchronously and rejects repeated or concurr
   assert.equal(scope.disabled,true);
   await button.handler();
   assert.equal(calls,1,'a second handler invocation is refused without queueing');
-  assert.match(Notice.last,/正在创建首页/);
+  assert.match(Notice.last,/操作尚未完成/);
+  assert.equal(t.plugin.homeCreationBusy,true,'the global lock is owned by the plugin');
+  assert.equal(t.plugin.isBusy(),true,'creation blocks all other plugin operations');
+  assert.equal(t.plugin.canOpenHome(),false);
+  const active=[...t.plugin.rendered][0];
+  assert.equal(t.plugin.tryAcquireScan(active),false,'scan cannot acquire while home creation is running');
+  let scanCalls=0;
+  const oldScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scanCalls++;return oldScan(...args);};
+  active.requestRefresh(true);
+  assert.equal(scanCalls,0);
+  t.plugin.ribbon.action();
+  await wait();
+  assert.equal(t.leaf.lastFile,null,'ribbon navigation cannot open during creation');
+  assert.equal(scanCalls,0);
   tab.syncBusy();
   assert.equal(button.disabled,true,'other control updates cannot unlock the create button');
   await scope.handler(false);
@@ -1980,7 +1994,7 @@ test('settings create action locks synchronously and rejects repeated or concurr
   assert.equal(calls,1);
   assert.equal(t.files.has('阅读记录/首页.excerpts'),true);
   assert.equal(t.files.size,before+2,'the requested folder and homepage were created once');
-  assert.equal(tab.creatingHome,false);
+  assert.equal(t.plugin.homeCreationBusy,false);
   assert.equal(button.text,'创建并打开');
   assert.equal(tab.homeButtons.every(b=>!b.disabled),true);
   await t.close();
@@ -2005,10 +2019,116 @@ test('failed homepage creation releases the settings lock and preserves the fold
   assert.match(Notice.last,/模拟创建失败/);
   assert.equal(button.disabled,false);
   assert.equal(button.text,'创建并打开');
-  assert.equal(tab.creatingHome,false);
+  assert.equal(t.plugin.homeCreationBusy,false);
   await button.handler();
   assert.equal(calls,2);
   assert.equal(t.files.has('稍后重试/首页.excerpts'),true,
     'retry uses the original folder entry rather than discarding it on failure');
+  await t.close();
+});
+
+test('an expanded empty search can be closed without changing index during stale or cross-page scanning',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl, search=root.querySelector('button[aria-label="搜索"]');
+  const input=root.querySelector('.ex-search');
+  clickByLabel(root,'搜索');
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
+  let searches=0;
+  const originalSearch=t.plugin.repo.search.bind(t.plugin.repo);
+  t.plugin.repo.search=async(...args)=>{searches++;return originalSearch(...args);};
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  assert.equal(search.disabled,false,'closing empty search remains available on stale index');
+  assert.equal(search.title,'关闭搜索');
+  search.click();
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
+  assert.equal(input.value,'');
+  assert.equal(searches,0,'closing an empty input does not start search');
+  const renderer=[...t.plugin.rendered][0];
+  assert.equal(renderer.scanStatus,'stale');
+
+  // Another page can be scanning while this existing empty search box is expanded.
+  renderer.requestRefresh(true);
+  await waitFor(()=>renderer.scanStatus==='done','restore current index');
+  clickByLabel(root,'搜索');
+  const second=t.plugin.factory({});
+  document.body.append(second.contentEl);
+  const real=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release;
+  t.plugin.repo.scan=async(...args)=>{await new Promise(resolve=>{release=resolve;});return real(...args);};
+  await second.openFile(t.home);
+  await waitFor(()=>typeof release==='function','second view scan began');
+  assert.equal(search.disabled,false);
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,true,'Escape closes empty input during peer scan');
+  assert.equal(searches,0,'Escape closing does not restart full-text search');
+  assert.equal(renderer.searchText,'');
+  release();
+  await waitFor(()=>!t.plugin.isBusy(),'peer scan settles');
+  await second.onUnloadFile(t.home);second.contentEl.remove();await t.close();
+});
+
+test('invalid excerpt page refuses empty search closing',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const search=root.querySelector('button[aria-label="搜索"]');
+  const input=root.querySelector('.ex-search');
+  const renderer=[...t.plugin.rendered][0];
+  renderer.invalidateHome('configuration');
+  assert.equal(search.disabled,true);
+  search.dispatchEvent(new dom.window.MouseEvent('click',{bubbles:true}));
+  input.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
+  await t.close();
+});
+
+test('settings open buttons handle rejected native navigation with a Notice',async()=>{
+  const t=await fixture();
+  const page=await t.plugin.createSavedPage(t.home.path,'阅读筛选',{tag:'',query:''});
+  Setting.instances=[];
+  t.plugin.settingsTab.display();
+  const homeButton=Setting.instances.find(x=>x.name===t.home.path).button;
+  const pageButton=Setting.instances.find(x=>x.name===page.basename).button;
+  t.plugin.openHome=async()=>{throw new Error('打开失败（测试）');};
+  homeButton.handler();
+  await waitFor(()=>/打开失败（测试）/.test(Notice.last),'home open failure reported');
+  Notice.last='';
+  pageButton.handler();
+  await waitFor(()=>/打开失败（测试）/.test(Notice.last),'saved page failure reported');
+  await t.close();
+});
+
+test('created homepage is kept and user is told to reopen it when navigation throws',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;
+  tab.display();
+  const createdSetting=Setting.instances.find(x=>x.name==='创建首页文件');
+  createdSetting.text.handler('打开失败案例');
+  const oldOpen=t.plugin.openHome.bind(t.plugin);
+  t.plugin.openHome=async()=>{throw new Error('模拟导航异常');};
+  await createdSetting.button.handler();
+  assert.equal(t.files.has('打开失败案例/首页.excerpts'),true);
+  assert.equal(t.plugin.homeCreationBusy,false);
+  assert.match(Notice.last,/首页文件已创建，但打开失败.*重新打开.*模拟导航异常/);
+  assert.ok(Setting.instances.some(x=>x.name==='打开失败案例/首页.excerpts'),
+    'settings list offers the created file for manual reopening');
+  t.plugin.openHome=oldOpen;
+  await t.close();
+});
+
+test('global creation lock is released after creation fails without scanning or auto retries',async()=>{
+  const t=await fixture();
+  Setting.instances=[];
+  const tab=t.plugin.settingsTab;tab.display();
+  const entry=Setting.instances.find(x=>x.name==='创建首页文件');
+  entry.text.handler('不创建');
+  t.plugin.createHome=async()=>{throw new Error('磁盘不可写');};
+  await entry.button.handler();
+  assert.equal(t.plugin.homeCreationBusy,false);
+  assert.equal(t.plugin.isBusy(),false);
+  assert.match(Notice.last,/磁盘不可写/);
+  assert.equal(entry.button.disabled,false);
   await t.close();
 });

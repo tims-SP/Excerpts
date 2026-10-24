@@ -7,9 +7,8 @@ export class ExcerptsSettingTab extends PluginSettingTab {
   private listModeDropdown: DropdownComponent | null = null;
   private listBatchDropdown: DropdownComponent | null = null;
   private homeButtons: ButtonComponent[] = [];
-  private creatingHome = false;
   syncBusy(): void {
-    const busy = this.plugin.isBusy() || this.creatingHome;
+    const busy = this.plugin.isBusy();
     this.scopeToggle?.setDisabled(busy);
     this.batchDropdown?.setDisabled(busy);
     this.listModeDropdown?.setDisabled(busy);
@@ -17,10 +16,6 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     for (const button of this.homeButtons) button.setDisabled(busy);
   }
   private canOpen(): boolean {
-    if (this.creatingHome) {
-      new Notice("正在创建首页，请完成后再操作");
-      return false;
-    }
     if (this.plugin.canOpenHome()) return true;
     new Notice("另一项摘录操作尚未完成，请结束后再打开摘录页");
     return false;
@@ -44,18 +39,25 @@ export class ExcerptsSettingTab extends PluginSettingTab {
       .addButton(b => {
         this.homeButtons.push(b);
         b.setCta().setButtonText("创建并打开").onClick(async () => {
-          if (!this.canOpen()) return;
-          this.creatingHome = true;
+          if (!this.plugin.tryBeginHomeCreation()) {
+            new Notice("另一项摘录操作尚未完成，请结束后再创建首页");
+            return;
+          }
           b.setButtonText("创建中…");
-          this.syncBusy();
           try {
             const file = await this.plugin.createHome(folder);
-            await this.plugin.openHome(file.path);
+            // Unlock before invoking openHome; no await may intervene.
+            this.plugin.endHomeCreation();
+            try {
+              await this.plugin.openHome(file.path);
+            } catch (error) {
+              new Notice("首页文件已创建，但打开失败。请从设置页重新打开。" + message(error));
+            }
             this.display();
           } catch (error) {
             new Notice(message(error));
           } finally {
-            this.creatingHome = false;
+            this.plugin.endHomeCreation();
             b.setButtonText("创建并打开");
             this.syncBusy();
           }
@@ -73,7 +75,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
           this.homeButtons.push(b);
           b.setButtonText("打开").onClick(() => {
             if (!this.canOpen()) return;
-            void this.plugin.openHome(file.path);
+            void this.plugin.openHome(file.path).catch(error => new Notice(message(error)));
           });
         });
     }
@@ -86,7 +88,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
           this.homeButtons.push(b);
           b.setButtonText("打开").onClick(() => {
             if (!this.canOpen()) return;
-            void this.plugin.openHome(file.path);
+            void this.plugin.openHome(file.path).catch(error => new Notice(message(error)));
           });
         });
       }
@@ -97,7 +99,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
       .addToggle(t => {
         this.scopeToggle = t;
         t.setValue(this.plugin.settings.recursive).onChange(async (v: boolean) => {
-          if (this.plugin.isBusy() || this.creatingHome) {
+          if (this.plugin.isBusy()) {
             t.setValue(this.plugin.settings.recursive);
             new Notice("摘录操作尚未完成，请稍后修改文件范围");
             return;
@@ -115,7 +117,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
         for (const size of SCAN_BATCH_SIZES) dropdown.addOption(String(size), size + " 个");
         dropdown.setValue(String(this.plugin.settings.scanBatchSize))
           .onChange(async value => {
-            if (this.plugin.isBusy() || this.creatingHome) {
+            if (this.plugin.isBusy()) {
               dropdown.setValue(String(this.plugin.settings.scanBatchSize));
               new Notice("摘录操作尚未完成，请稍后修改扫描设置");
               return;

@@ -206,6 +206,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   syncControls(): void { this.updateAvailability(false); }
   /** Clear is the only search action permitted while search results are pending or stale. */
+  /** Closing an empty search box changes no query or index state. */
+  private canCloseEmptySearch(): boolean {
+    return !this.disposed && !this.homeInvalid &&
+      !this.searchWrap.hidden && !this.searchText;
+  }
   private canClearSearch(): boolean {
     return Boolean(this.searchText) &&
       (!this.searchReady || this.scanStatus === "stale" || this.scanStatus === "error") &&
@@ -218,8 +223,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const searching = !this.searchReady;
     this.searchInput.disabled = Boolean(this.reason("search")) || searching;
     const canClear = this.canClearSearch();
-    this.searchButton.disabled = !canClear && Boolean(this.reason("search"));
-    this.searchButton.title = canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
+    const canCloseEmpty = this.canCloseEmptySearch();
+    this.searchButton.disabled = !canClear && !canCloseEmpty && Boolean(this.reason("search"));
+    this.searchButton.title = canCloseEmpty ? "关闭搜索" :
+      canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
     this.filterButton.disabled = Boolean(this.reason("filter"));
     this.updateComposerControls();
     for (const button of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(".ex-filter-tags button")))
@@ -602,6 +609,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchInput.setAttribute("aria-label", "搜索摘录");
     this.searchWrap.append(this.searchInput);
     const searchButton = iconButton("search", "搜索", () => {
+      if (this.canCloseEmptySearch()) {
+        this.searchWrap.hidden = true;
+        searchButton.setAttribute("aria-expanded", "false");
+        this.updateAvailability();
+        return;
+      }
       if (this.canClearSearch()) {
         this.searchText = ""; this.searchInput.value = "";
         this.scheduleSearch(); this.searchWrap.hidden = true;
@@ -624,6 +637,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchInput.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
       event.preventDefault();
+      if (this.canCloseEmptySearch()) {
+        this.searchWrap.hidden = true;
+        searchButton.setAttribute("aria-expanded", "false");
+        this.updateAvailability();
+        searchButton.focus();
+        return;
+      }
       if (!this.canClearSearch() && !this.guard("search")) return;
       this.searchText = ""; this.searchInput.value = "";
       this.searchWrap.hidden = true; searchButton.setAttribute("aria-expanded", "false");

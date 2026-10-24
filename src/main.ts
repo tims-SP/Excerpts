@@ -13,6 +13,8 @@ export default class ExcerptsPlugin extends Plugin {
   private rendered = new Set<ExcerptsRenderChild>();
   /** Exclusive owner of the single Vault-wide index scan; never released before scan settles. */
   private scanOwner: ExcerptsRenderChild | null = null;
+  /** Excludes every other plugin operation while a homepage file is being created. */
+  private homeCreationBusy = false;
   private settingsTab: ExcerptsSettingTab | null = null;
   /** Session-only candidates: never sweep unrelated or pre-existing notes. */
   private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
@@ -158,9 +160,22 @@ export default class ExcerptsPlugin extends Plugin {
     }
   }
   canOpenHome(): boolean { return !this.isBusy(); }
+  /** Start creation before the first await; a refused operation is never deferred. */
+  tryBeginHomeCreation(): boolean {
+    if (this.isBusy()) return false;
+    this.homeCreationBusy = true;
+    this.notifyActivityChange();
+    return true;
+  }
+  /** Release on both success and failure, before opening the created homepage. */
+  endHomeCreation(): void {
+    if (!this.homeCreationBusy) return;
+    this.homeCreationBusy = false;
+    this.notifyActivityChange();
+  }
   /** Acquire synchronously before any scan work or yield. Failed attempts are not queued. */
   tryAcquireScan(owner: ExcerptsRenderChild): boolean {
-    if (this.scanOwner !== null) return false;
+    if (this.homeCreationBusy || this.scanOwner !== null) return false;
     this.scanOwner = owner;
     return true;
   }
@@ -171,10 +186,10 @@ export default class ExcerptsPlugin extends Plugin {
     this.notifyActivityChange(owner);
   }
   isBusy(except?: ExcerptsRenderChild): boolean {
-    return (this.scanOwner !== null && this.scanOwner !== except) ||
+    return this.homeCreationBusy || (this.scanOwner !== null && this.scanOwner !== except) ||
       [...this.rendered].some(child => child !== except && child.isBusy());
   }
-  notifyActivityChange(sender: ExcerptsRenderChild): void {
+  notifyActivityChange(sender?: ExcerptsRenderChild): void {
     for (const child of this.rendered) if (child !== sender) child.syncControls();
     this.settingsTab?.syncBusy();
   }
