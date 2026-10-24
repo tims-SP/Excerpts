@@ -9,6 +9,7 @@ declare module "obsidian" {
   export class Vault {
     getAbstractFileByPath(path: string): TAbstractFile | null;
     getFiles(): TFile[];
+    getAllLoadedFiles(): TAbstractFile[];
     getMarkdownFiles(): TFile[];
     createFolder(path: string): Promise<TFolder>;
     create(path: string, content: string): Promise<TFile>;
@@ -21,6 +22,7 @@ declare module "obsidian" {
     tags?: { tag: string }[];
   }
   export function getAllTags(cache: CachedMetadata): string[] | null;
+  export function parseYaml(content: string): any;
   export interface WorkspaceLeaf {
     view: FileView;
     openFile(file: TFile): Promise<void>;
@@ -82,6 +84,8 @@ declare module "obsidian" {
   }
   export interface MenuItem {
     setTitle(value: string): MenuItem;
+    setIcon(value: string): MenuItem;
+    setDisabled(value: boolean): MenuItem;
     onClick(handler: () => void): MenuItem;
   }
   export class Menu {
@@ -90,6 +94,14 @@ declare module "obsidian" {
   }
   export function setIcon(el: HTMLElement, name: string): void;
   export class Notice { constructor(message: string); }
+  export class Modal {
+    modalEl: HTMLElement;
+    contentEl: HTMLElement;
+    constructor(app: App);
+    open(): void;
+    close(): void;
+    onOpen(): void;
+  }
   export class PluginSettingTab {
     containerEl: HTMLElement;
     constructor(app: App, plugin: Plugin);
