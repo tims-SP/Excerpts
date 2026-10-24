@@ -1970,7 +1970,7 @@ test('settings create action locks synchronously and rejects repeated or concurr
   await button.handler();
   assert.equal(calls,1,'a second handler invocation is refused without queueing');
   assert.match(Notice.last,/操作尚未完成/);
-  assert.equal(t.plugin.homeCreationBusy,true,'the global lock is owned by the plugin');
+  assert.equal(t.plugin.homeCreationOwner !== null,true,'the global lock is owned by the plugin');
   assert.equal(t.plugin.isBusy(),true,'creation blocks all other plugin operations');
   assert.equal(t.plugin.canOpenHome(),false);
   const active=[...t.plugin.rendered][0];
@@ -1994,7 +1994,7 @@ test('settings create action locks synchronously and rejects repeated or concurr
   assert.equal(calls,1);
   assert.equal(t.files.has('阅读记录/首页.excerpts'),true);
   assert.equal(t.files.size,before+2,'the requested folder and homepage were created once');
-  assert.equal(t.plugin.homeCreationBusy,false);
+  assert.equal(t.plugin.homeCreationOwner === null,true);
   assert.equal(button.text,'创建并打开');
   assert.equal(tab.homeButtons.every(b=>!b.disabled),true);
   await t.close();
@@ -2019,7 +2019,7 @@ test('failed homepage creation releases the settings lock and preserves the fold
   assert.match(Notice.last,/模拟创建失败/);
   assert.equal(button.disabled,false);
   assert.equal(button.text,'创建并打开');
-  assert.equal(t.plugin.homeCreationBusy,false);
+  assert.equal(t.plugin.homeCreationOwner === null,true);
   await button.handler();
   assert.equal(calls,2);
   assert.equal(t.files.has('稍后重试/首页.excerpts'),true,
@@ -2106,15 +2106,13 @@ test('created homepage is kept and user is told to reopen it when navigation thr
   tab.display();
   const createdSetting=Setting.instances.find(x=>x.name==='创建首页文件');
   createdSetting.text.handler('打开失败案例');
-  const oldOpen=t.plugin.openHome.bind(t.plugin);
-  t.plugin.openHome=async()=>{throw new Error('模拟导航异常');};
+  t.leaf.openFile=async()=>{throw new Error('模拟导航异常');};
   await createdSetting.button.handler();
   assert.equal(t.files.has('打开失败案例/首页.excerpts'),true);
-  assert.equal(t.plugin.homeCreationBusy,false);
-  assert.match(Notice.last,/首页文件已创建，但打开失败.*重新打开.*模拟导航异常/);
+  assert.equal(t.plugin.homeCreationOwner === null,true);
+  assert.match(Notice.last,/首页文件已保留，但打开失败.*重新打开.*模拟导航异常/);
   assert.ok(Setting.instances.some(x=>x.name==='打开失败案例/首页.excerpts'),
     'settings list offers the created file for manual reopening');
-  t.plugin.openHome=oldOpen;
   await t.close();
 });
 
@@ -2126,9 +2124,105 @@ test('global creation lock is released after creation fails without scanning or 
   entry.text.handler('不创建');
   t.plugin.createHome=async()=>{throw new Error('磁盘不可写');};
   await entry.button.handler();
-  assert.equal(t.plugin.homeCreationBusy,false);
+  assert.equal(t.plugin.homeCreationOwner === null,true);
   assert.equal(t.plugin.isBusy(),false);
   assert.match(Notice.last,/磁盘不可写/);
   assert.equal(entry.button.disabled,false);
+  await t.close();
+});
+
+test('homepage creation owner is exclusive across both native navigation awaits',async()=>{
+  const t=await fixture();
+  let enterOpen,leaveOpen,enterReveal,leaveReveal;
+  t.leaf.openFile=async(file)=>{
+    enterOpen=file;
+    await new Promise(resolve=>{leaveOpen=resolve;});
+  };
+  t.plugin.app.workspace.revealLeaf=async()=>{
+    enterReveal=true;
+    await new Promise(resolve=>{leaveReveal=resolve;});
+  };
+  const first=t.plugin.createAndOpenHome('长导航');
+  await waitFor(()=>typeof leaveOpen==='function','native openFile pending');
+  const firstOwner=t.plugin.homeCreationOwner;
+  assert.equal(typeof firstOwner,'symbol');
+  assert.equal(t.plugin.isBusy(),true);
+  assert.equal(enterOpen.path,'长导航/首页.excerpts');
+  assert.equal(t.plugin.tryAcquireScan([...t.plugin.rendered][0]),false);
+  await assert.rejects(t.plugin.createAndOpenHome('不能并行'),/操作尚未完成/);
+  await assert.rejects(t.plugin.openHome(t.home.path),/操作尚未完成/);
+  t.plugin.endHomeCreation(Symbol('wrong-owner'));
+  assert.equal(t.plugin.homeCreationOwner,firstOwner,'incorrect owner cannot unlock');
+  t.plugin.ribbon.action();
+  await wait();
+  assert.equal(t.plugin.homeCreationOwner,firstOwner);
+  assert.equal(t.files.has('不能并行/首页.excerpts'),false);
+
+  leaveOpen();
+  await waitFor(()=>typeof leaveReveal==='function','native revealLeaf pending');
+  assert.equal(enterReveal,true);
+  assert.equal(t.plugin.homeCreationOwner,firstOwner,'lock survives between native awaits');
+  assert.equal(t.plugin.tryBeginHomeCreation(),null,'second creation cannot enter during reveal');
+  await assert.rejects(t.plugin.openHome(t.home.path),/操作尚未完成/);
+  t.plugin.endHomeCreation(Symbol('old-callback'));
+  assert.equal(t.plugin.homeCreationOwner,firstOwner);
+  leaveReveal();
+  const result=await first;
+  assert.equal(result.openError,null);
+  assert.equal(result.file.path,'长导航/首页.excerpts');
+  assert.equal(t.plugin.homeCreationOwner,null,'owner released only after navigation');
+  assert.equal(t.plugin.isBusy(),false);
+  assert.equal(t.plugin.canOpenHome(),true);
+  await t.close();
+});
+
+test('opening a freshly created native .excerpts page stays blocked until explicit scan',async()=>{
+  const t=await fixture();
+  let childPane,renderer,scans=0;
+  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return originalScan(...args);};
+  t.leaf.openFile=async file=>{
+    childPane=t.plugin.factory({});
+    document.body.append(childPane.contentEl);
+    await childPane.openFile(file);
+    renderer=[...t.plugin.rendered].find(x=>x.workspace.homePath===file.path);
+    assert.ok(renderer,'native view initialized');
+    assert.equal(renderer.scanStatus,'blocked','initial scan has no special bypass');
+    assert.equal(t.plugin.homeCreationOwner!==null,true,'creation lock still held');
+  };
+  const result=await t.plugin.createAndOpenHome('新首页');
+  assert.equal(result.openError,null);
+  assert.equal(renderer.scanStatus,'blocked','navigation completes without a queued scan');
+  assert.equal(scans,0);
+  assert.equal(t.plugin.homeCreationOwner,null);
+  assert.match(childPane.contentEl.querySelector('.ex-scan-text').textContent,/请手动刷新/);
+  renderer.requestRefresh(true);
+  await waitFor(()=>renderer.scanStatus==='done' && scans===1,'manual first scan completes');
+  await childPane.onUnloadFile(result.file);
+  childPane.contentEl.remove();
+  await t.close();
+});
+
+test('old creation flow cannot release newer owner, and failed navigation keeps file',async()=>{
+  const t=await fixture();
+  const former=t.plugin.tryBeginHomeCreation();
+  assert.equal(typeof former,'symbol');
+  t.plugin.endHomeCreation(former);
+  const current=t.plugin.tryBeginHomeCreation();
+  assert.equal(typeof current,'symbol');
+  assert.notEqual(current,former);
+  t.plugin.endHomeCreation(former);
+  assert.equal(t.plugin.homeCreationOwner,current,'stale flow must not release newer lock');
+  t.plugin.endHomeCreation(current);
+  assert.equal(t.plugin.homeCreationOwner,null);
+
+  t.leaf.openFile=async()=>{throw new Error('无法打开文件');};
+  const result=await t.plugin.createAndOpenHome('需手动打开');
+  assert.equal(result.file.path,'需手动打开/首页.excerpts');
+  assert.match(result.openError.message,/无法打开文件/);
+  assert.equal(t.files.has(result.file.path),true);
+  assert.equal(t.plugin.homeCreationOwner,null);
+  assert.equal(t.plugin.isBusy(),false);
+  await assert.rejects(t.plugin.openHome('不存在的文件.excerpts'),/摘录页文件不存在/);
   await t.close();
 });

@@ -39,25 +39,15 @@ export class ExcerptsSettingTab extends PluginSettingTab {
       .addButton(b => {
         this.homeButtons.push(b);
         b.setCta().setButtonText("创建并打开").onClick(async () => {
-          if (!this.plugin.tryBeginHomeCreation()) {
-            new Notice("另一项摘录操作尚未完成，请结束后再创建首页");
-            return;
-          }
           b.setButtonText("创建中…");
           try {
-            const file = await this.plugin.createHome(folder);
-            // Unlock before invoking openHome; no await may intervene.
-            this.plugin.endHomeCreation();
-            try {
-              await this.plugin.openHome(file.path);
-            } catch (error) {
-              new Notice("首页文件已创建，但打开失败。请从设置页重新打开。" + message(error));
-            }
+            const result = await this.plugin.createAndOpenHome(folder);
+            if (result.openError)
+              new Notice("首页文件已保留，但打开失败。请从设置页重新打开。" + message(result.openError));
             this.display();
           } catch (error) {
             new Notice(message(error));
           } finally {
-            this.plugin.endHomeCreation();
             b.setButtonText("创建并打开");
             this.syncBusy();
           }

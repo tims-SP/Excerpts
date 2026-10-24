@@ -13,8 +13,8 @@ export default class ExcerptsPlugin extends Plugin {
   private rendered = new Set<ExcerptsRenderChild>();
   /** Exclusive owner of the single Vault-wide index scan; never released before scan settles. */
   private scanOwner: ExcerptsRenderChild | null = null;
-  /** Excludes every other plugin operation while a homepage file is being created. */
-  private homeCreationBusy = false;
+  /** Only the initiating creation flow may navigate and release this lock. */
+  private homeCreationOwner: symbol | null = null;
   private settingsTab: ExcerptsSettingTab | null = null;
   /** Session-only candidates: never sweep unrelated or pre-existing notes. */
   private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
@@ -160,22 +160,38 @@ export default class ExcerptsPlugin extends Plugin {
     }
   }
   canOpenHome(): boolean { return !this.isBusy(); }
-  /** Start creation before the first await; a refused operation is never deferred. */
-  tryBeginHomeCreation(): boolean {
-    if (this.isBusy()) return false;
-    this.homeCreationBusy = true;
+  /** Start creation synchronously. The token is the sole authority to release the lock. */
+  private tryBeginHomeCreation(): symbol | null {
+    if (this.isBusy()) return null;
+    const owner = Symbol("home-creation");
+    this.homeCreationOwner = owner;
     this.notifyActivityChange();
-    return true;
+    return owner;
   }
-  /** Release on both success and failure, before opening the created homepage. */
-  endHomeCreation(): void {
-    if (!this.homeCreationBusy) return;
-    this.homeCreationBusy = false;
+  private endHomeCreation(owner: symbol): void {
+    if (this.homeCreationOwner !== owner) return;
+    this.homeCreationOwner = null;
     this.notifyActivityChange();
+  }
+  /** Create and navigate under one owner; native first scans remain blocked until manual refresh. */
+  async createAndOpenHome(folder: string): Promise<{ file: TFile; openError: Error | null }> {
+    const owner = this.tryBeginHomeCreation();
+    if (!owner) throw new Error("另一项摘录操作尚未完成，请结束后再创建首页");
+    try {
+      const file = await this.createHome(folder);
+      try {
+        await this.openHomeFile(file, owner);
+        return { file, openError: null };
+      } catch (error) {
+        return { file, openError: error instanceof Error ? error : new Error(String(error)) };
+      }
+    } finally {
+      this.endHomeCreation(owner);
+    }
   }
   /** Acquire synchronously before any scan work or yield. Failed attempts are not queued. */
   tryAcquireScan(owner: ExcerptsRenderChild): boolean {
-    if (this.homeCreationBusy || this.scanOwner !== null) return false;
+    if (this.homeCreationOwner !== null || this.scanOwner !== null) return false;
     this.scanOwner = owner;
     return true;
   }
@@ -186,7 +202,7 @@ export default class ExcerptsPlugin extends Plugin {
     this.notifyActivityChange(owner);
   }
   isBusy(except?: ExcerptsRenderChild): boolean {
-    return this.homeCreationBusy || (this.scanOwner !== null && this.scanOwner !== except) ||
+    return this.homeCreationOwner !== null || (this.scanOwner !== null && this.scanOwner !== except) ||
       [...this.rendered].some(child => child !== except && child.isBusy());
   }
   notifyActivityChange(sender?: ExcerptsRenderChild): void {
@@ -265,17 +281,27 @@ export default class ExcerptsPlugin extends Plugin {
     });
     return content;
   }
+  /** Normal navigation never bypasses the global creation lock. */
   async openHome(path?: string): Promise<void> {
-    if (!this.canOpenHome()) {
-      new Notice("另一项摘录操作尚未完成，请结束后再打开摘录页");
-      return;
-    }
+    if (!this.canOpenHome())
+      throw new Error("另一项摘录操作尚未完成，请结束后再打开摘录页");
     const homes = this.getHomeFiles();
     const file = path
       ? homes.find(item => item.path === path)
       : homes.find(item => item.path === this.settings.defaultHome) ??
         homes.find(item => item.basename === "首页");
-    if (!file) { new Notice("没有首页.excerpts，请在插件设置中创建首页入口"); return; }
+    if (!file) throw new Error(path
+      ? "摘录页文件不存在：" + path
+      : "没有首页.excerpts，请在插件设置中创建首页入口");
+    await this.openHomeFile(file);
+  }
+  /** Owner-restricted navigation; only createAndOpenHome may pass the owner token. */
+  private async openHomeFile(file: TFile, owner?: symbol): Promise<void> {
+    if (owner !== undefined) {
+      if (this.homeCreationOwner !== owner) throw new Error("首页创建操作已失效");
+    } else if (!this.canOpenHome()) {
+      throw new Error("另一项摘录操作尚未完成，请结束后再打开摘录页");
+    }
     const leaf = this.app.workspace.getLeaf(false);
     await leaf.openFile(file);
     await this.app.workspace.revealLeaf(leaf);
