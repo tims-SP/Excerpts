@@ -24,7 +24,7 @@ declare module "obsidian" {
   export function getAllTags(cache: CachedMetadata): string[] | null;
   export function parseYaml(content: string): any;
   export interface WorkspaceLeaf {
-    view: FileView;
+    view: ItemView;
     openFile(file: TFile): Promise<void>;
     setViewState(state: any): Promise<void>;
   }
@@ -35,7 +35,9 @@ declare module "obsidian" {
       on(event: string, callback: (file: TFile) => void): any;
     };
     fileManager: { processFrontMatter(file: TFile, edit: (properties: Record<string, any>) => void): Promise<void>; trashFile(file: TFile): Promise<void> };
-    workspace: { getLeaf(arg?: boolean | "tab"): WorkspaceLeaf; getLeavesOfType(type: string): WorkspaceLeaf[]; revealLeaf(leaf: WorkspaceLeaf): Promise<void> };
+    workspace: { activeLeaf?: WorkspaceLeaf; getLeaf(arg?: boolean | "tab"): WorkspaceLeaf;
+      getLeavesOfType(type: string): WorkspaceLeaf[]; revealLeaf(leaf: WorkspaceLeaf): Promise<void>;
+      on(event: string, callback: (...args: any[]) => void): any };
   }
   export class Component {
     load(): void; unload(): void;
@@ -47,16 +49,21 @@ declare module "obsidian" {
     onload(): void;
     onunload(): void;
   }
-  export class FileView extends Component {
+  export interface ViewStateResult {}
+  export class ItemView extends Component {
     contentEl: HTMLElement;
-    file: TFile | null;
     constructor(leaf: WorkspaceLeaf);
     getViewType(): string;
     getDisplayText(): string;
     getIcon(): string;
+    getState(): any;
+    setState(state: any, result: ViewStateResult): Promise<void>;
+    onClose(): Promise<void>;
+  }
+  export class FileView extends ItemView {
+    file: TFile | null;
     onLoadFile(file: TFile): Promise<void>;
     onUnloadFile(file: TFile): Promise<void>;
-    onClose(): Promise<void>;
   }
   export interface EditorPosition { line: number; ch: number; }
   export interface Editor {
@@ -75,7 +82,7 @@ declare module "obsidian" {
     app: App;
     loadData(): Promise<any>;
     saveData(data: any): Promise<void>;
-    registerView(kind: string, creator: (leaf: WorkspaceLeaf) => FileView): void;
+    registerView(kind: string, creator: (leaf: WorkspaceLeaf) => ItemView): void;
     registerExtensions(exts: string[], kind: string): void;
     addRibbonIcon(icon: string, title: string, click: () => void): HTMLElement;
     addSettingTab(tab: PluginSettingTab): void;

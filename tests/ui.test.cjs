@@ -13,9 +13,10 @@ class TAbstractFile {constructor(path){this.path=path;}}
 class TFile extends TAbstractFile {constructor(path){super(path);const leaf=path.split('/').pop();this.basename=leaf.replace(/\.[^.]+$/,'');this.extension=leaf.split('.').pop();this.stat={mtime:200,ctime:100,size:128};this.parent={path:path.split('/').slice(0,-1).join('/') || '/'};}}
 class TFolder extends TAbstractFile{}
 class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}load(){this.onload?.();}unload(){this.onunload?.();}}
-class FileView {constructor(){this.contentEl=document.createElement('div');this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
+class ItemView {constructor(){this.contentEl=document.createElement('div');}async setState(){}}
+class FileView extends ItemView {constructor(){super();this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
 class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,lastLine(){return 0;},getLine(){return '';},setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}getMode(){return this.mode;}}
-class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(command){(this.commands??=[]).push(command);}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
+class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,factory){(this.factories??={})[kind]=factory;if(kind==='excerpts-home-file')this.factory=factory;}registerExtensions(exts,type){this.extensions={exts,type};}addSettingTab(){}addCommand(command){(this.commands??=[]).push(command);}registerEvent(){}addRibbonIcon(icon,title,action){this.ribbon={icon,title,action};}}
 class PluginSettingTab {constructor(){this.containerEl=document.createElement('div');}}
 class Setting {
   static instances=[];
@@ -35,7 +36,7 @@ class Modal {
   close(){this.onClose?.();this.modalEl.remove();}
 }
 const renders=[];
-const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,
+const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,
   parseYaml(raw){
     const version=raw.match(/^version:\s*(\d+)$/m);
     const tag=raw.match(/^\s*tag:\s*(.+)$/m);
@@ -71,6 +72,8 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   const tagState=new Map([[md.path,noTags?[]:['哲学']]]);
   let tagWrites=0;
   const vaultEvents=new Map();
+  const workspaceEvents=new Map();
+  const folderLeaves=[];
   const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
     async cachedRead(file){return files.get(file.path).data;},async read(file){return files.get(file.path).data;},
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(name,handler){vaultEvents.set(name,handler);return {};}};
@@ -90,14 +93,16 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
       fn(fm);
       tagState.set(f.path,fm.tags||[]);
       tagWrites++;
-    }},workspace:{getLeaf(){return leaf;},getLeavesOfType(){return leaf.view instanceof MarkdownView?[leaf]:[];},on(){return {};},async revealLeaf(){}}};
+    }},workspace:{getLeaf(){return leaf;},getLeavesOfType(type){return type==='excerpts-folder'?folderLeaves:leaf.view instanceof MarkdownView?[leaf]:[];},
+      on(name,handler){workspaceEvents.set(name,handler);return {};},async revealLeaf(){}}};
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
   await pane.openFile(home);
   await waitFor(()=>pane.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条' &&
     pane.contentEl.querySelectorAll('.ex-card').length===1 &&
     !pane.contentEl.querySelector('.ex-card-loading'),'initial index and card hydration');
-  return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,getTagWrites:()=>tagWrites,async close(){
+  return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,workspaceEvents,folderLeaves,
+    getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
     document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
   }};
@@ -2520,4 +2525,84 @@ test('stale settings callbacks refuse every configuration change during normal n
   assert.equal(t.plugin.settings.scanBatchSize,128,'settings recover after navigation finishes');
   assert.equal(writes,1);
   await t.close();
+});
+
+test('folder menu opens a native folder view with no .excerpts entry file',async()=>{
+  const t=await fixture();
+  const menuFor=target=>{const menu=new Menu();t.workspaceEvents.get('file-menu')(menu,target);return menu;};
+  assert.equal(menuFor(t.md).items.length,0);
+  const folder=t.files.get('摘录').file;
+  const menu=menuFor(folder);
+  assert.equal(menu.items.length,1);
+  assert.equal(menu.items[0].title,'打开摘录');
+  await t.pane.onUnloadFile(t.home);
+  t.files.delete(t.home.path);
+  const originalGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=(mode)=>{
+    if(mode!=='tab')return originalGetLeaf(mode);
+    const tab={view:null,async setViewState(state){
+      this.state=state;
+      this.view=t.plugin.factories[state.type](tab);
+      document.body.append(this.view.contentEl);
+      await this.view.setState(state.state,{});
+    }};
+    t.folderLeaves.push(tab);
+    return tab;
+  };
+  const before=t.files.size;
+  await t.plugin.openFolder(folder);
+  assert.equal(t.files.size,before,'folder opening creates no files');
+  assert.equal(t.folderLeaves.length,1);
+  const view=t.folderLeaves[0].view;
+  assert.deepEqual(view.getState(),{folderPath:'摘录'});
+  assert.equal(view.getViewType(),'excerpts-folder');
+  assert.equal(view.contentEl.querySelector('.ex-title').textContent,'摘录');
+  await waitFor(()=>view.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条');
+  await t.plugin.openFolder(folder);
+  assert.equal(t.folderLeaves.length,1,'reopening same folder reuses tab');
+  await view.onClose();view.contentEl.remove();
+  await t.close();
+});
+
+test('folder source saves filtered pages but never recreates deleted folders',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  const ws=t.plugin.workspaceForFolder(folder);
+  const saved=await t.plugin.createSavedPage(ws,'书摘筛选',{tag:'文学',query:''});
+  assert.equal(saved.path,'摘录/书摘筛选.excerpts');
+  assert.match(t.files.get(saved.path).data,/version: 1/);
+  const before=t.files.size;
+  t.files.delete('摘录');folder.path='已移动';t.files.set('已移动',{file:folder});
+  await assert.rejects(t.plugin.repo.create(ws,'禁止重建'),/文件夹.*移动|不存在/);
+  assert.equal(t.files.size,before);
+  assert.equal(t.files.has('摘录'),false,'missing old folder is not recreated');
+  await assert.rejects(t.plugin.createSavedPage(ws,'新筛选',{tag:'',query:'q'}),/文件夹.*移动|不存在/);
+  await t.close();
+});
+
+test('missing folder state restores as a visible read-only error',async()=>{
+  const t=await fixture();
+  const view=t.plugin.factories['excerpts-folder']({});
+  document.body.append(view.contentEl);
+  const before=t.files.size;
+  await view.setState({folderPath:'不存在的文件夹'},{});
+  assert.equal(t.files.size,before);
+  assert.deepEqual(view.getState(),{folderPath:'不存在的文件夹'});
+  assert.match(view.contentEl.textContent,/文件夹不存在|移动/);
+  assert.equal(view.contentEl.querySelector('.ex-composer'),null);
+  await view.onClose();view.contentEl.remove();await t.close();
+});
+
+test('moving a folder invalidates an open folder-based feed',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  const view=t.plugin.factories['excerpts-folder']({});
+  document.body.append(view.contentEl);
+  await view.setState({folderPath:'摘录'},{});
+  await waitFor(()=>view.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条');
+  t.files.delete('摘录');folder.path='收藏';t.files.set('收藏',{file:folder});
+  t.vaultEvents.get('rename')(folder,'摘录');
+  assert.equal(view.contentEl.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.equal(view.getState().folderPath,'摘录');
+  await view.onClose();view.contentEl.remove();await t.close();
 });

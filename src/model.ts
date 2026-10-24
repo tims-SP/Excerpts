@@ -1,5 +1,13 @@
-/** A display scope is determined by the parent folder of an .excerpts entry file. */
-export interface Workspace { rootFolder: string; recursive: boolean; homePath: string; }
+import type { TFolder } from "obsidian";
+/** A source is a real .excerpts file or an existing folder, never a synthetic entry. */
+export interface Workspace {
+  kind: "file" | "folder";
+  rootFolder: string;
+  recursive: boolean;
+  homePath: string;
+  /** Runtime identity check for folder entries; not serialized to leaf state. */
+  sourceFolder?: TFolder;
+}
 export const SCAN_BATCH_SIZES = [32, 64, 128, 256] as const;
 export const LIST_BATCH_SIZES = [16, 32, 64, 96] as const;
 export type ListBatchMode = "auto" | "fixed";

@@ -370,8 +370,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.classList.add("excerpts-root");
     const header = node("div", "ex-header");
     header.append(node("div", "ex-brand"));
-    const fileName = this.workspace.homePath.split("/").pop()?.replace(/\.excerpts$/i, "") ?? "摘录";
-    header.firstElementChild!.append(node("h2", "ex-title", this.savedFilter ? fileName : "摘录"));
+    const fileName = this.workspace.homePath.split("/").pop()?.replace(/\.excerpts$/i, "") || "摘录";
+    header.firstElementChild!.append(node("h2", "ex-title",
+      this.workspace.kind === "folder" || this.savedFilter ? fileName : "摘录"));
     this.scanStatusEl = node("div", "ex-scan-status");
     const scanLine = node("div", "ex-scan-line");
     this.scanIconEl = node("span", "ex-scan-icon");
@@ -400,7 +401,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const quote = node("textarea", "ex-compose-text");
     quote.placeholder = "现在想记录的是…";
     quote.rows = 3;
-    const priorDraft = composerDrafts.get(this.workspace.homePath);
+    const draftKey = this.workspace.kind + ":" + this.workspace.homePath;
+    const priorDraft = composerDrafts.get(draftKey);
     if (priorDraft) quote.value = priorDraft.text;
     quote.setAttribute("aria-label", "摘录正文");
     const fit = () => {
@@ -419,8 +421,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const selectedTags = new Set<string>(priorDraft?.tags ?? []);
     const persistDraft = () => {
       if (quote.value || selectedTags.size)
-        composerDrafts.set(this.workspace.homePath, { text: quote.value, tags: [...selectedTags] });
-      else composerDrafts.delete(this.workspace.homePath);
+        composerDrafts.set(draftKey, { text: quote.value, tags: [...selectedTags] });
+      else composerDrafts.delete(draftKey);
     };
     quote.addEventListener("input", persistDraft);
     const selectedChips = node("div", "ex-capture-selected");
@@ -792,17 +794,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       .replace(/[\\/:*?"<>|\x00-\x1f]/g, "").slice(0, 60) || "摘录筛选";
     let suggested = stem;
     for (let index = 2; index <= 100; index++) {
-      if (!this.plugin.savedPageNameIssue(this.workspace.homePath, suggested)) break;
+      if (!this.plugin.savedPageNameIssue(this.workspace, suggested)) break;
       suggested = stem.slice(0, 54) + "-" + index;
     }
     const summary = "当前条件：" +
       (current.tag ? "#" + current.tag : "全部标签") +
       (current.query ? " · 搜索「" + current.query + "」" : "");
     new SavePageModal(this.plugin.app, suggested,
-      name => this.reason("page") ?? this.plugin.savedPageNameIssue(this.workspace.homePath, name),
+      name => this.reason("page") ?? this.plugin.savedPageNameIssue(this.workspace, name),
       async name => {
         if (!this.guard("page")) throw new Error("摘录页已失效，请重新打开");
-        const file = await this.plugin.createSavedPage(this.workspace.homePath, name, current);
+        const file = await this.plugin.createSavedPage(this.workspace, name, current);
         // The file is already saved; a navigation failure must not leave the save modal in error mode.
         try {
           await this.plugin.openHome(file.path);

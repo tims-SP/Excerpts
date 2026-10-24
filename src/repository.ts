@@ -168,7 +168,12 @@ export class EntryRepository {
     return matches;
   }
   async create(ws: Workspace, markdown = "", tags: string[] = []): Promise<TFile> {
-    if (ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
+    if (ws.kind === "folder") {
+      const current = this.app.vault.getAbstractFileByPath(ws.rootFolder);
+      // A moved or deleted folder must never be silently recreated.
+      if (!(current instanceof TFolder) || current !== ws.sourceFolder ||
+          current.path !== ws.homePath) throw new Error("文件夹已移动或不存在，请重新打开摘录");
+    } else if (ws.rootFolder !== "/") await this.ensureFolder(ws.rootFolder);
     const base = excerptFileStem(markdown);
     const prefix = ws.rootFolder === "/" ? "" : ws.rootFolder + "/";
     const occupied = new Set(this.app.vault.getAllLoadedFiles().map(file => filenameKey(file.path)));

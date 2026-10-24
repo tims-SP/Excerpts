@@ -4,9 +4,10 @@ import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
 import { ExcerptsRenderChild } from "./view";
 import { EXCERPTS_HOME_VIEW, ExcerptsHomeFileView } from "./home-view";
+import { EXCERPTS_FOLDER_VIEW, ExcerptsFolderView } from "./folder-view";
 import { PageFilter, pageNameError, serializePageFilter } from "./page-config";
 
-/** A .excerpts file is a real entrypoint; no independent collection IDs or navigation view. */
+/** File-based saved pages coexist with file-free folder entry points. */
 export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   repo!: EntryRepository;
@@ -38,20 +39,28 @@ export default class ExcerptsPlugin extends Plugin {
     };
     this.repo = new EntryRepository(this.app);
     this.registerView(EXCERPTS_HOME_VIEW, leaf => new ExcerptsHomeFileView(leaf, this, this.repo));
+    this.registerView(EXCERPTS_FOLDER_VIEW, leaf => new ExcerptsFolderView(leaf, this, this.repo));
     this.registerExtensions(["excerpts"], EXCERPTS_HOME_VIEW);
     this.settingsTab = new ExcerptsSettingTab(this.app, this);
     this.addSettingTab(this.settingsTab);
     this.addRibbonIcon("bookmark", "打开摘录首页", () => void this.openHome().catch(showError));
     this.addCommand({ id: "open-home", name: "打开摘录首页", callback: () => void this.openHome().catch(showError) });
+    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      if (!(file instanceof TFolder) || !file.path || file.path === "/") return;
+      menu.addItem(item => item.setTitle("打开摘录").setIcon("bookmark")
+        .onClick(() => void this.openFolder(file).catch(showError)));
+    }));
     this.addCommand({ id: "refresh-home", name: "刷新摘录", callback: () => {
       const view = this.app.workspace.activeLeaf?.view;
-      if (view instanceof ExcerptsHomeFileView) view.requestRefresh(true);
+      if (view instanceof ExcerptsHomeFileView || view instanceof ExcerptsFolderView)
+        view.requestRefresh(true);
       else new Notice("请先打开并选中一个摘录页");
     } });
     this.registerEvent(this.app.vault.on("modify", file => {
       if (file instanceof TFile && file.extension.toLowerCase() === "excerpts") {
         for (const child of this.rendered) {
-          if (child.workspace.homePath === file.path) child.invalidateHome("configuration");
+          if (child.workspace.kind === "file" && child.workspace.homePath === file.path)
+            child.invalidateHome("configuration");
         }
         return;
       }
@@ -233,7 +242,41 @@ export default class ExcerptsPlugin extends Plugin {
       .sort((a, b) => a.path.localeCompare(b.path, "zh"));
   }
   workspaceForHome(home: TFile): Workspace {
-    return { homePath: home.path, rootFolder: home.parent?.path ?? "/", recursive: this.settings.recursive };
+    return { kind: "file", homePath: home.path, rootFolder: home.parent?.path ?? "/",
+      recursive: this.settings.recursive };
+  }
+  resolveFolder(path: string): TFolder | null {
+    if (!path || path === "/") return null;
+    const found = this.app.vault.getAbstractFileByPath(path);
+    return found instanceof TFolder ? found : null;
+  }
+  workspaceForFolder(folder: TFolder): Workspace {
+    if (this.resolveFolder(folder.path) !== folder) throw new Error("文件夹不存在或已移动，请重新打开");
+    return { kind: "folder", homePath: folder.path, rootFolder: folder.path,
+      recursive: this.settings.recursive, sourceFolder: folder };
+  }
+  /** Navigation takes the existing operation lock, but creates no .excerpts file. */
+  async openFolder(folder: TFolder): Promise<void> {
+    if (!this.canOpenHome()) throw new Error("另一项摘录操作尚未完成，请结束后再打开摘录");
+    const path = folder.path;
+    if (this.resolveFolder(path) !== folder) throw new Error("文件夹不存在或已移动，请重新打开");
+    this.homeNavigationBusy = true;
+    this.notifyActivityChange();
+    try {
+      const existing = this.app.workspace.getLeavesOfType(EXCERPTS_FOLDER_VIEW)
+        .find(leaf => leaf.view instanceof ExcerptsFolderView && leaf.view.matchesFolder(folder));
+      if (existing) {
+        await this.app.workspace.revealLeaf(existing);
+        return;
+      }
+      const leaf = this.app.workspace.getLeaf("tab");
+      await leaf.setViewState({ type: EXCERPTS_FOLDER_VIEW, state: { folderPath: path }, active: true });
+      if (this.resolveFolder(path) !== folder) throw new Error("文件夹位置已变化，请重新打开摘录");
+      await this.app.workspace.revealLeaf(leaf);
+    } finally {
+      this.homeNavigationBusy = false;
+      this.notifyActivityChange();
+    }
   }
   /** Only 首页.excerpts is a default entrypoint; opening a filtered page never replaces it. */
   async rememberHome(path: string): Promise<void> {
@@ -250,26 +293,33 @@ export default class ExcerptsPlugin extends Plugin {
     if (current) throw new Error("首页路径已经被其他文件占用");
     return this.app.vault.create(path, "");
   }
-  private savedPagePath(homePath: string, name: string): string {
-    const home = this.app.vault.getAbstractFileByPath(homePath);
-    if (!(home instanceof TFile) || home.extension !== "excerpts")
-      throw new Error("当前摘录页文件不存在");
-    const prefix = home.parent?.path && home.parent.path !== "/" ? home.parent.path + "/" : "";
+  private savedPagePath(source: string | Workspace, name: string): string {
+    const path = typeof source === "string" ? source : source.homePath;
+    const item = this.app.vault.getAbstractFileByPath(path);
+    if (typeof source !== "string" && source.kind === "folder" &&
+        (item !== source.sourceFolder || !(item instanceof TFolder) || item.path !== source.rootFolder))
+      throw new Error("当前文件夹已移动或不存在，请重新打开");
+    let folder: string;
+    if (item instanceof TFolder) folder = item.path;
+    else if (item instanceof TFile && item.extension === "excerpts")
+      folder = item.parent?.path ?? "/";
+    else throw new Error("当前摘录页或文件夹不存在");
+    const prefix = folder && folder !== "/" ? folder + "/" : "";
     return prefix + name.trim().normalize("NFC") + ".excerpts";
   }
-  savedPageNameIssue(homePath: string, name: string): string | null {
+  savedPageNameIssue(source: string | Workspace, name: string): string | null {
     const error = pageNameError(name);
     if (error) return error;
-    const path = this.savedPagePath(homePath, name);
+    const path = this.savedPagePath(source, name);
     const key = path.normalize("NFC").toLocaleLowerCase("en-US");
     return this.app.vault.getAllLoadedFiles().some(file =>
       file.path.normalize("NFC").toLocaleLowerCase("en-US") === key)
       ? "已存在同名文件，请更换名称" : null;
   }
-  async createSavedPage(homePath: string, name: string, filter: PageFilter): Promise<TFile> {
-    const issue = this.savedPageNameIssue(homePath, name);
+  async createSavedPage(source: string | Workspace, name: string, filter: PageFilter): Promise<TFile> {
+    const issue = this.savedPageNameIssue(source, name);
     if (issue) throw new Error(issue);
-    const path = this.savedPagePath(homePath, name);
+    const path = this.savedPagePath(source, name);
     // Vault.create rejects a concurrent duplicate; never overwrite an existing page.
     return this.app.vault.create(path, serializePageFilter(filter));
   }
