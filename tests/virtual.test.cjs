@@ -163,6 +163,36 @@ test('explicit scroll policies preserve the composer and restore an existing or 
   dom.window.close();
 });
 
+test('deleting an anchor and multiple preceding rows restores the closest surviving successor',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:300});
+  host.getBoundingClientRect=()=>({top:100-viewport.scrollTop,left:0,height:100,width:700});
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:()=>{const row=document.createElement('article');row.getBoundingClientRect=()=>({height:100});return row;},
+    unmount:()=>{}
+  });
+  const rows=['A','B','C','D','E','F'].map(path=>({
+    path,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100
+  }));
+  timeline.setRows(rows,'keep');
+  viewport.scrollTop=450; // D at row index 3, 50px above viewport top.
+  viewport.dispatchEvent(new dom.window.Event('scroll'));
+  await new Promise(resolve=>setTimeout(resolve,35));
+  timeline.setRows(rows.filter(row=>!['B','D'].includes(row.path)),'anchor');
+  assert.equal(viewport.scrollTop,250,'E is the first surviving successor, not F');
+  timeline.setRows(rows,'top');
+  viewport.scrollTop=550; // E
+  viewport.dispatchEvent(new dom.window.Event('scroll'));
+  await new Promise(resolve=>setTimeout(resolve,35));
+  timeline.setRows(rows.filter(row=>!['E','F'].includes(row.path)),'anchor');
+  assert.equal(viewport.scrollTop,350,'fallback to D when all successors are gone');
+  timeline.dispose();
+  dom.window.close();
+});
+
 test('width changes remeasure retained rows before restoring the reading anchor',async()=>{
   const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
   global.document=dom.window.document;

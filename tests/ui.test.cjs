@@ -1034,6 +1034,63 @@ test('select-all over 200 entries yields to UI and disables destructive actions 
   await t.close();
 });
 
+test('rapid successive search typing retains focus and only commits the latest query',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  let finishInitialSearch;
+  const original=t.plugin.repo.search.bind(t.plugin.repo);
+  const calls=[];
+  t.plugin.repo.search=async(files,query,shouldCancel,progress)=>{
+    calls.push(query);
+    if(query==='测') await new Promise(resolve=>{finishInitialSearch=resolve;});
+    return original(files,query,shouldCancel,progress);
+  };
+  function type(query){
+    input.value=query;
+    input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+    assert.equal(input.disabled,false,'each keystroke must remain available');
+    assert.equal(input.value,query,'typed text must never be reverted');
+  }
+  type('测');
+  await waitFor(()=>typeof finishInitialSearch==='function','first search started');
+  type('测试');
+  type('测试标');
+  type('测试标题');
+  assert.equal(root.querySelector('.ex-search'),input,'do not replace the input DOM');
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
+  await waitFor(()=>calls.includes('测试标题'),'latest search started');
+  finishInitialSearch();
+  await waitFor(()=>t.pane.contentEl.querySelector('.ex-count')?.textContent==='1 / 1',
+    'latest search committed');
+  assert.equal(input.value,'测试标题');
+  assert.equal(input.disabled,false);
+  assert.ok(root.querySelector('.ex-card'));
+  await t.close();
+});
+
+test('search typing stays locked by scanning and selection, not by its own search task',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  input.value='测试';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(input.disabled,false);
+  assert.equal(t.plugin.rendered.size,1);
+  // Search itself still prohibits destructive or scanning operations.
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,true);
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
+  clickByLabel(root,'搜索');
+  assert.equal(input.value,'');
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  assert.equal(input.disabled,true,'selection must still block searching');
+  root.querySelector('.ex-select-done').click();
+  assert.equal(input.disabled,false);
+  await t.close();
+});
+
 test('clear filter during a canceled search restores bulk selection availability',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   clickByLabel(root,'搜索');
@@ -1314,7 +1371,8 @@ test('search blocks refresh until the user explicitly clears the query',async()=
   input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   t.plugin.refreshViews(true);
   assert.equal(scans,0,'refresh is refused while search is active');
-  assert.equal(root.querySelector('.ex-search').disabled,true);
+  assert.equal(root.querySelector('.ex-search').disabled,false,
+    'running searches must not disable the query input');
   clickByLabel(root,'搜索');
   assert.equal(root.querySelector('.ex-search').value,'');
   t.plugin.refreshViews(true);
