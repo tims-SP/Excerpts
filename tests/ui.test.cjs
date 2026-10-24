@@ -963,6 +963,7 @@ test('deletion keeps its lock and modal loading until the index refresh complete
   };
   const target=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===t.md.path);
   assert.ok(target);
+  Menu.last=null;
   target.querySelector('.ex-card-options').click();
   await waitFor(()=>Menu.last?.items?.some(it=>it.title==='删除摘录'),'card delete menu');
   Menu.last.items.find(it=>it.title==='删除摘录').handler();
@@ -976,8 +977,9 @@ test('deletion keeps its lock and modal loading until the index refresh complete
   assert.equal(modal.modalEl.isConnected,true,'cannot dismiss a pending delete');
   const otherCard=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===survivor.path);
   assert.ok(otherCard,'unaffected card remains available');
+  Menu.last=null;
   otherCard.querySelector('.ex-card-options').click();
-  await waitFor(()=>Menu.last.items.at(-1).title==='删除摘录','survivor menu');
+  await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录','survivor menu');
   Menu.last.items.at(-1).handler();
   assert.equal(document.querySelectorAll('.ex-delete-modal').length,1,
     'another delete confirmation cannot open while the first refresh is active');
