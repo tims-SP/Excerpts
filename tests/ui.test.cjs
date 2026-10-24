@@ -18,7 +18,7 @@ class Plugin {async loadData(){return null;}async saveData(){}registerView(kind,
 class PluginSettingTab {constructor(){}}
 class Setting {}
 class Notice {constructor(message){Notice.last=message;}}
-class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}showAtPosition(){Menu.last=this;}}
+class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},setWarning(){this.warning=true;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}addSeparator(){}showAtPosition(){Menu.last=this;}}
 class Modal {
   constructor(){this.modalEl=document.createElement('section');this.contentEl=document.createElement('div');this.modalEl.append(this.contentEl);}
   open(){document.body.append(this.modalEl);this.onOpen?.();return this;}
@@ -176,7 +176,7 @@ test('card options open the native Markdown editor and preserve the homepage',as
   assert.equal(root.querySelector('.ex-entry-editor'),null);
   clickByLabel(root,'卡片选项');await wait();
   const menu=Menu.last;
-  assert.deepEqual(menu.items.map(x=>x.title),['编辑原文','编辑分组：来源','编辑分组：批注']);
+  assert.deepEqual(menu.items.map(x=>x.title),['编辑原文','编辑分组：来源','编辑分组：批注','删除摘录']);
   menu.items[0].handler();await wait();
   assert.equal(t.leaf.lastFile,t.md);
   assert.equal(t.leaf.view.mode,'source');
@@ -196,7 +196,7 @@ test('H2 menu targets the correct source line including repeated section names',
   clickByLabel(root,'卡片选项');await wait();
   const menu=Menu.last;
   assert.deepEqual(menu.items.map(x=>x.title),
-    ['编辑原文','编辑分组：来源（第 1 个）','编辑分组：来源（第 2 个）']);
+    ['编辑原文','编辑分组：来源（第 1 个）','编辑分组：来源（第 2 个）','删除摘录']);
   menu.items[2].handler();await wait();
   assert.equal(t.leaf.lastFile,t.md);
   assert.equal(t.leaf.view.editor.cursor.line,13);
@@ -449,9 +449,10 @@ test('page actions appear only in the timeline toolbar and disabled actions have
   assert.ok(more.closest('.ex-toolbar-actions'));
   assert.equal(root.querySelectorAll('.ex-page-options').length,1);
   assert.equal(root.querySelectorAll('.ex-card-options').length,1);
-  assert.deepEqual(Menu.last.items.map(item=>item.title),['保存当前筛选…','清除筛选']);
-  assert.equal(Menu.last.items[0].disabled,true);
+  assert.deepEqual(Menu.last.items.map(item=>item.title),['批量选择','保存当前筛选…','清除筛选']);
+  assert.equal(Menu.last.items[0].disabled,false);
   assert.equal(Menu.last.items[1].disabled,true);
+  assert.equal(Menu.last.items[2].disabled,true);
   await t.close();
 });
 
@@ -460,8 +461,8 @@ test('save current filter creates a reusable .excerpts file without replacing th
   clickByLabel(root,'筛选标签');
   [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='#哲学').click();
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[0].disabled,false);
-  Menu.last.items[0].handler();
+  assert.equal(Menu.last.items[1].disabled,false);
+  Menu.last.items[1].handler();
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   assert.equal(dialog.querySelector('.ex-save-page-input').value,'哲学摘录');
@@ -493,12 +494,12 @@ test('saved page restores filters and can update only after explicit confirmatio
   assert.equal(t.files.get(saved.path).data,initial,'temporary filter changes must not rewrite file');
   clickByLabel(root,'页面选项');
   assert.deepEqual(Menu.last.items.map(item=>item.title),
-    ['更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
-  Menu.last.items[2].handler();
+    ['批量选择','更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
+  Menu.last.items[3].handler();
   assert.equal(root.querySelector('.ex-selected').textContent,'#哲学');
   [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='全部').click();
   clickByLabel(root,'页面选项');
-  Menu.last.items[0].handler();await wait();
+  Menu.last.items[1].handler();await wait();
   assert.match(t.files.get(saved.path).data,/tag: ""/);
   assert.equal(root.querySelector('.ex-title').textContent,'文学摘录');
   await t.pane.openFile(t.home);await wait();
@@ -519,7 +520,7 @@ test('saved query restores search UI; invalid or duplicate save names are blocke
   assert.equal(t.plugin.savedPageNameIssue(saved.path,'检索摘录')!==null,true);
   assert.equal(t.plugin.savedPageNameIssue(saved.path,'异常/名称')!==null,true);
   clickByLabel(root,'页面选项');
-  Menu.last.items[0].handler();
+  Menu.last.items[1].handler();
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   const input=dialog.querySelector('.ex-save-page-input');
@@ -646,5 +647,92 @@ test('manual file renaming disables blank-note auto cleanup',async()=>{
   t.leaf.view=null;
   await t.plugin.cleanupClosedEditors();
   assert.equal(t.files.has('摘录/用户手动命名.md'),true);
+  await t.close();
+});
+
+
+test('single-card deletion requires native confirmation and uses the vault trash behavior',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'卡片选项');await wait();
+  assert.equal(Menu.last.items.at(-1).title,'删除摘录');
+  Menu.last.items.at(-1).handler();
+  let modal=document.querySelector('.ex-delete-modal');
+  assert.ok(modal);assert.equal(t.files.has(t.md.path),true);
+  modal.querySelector('.ex-delete-cancel').click();
+  assert.equal(document.querySelector('.ex-delete-modal'),null);
+  assert.equal(t.files.has(t.md.path),true);
+  clickByLabel(root,'卡片选项');await wait();
+  Menu.last.items.at(-1).handler();
+  modal=document.querySelector('.ex-delete-modal');
+  modal.querySelector('.ex-delete-submit').click();
+  await wait();
+  assert.equal(t.files.has(t.md.path),false);
+  assert.equal(root.querySelectorAll('.ex-card').length,0);
+  assert.ok(t.files.has(t.home.path),'the .excerpts file is never deleted');
+  await t.close();
+});
+
+test('selection mode toggles cards without reopening Markdown or changing tags',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  Menu.last.items[0].handler();
+  assert.ok(root.classList.contains('ex-is-selecting'));
+  assert.equal(root.querySelector('.ex-composer').isConnected,true);
+  const card=root.querySelector('.ex-card');
+  assert.equal(card.getAttribute('role'),'checkbox');
+  assert.equal(card.getAttribute('aria-checked'),'false');
+  card.click();
+  assert.equal(card.getAttribute('aria-checked'),'true');
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
+  card.querySelector('.ex-add-tag').click();
+  assert.equal(card.getAttribute('aria-checked'),'false','nested tag action selects instead');
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(root.classList.contains('ex-is-selecting'),false);
+  assert.equal(t.files.has(t.md.path),true);
+  await t.close();
+});
+
+test('bulk select-all includes unloaded cards while cancel preserves every Markdown file',async()=>{
+  const t=await fixture();
+  for(let i=0;i<85;i++) await t.plugin.app.vault.create('摘录/批量-'+String(i).padStart(3,'0')+'.md','例子 '+i);
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  assert.equal(root.querySelectorAll('.ex-card').length,40);
+  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 86 \/ 86/);
+  assert.equal(root.querySelectorAll('.ex-card').length,40,'must not hydrate all matching files');
+  root.querySelector('.ex-delete-selected').click();
+  const modal=document.querySelector('.ex-delete-modal');
+  assert.ok(modal);
+  assert.match(modal.querySelector('.ex-delete-title').textContent,/86 条/);
+  modal.querySelector('.ex-delete-cancel').click();
+  root.querySelector('.ex-select-done').click();
+  assert.equal(t.plugin.app.vault.getMarkdownFiles().length,86);
+  await t.close();
+});
+
+test('bulk delete keeps modified snapshots and open editors safe; failed files remain selectable',async()=>{
+  const t=await fixture();
+  const second=await t.plugin.app.vault.create('摘录/其他.md','其他摘录');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');Menu.last.items[0].handler();
+  root.querySelector('.ex-select-all').click();
+  t.md.stat.mtime++;
+  root.querySelector('.ex-delete-selected').click();
+  document.querySelector('.ex-delete-modal .ex-delete-submit').click();
+  await wait();
+  assert.ok(t.files.has(t.md.path),'modified original remains intact');
+  assert.equal(t.files.has(second.path),false,'unmodified peer is trashed');
+  assert.ok(root.classList.contains('ex-is-selecting'));
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0/);
+  root.querySelector('.ex-select-done').click();
+  await t.plugin.openMarkdown(t.md.path);await wait();
+  clickByLabel(root,'卡片选项');await wait();
+  Menu.last.items.at(-1).handler();
+  document.querySelector('.ex-delete-modal .ex-delete-submit').click();await wait();
+  assert.ok(t.files.has(t.md.path),'open Markdown editors are protected');
   await t.close();
 });
