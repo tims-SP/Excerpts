@@ -1139,7 +1139,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private listBatchSize(viewport: HTMLElement): number {
     const { listBatchMode, listBatchSize } = this.plugin.settings;
     if (listBatchMode === "fixed") return listBatchSize;
-    const mounted = [...this.listEl.querySelectorAll<HTMLElement>(".ex-virtual-row")];
+    const mounted = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-virtual-row"));
     const heights = mounted.map(row => row.getBoundingClientRect().height).filter(value => value > 0);
     const average = heights.length
       ? heights.reduce((sum, value) => sum + value, 0) / heights.length : 240;
