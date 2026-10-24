@@ -234,6 +234,7 @@ test('Escape cancels card tag edits while capture tag panel keeps its draft and 
   root.querySelector('.ex-tags-input').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,1);
+  clickByLabel(root,'移除标签：哲学');
   await t.close();
 });
 
@@ -370,8 +371,12 @@ test('tag search clear only clears the query, not the picker or selected tags',a
   clickByLabel(root,'清空标签搜索');
   assert.equal(input.value,'');
   assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
+  const before=root.querySelectorAll('.ex-capture-selected .ex-tag').length;
   const selected=[...root.querySelectorAll('.ex-tag-choice')].find(b=>b.textContent==='哲学');
+  const active=selected.getAttribute('aria-selected')==='true';
   selected.click();
-  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,1);
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-tag').length,before+(active?-1:1));
+  assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
+  if(!active) clickByLabel(root,'移除标签：哲学');
   await t.close();
 });
