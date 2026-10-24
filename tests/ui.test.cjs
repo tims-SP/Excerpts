@@ -73,6 +73,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   let tagWrites=0;
   const vaultEvents=new Map();
   const workspaceEvents=new Map();
+  const metadataEvents=new Map();
   const folderLeaves=[];
   const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
     async cachedRead(file){return files.get(file.path).data;},async read(file){return files.get(file.path).data;},
@@ -87,7 +88,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   plugin.app={vault,metadataCache:{getFileCache(f){return {
     tags:f.path===md.path?inlineTags.map(tag=>({tag:'#'+tag})):[],
     frontmatter:{tags:tagState.get(f.path)||[]}
-  };},on(){return {};}}
+  };},on(name,handler){metadataEvents.set(name,handler);return {};}}
     ,fileManager:{async trashFile(f){files.delete(f.path);},async processFrontMatter(f,fn){
       const fm={tags:[...(tagState.get(f.path)||[])]};
       fn(fm);
@@ -101,7 +102,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   await waitFor(()=>pane.contentEl.querySelector('.ex-scan-text')?.textContent==='已扫描 · 1 条' &&
     pane.contentEl.querySelectorAll('.ex-card').length===1 &&
     !pane.contentEl.querySelector('.ex-card-loading'),'initial index and card hydration');
-  return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,workspaceEvents,folderLeaves,
+  return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,metadataEvents,workspaceEvents,folderLeaves,
     getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
     document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
@@ -204,6 +205,76 @@ test('quick composer saves normal Markdown with native tags and restores continu
   assert.match(entries[0][1].data,/  - "哲学"/);
   assert.match(entries[0][1].data,/  - "札记"/);
   assert.equal(textarea.value,'');
+  await t.close();
+});
+
+test('internal save inserts one visible card and updates metadata without scanning',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const rawCreate=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  // Emit the actual Vault create signal while the write is in flight.
+  t.plugin.app.vault.create=async(path,content)=>{
+    const f=await rawCreate(path,content);
+    t.vaultEvents.get('create')?.(f);
+    return f;
+  };
+  let scans=0;
+  const scan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='本次新保存的正文';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')]
+    .find(x=>x.textContent.includes('哲学')).click();
+  [...root.querySelectorAll('.ex-compose-actions button')]
+    .find(x=>x.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-scan-text').textContent==='已扫描 · 2 条'
+    && root.querySelectorAll('.ex-card').length===2,'new card without refresh');
+  const created=[...t.files.values()].find(x=>x.file instanceof TFile &&
+    x.file.extension==='md' && x.file!==t.md);
+  assert.ok(created,'saved Markdown file exists');
+  assert.ok(root.querySelector('.ex-card[data-path="'+created.file.path+'"]'));
+  assert.equal(root.querySelector('.ex-count').textContent,'2 / 2');
+  assert.equal(scans,0,'save must not reindex entire vault');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  assert.ok(root.querySelector('.ex-card[data-path="'+created.file.path+'"] .ex-chips').textContent.includes('哲学'));
+  // Delayed metadata event for the same newly created file is reconciled locally.
+  t.tagState.set(created.file.path,['哲学','新标签']);
+  t.metadataEvents.get('changed')?.(created.file);
+  await waitFor(()=>root.querySelector('.ex-card[data-path="'+created.file.path+'"] .ex-chips')
+    ?.textContent.includes('新标签'),'metadata backfill');
+  assert.equal(scans,0);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  // An external modification of that same file must NOT be hidden by ownership.
+  t.vaultEvents.get('modify')?.(created.file);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  await t.close();
+});
+
+test('internal save preserves active search and does not mask unrelated create events',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const rawCreate=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  t.plugin.app.vault.create=async(path,content)=>{
+    const f=await rawCreate(path,content);
+    t.vaultEvents.get('create')?.(f);
+    return f;
+  };
+  clickByLabel(root,'搜索');
+  const search=root.querySelector('.ex-search');
+  search.value='新命中';
+  search.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>[...t.plugin.rendered][0].searchReady,'search completion');
+  const input=root.querySelector('.ex-compose-text');
+  input.value='新命中 的一段摘录';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')]
+    .find(x=>x.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count').textContent==='1 / 2' &&
+    root.querySelectorAll('.ex-card').length===1,'incremental search match');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  const external=await rawCreate('摘录/外部新建.md','非本次保存');
+  t.vaultEvents.get('create')?.(external);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   await t.close();
 });
 test('card options open the native Markdown editor and preserve the homepage',async()=>{
