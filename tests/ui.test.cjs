@@ -243,6 +243,29 @@ test('reading original opens native Markdown preview without focusing editor',as
 });
 
 
+
+test('list prefetch settings switch between viewport auto and fixed batches',async()=>{
+  const t=await fixture();
+  const tab=t.plugin.settingsTab;
+  const before=Setting.instances.length;
+  tab.display();
+  const settings=Setting.instances.slice(before);
+  const mode=settings.find(setting=>setting.name==='预取批次');
+  const fixed=settings.find(setting=>setting.name==='固定批次大小');
+  assert.ok(mode?.dropdown);
+  assert.ok(fixed?.dropdown);
+  assert.equal(fixed.root.hidden,true);
+  await mode.dropdown.handler('fixed');
+  assert.equal(t.plugin.settings.listBatchMode,'fixed');
+  assert.equal(fixed.root.hidden,false);
+  await fixed.dropdown.handler('96');
+  assert.equal(t.plugin.settings.listBatchSize,96);
+  await mode.dropdown.handler('auto');
+  assert.equal(t.plugin.settings.listBatchMode,'auto');
+  assert.equal(fixed.root.hidden,true);
+  await t.close();
+});
+
 test('large native Markdown and excessive H2 groups require the reading view',async()=>{
   const huge=await fixture(false,'长文'.repeat(30000));
   const card=huge.pane.contentEl.querySelector('.ex-card');
