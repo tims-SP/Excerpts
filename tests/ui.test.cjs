@@ -50,20 +50,20 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   const tagState=new Map([[md.path,noTags?[]:['哲学']]]);
   let tagWrites=0;
   const vault={getAbstractFileByPath(path){return files.get(path)?.file??null;},getFiles(){return [...files.values()].filter(x=>x.file instanceof TFile).map(x=>x.file);},getAllLoadedFiles(){return [...files.values()].map(x=>x.file);},getMarkdownFiles(){return this.getFiles().filter(x=>x.extension==='md');},
-    async cachedRead(file){return files.get(file.path).data;},
+    async cachedRead(file){return files.get(file.path).data;},async read(file){return files.get(file.path).data;},
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(){return {};}};
   const plugin=new Excerpts();
-  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();},async setViewState(state){this.state=state;if(this.view)this.view.mode=state.state.mode;}};
+  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();this.view.file=file;},async setViewState(state){this.state=state;if(this.view)this.view.mode=state.state.mode;}};
   plugin.app={vault,metadataCache:{getFileCache(f){return {
     tags:f.path===md.path?inlineTags.map(tag=>({tag:'#'+tag})):[],
     frontmatter:{tags:tagState.get(f.path)||[]}
   };},on(){return {};}}
-    ,fileManager:{async processFrontMatter(f,fn){
+    ,fileManager:{async trashFile(f){files.delete(f.path);},async processFrontMatter(f,fn){
       const fm={tags:[...(tagState.get(f.path)||[])]};
       fn(fm);
       tagState.set(f.path,fm.tags||[]);
       tagWrites++;
-    }},workspace:{getLeaf(){return leaf;},async revealLeaf(){}}};
+    }},workspace:{getLeaf(){return leaf;},getLeavesOfType(){return leaf.view instanceof MarkdownView?[leaf]:[];},on(){return {};},async revealLeaf(){}}};
   await plugin.onload();
   const pane=plugin.factory({});document.body.append(pane.contentEl);
   await pane.openFile(home);await wait();
@@ -105,9 +105,11 @@ test('capture composer has a separate writing body, a single stable footer and f
   assert.equal(composer.children[1].className,'ex-capture-tags');
   assert.equal(composer.children[2].className,'ex-compose-actions');
   const actions=composer.querySelector('.ex-compose-actions');
-  assert.equal(actions.children.length,2);
+  assert.equal(actions.children.length,3);
   assert.equal(actions.children[0].className,'ex-capture-options');
-  assert.ok(actions.children[1].classList.contains('ex-btn-primary'));
+  assert.ok(actions.children[1].classList.contains('ex-open-editor'));
+  assert.equal(actions.children[1].getAttribute('aria-label'),'编辑文档');
+  assert.ok(actions.children[2].classList.contains('ex-btn-primary'));
   const toggle=actions.querySelector('.ex-capture-tag-toggle');
   assert.equal(toggle.textContent,'标签');
   assert.equal(toggle.getAttribute('aria-expanded'),'false');
@@ -152,7 +154,7 @@ test('quick composer saves normal Markdown with native tags and restores continu
   assert.ok(!root.querySelector('.ex-capture-selected').textContent.includes('×'));
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
-  const entries=[...t.files].filter(([path])=>path==='摘录/直接写入普通 Markdown.md');
+  const entries=[...t.files].filter(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
   assert.equal(entries.length,1);
   assert.match(entries[0][1].data,/直接写入普通 Markdown/);
   assert.match(entries[0][1].data,/  - "哲学"/);
@@ -250,7 +252,7 @@ test('quick tags toggle without comma parsing and persist only the selected chip
   root.querySelector('.ex-compose-text').value='一段新摘录';root.querySelector('.ex-compose-text').dispatchEvent(new dom.window.Event('input',{bubbles:true}));
   [...root.querySelectorAll('.ex-compose-actions button')].find(x=>x.textContent==='保存').click();
   await wait();
-  const entry=t.files.get('摘录/一段新摘录.md');
+  const entry=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'))?.[1];
   assert.ok(entry);assert.match(entry.data,/  - "灵感"/);
   assert.doesNotMatch(entry.data,/  - "哲学"/);
   await t.close();
@@ -525,5 +527,80 @@ test('saved query restores search UI; invalid or duplicate save names are blocke
   assert.equal(dialog.querySelector('.ex-save-page-submit').disabled,true);
   dialog.querySelector('.ex-save-page-cancel').click();
   assert.equal(document.querySelector('.ex-save-page-modal'),null);
+  await t.close();
+});
+
+
+test('empty composer enters native Markdown and safely trashes an unchanged blank note after closing',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'编辑文档');
+  await wait();
+  const created=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  assert.ok(created,'timestamp note created');
+  assert.equal(t.leaf.lastFile,created[1].file);
+  assert.equal(t.leaf.view.mode,'source');
+  assert.equal(t.leaf.view.editor.focused,true);
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  assert.equal(t.files.has(created[0]),false,'blank new file moved to trash');
+  await t.close();
+});
+
+test('composer editor preserves Markdown and inherited tags when closing the native tab',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl;
+  const input=root.querySelector('.ex-compose-text');
+  input.value='# 时间与生活\n\n正文'; input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(e=>e.textContent==='哲学').click();
+  clickByLabel(root,'编辑文档');
+  await wait();
+  const saved=t.files.get('摘录/时间与生活.md');
+  assert.ok(saved);
+  assert.match(saved.data,/# 时间与生活\n\n正文/);
+  assert.match(saved.data,/  - "哲学"/);
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  assert.equal(t.files.has('摘录/时间与生活.md'),true);
+  assert.equal(input.value,'');
+  await t.close();
+});
+
+test('empty editor with inherited tags is cleaned only when frontmatter stays unchanged',async()=>{
+  const t=await fixture();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(e=>e.textContent==='哲学').click();
+  clickByLabel(root,'编辑文档'); await wait();
+  const item=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  assert.ok(item);
+  assert.match(item[1].data,/tags:/);
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  assert.equal(t.files.has(item[0]),false);
+  await t.close();
+});
+
+test('modified native properties protect otherwise empty files from cleanup',async()=>{
+  const t=await fixture();
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  const item=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  item[1].data='---\naliases: [重要笔记]\n---\n\n';
+  item[1].file.stat.mtime++;
+  t.leaf.view=null;
+  await t.plugin.cleanupClosedEditors();
+  assert.equal(t.files.has(item[0]),true);
+  await t.close();
+});
+
+test('switching away without closing native Markdown keeps an empty editor document',async()=>{
+  const t=await fixture();
+  clickByLabel(t.pane.contentEl,'编辑文档');
+  await wait();
+  const item=[...t.files].find(([path])=>path.startsWith('摘录/摘录 ') && path.endsWith('.md'));
+  await t.plugin.cleanupClosedEditors();
+  assert.equal(t.files.has(item[0]),true);
   await t.close();
 });
