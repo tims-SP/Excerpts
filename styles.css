@@ -454,8 +454,11 @@
 }
 
 /* Saved-filter dialog is a native Obsidian Modal, not part of the scrolling feed. */
-.ex-save-page-modal { --ex-modal-gap: 20px; }
-.ex-save-page-modal .modal-content { max-width: 420px; }
+.ex-save-page-modal {
+  --ex-modal-gap: 20px;
+  width: min(420px, calc(100vw - 32px)); max-width: 420px;
+}
+.ex-save-page-modal .modal-content { max-width: 420px; padding: 20px; }
 .ex-save-page-modal .ex-save-page-title {
   margin: 0; font-size: 16px; font-weight: 600; line-height: 24px;
   color: var(--text-normal);
@@ -497,6 +500,7 @@
 }
 .ex-save-page-modal .ex-save-page-cancel {
   background: transparent; color: var(--text-muted);
+  border: 0; box-shadow: none;
 }
 .ex-save-page-modal .ex-save-page-cancel:hover { background: var(--background-modifier-hover); }
 .ex-save-page-modal .ex-save-page-submit:disabled { opacity: .5; cursor: not-allowed; }
