@@ -1657,3 +1657,101 @@ test('refresh command targets only the active .excerpts view',async()=>{
   assert.match(Notice.last,/选中一个摘录页/);
   await second.onUnloadFile(t.home);second.contentEl.remove();await t.close();
 });
+
+
+test('global scan ownership survives page unloading until the cancelled promise settles',async()=>{
+  const t=await fixture();
+  const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release,oldCancelled;
+  let calls=0;
+  t.plugin.repo.scan=async(...args)=>{
+    calls++;
+    if(calls===1){
+      oldCancelled=args[3];
+      await new Promise(resolve=>{release=resolve;});
+      return null;
+    }
+    return original(...args);
+  };
+  t.plugin.refreshViews(true);
+  await waitFor(()=>typeof release==='function','long scan began');
+  const oldRenderer=[...t.plugin.rendered][0];
+  assert.equal(oldRenderer.scanStatus,'scanning');
+  assert.equal(t.plugin.tryAcquireScan(oldRenderer),false,'an owner cannot reenter its own scan lock');
+
+  const second=t.plugin.factory({});
+  document.body.append(second.contentEl);
+  await second.openFile(t.home);
+  const next=[...t.plugin.rendered].find(v=>v!==oldRenderer);
+  assert.ok(next);
+  assert.equal(next.scanStatus,'blocked');
+  assert.equal(calls,1);
+
+  await t.pane.onUnloadFile(t.home);
+  assert.equal(oldCancelled(),true,'unloading requests cancellation');
+  assert.equal(t.plugin.isBusy(),true,'untracked cancelled task still owns global scan lock');
+  assert.equal(t.plugin.tryAcquireScan(next),false,'non-owner cannot acquire before settlement');
+  t.plugin.releaseScan(next);
+  assert.equal(t.plugin.isBusy(),true,'non-owner cannot release someone else\'s scan lock');
+  next.requestRefresh(true);
+  assert.equal(calls,1,'manual retry while old promise is unresolved is rejected');
+
+  release();
+  await waitFor(()=>!t.plugin.isBusy(),'cancelled scan actually released its lock');
+  assert.equal(next.scanStatus,'blocked','no queued retry or status reset');
+  next.requestRefresh(true);
+  await waitFor(()=>next.scanStatus==='done' && calls===2,'new scan starts after release');
+  await second.onUnloadFile(t.home);second.contentEl.remove();
+  await t.close();
+});
+
+test('a rejected initial scan stays unscanned after Vault edits until manual refresh',async()=>{
+  const t=await fixture();
+  const actual=t.plugin.repo.scan.bind(t.plugin.repo);
+  let unblock,calls=0;
+  t.plugin.repo.scan=async(...args)=>{
+    calls++;
+    if(calls===1)await new Promise(resolve=>{unblock=resolve;});
+    return actual(...args);
+  };
+  t.plugin.refreshViews(true);
+  await waitFor(()=>typeof unblock==='function','first scan underway');
+  const next=t.plugin.factory({});
+  document.body.append(next.contentEl);
+  await next.openFile(t.home);
+  const second=[...t.plugin.rendered].find(x=>x.workspace.homePath===t.home.path && x!==[...t.plugin.rendered][0]);
+  assert.ok(second);
+  assert.equal(second.scanStatus,'blocked');
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(second.scanStatus,'blocked','file changes must not invent a committed index');
+  assert.equal(next.contentEl.querySelector('.ex-scan-status').dataset.state,'blocked');
+  assert.equal(next.contentEl.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
+  assert.equal(calls,1,'no background scan launched');
+  unblock();
+  await waitFor(()=>[...t.plugin.rendered][0].scanStatus==='stale','original scan was dirtied');
+  second.requestRefresh(true);
+  await waitFor(()=>second.scanStatus==='done' && calls===2,'explicit refresh after first scan ends');
+  await next.onUnloadFile(t.home);next.contentEl.remove();await t.close();
+});
+
+test('scan errors release the exclusive lock so another page can scan',async()=>{
+  const t=await fixture();
+  const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  let count=0;
+  t.plugin.repo.scan=async(...args)=>{
+    count++;
+    if(count===1)throw new Error('forced metadata scan failure');
+    return original(...args);
+  };
+  t.plugin.refreshViews(true);
+  const current=[...t.plugin.rendered][0];
+  await waitFor(()=>current.scanStatus==='error','first scan failed');
+  assert.equal(t.plugin.isBusy(),false,'a failed scan must release its lock');
+  const next=t.plugin.factory({});
+  document.body.append(next.contentEl);
+  await next.openFile(t.home);
+  await waitFor(()=>[...t.plugin.rendered].some(x=>x!==current && x.scanStatus==='done'),
+    'another page can start scanning after failure');
+  assert.equal(count,2);
+  await next.onUnloadFile(t.home);next.contentEl.remove();await t.close();
+});
