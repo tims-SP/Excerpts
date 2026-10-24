@@ -27,9 +27,9 @@ class Modal {
 const renders=[];
 const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,
   parseYaml(raw){
-    const version=raw.match(/^version:\\s*(\\d+)$/m);
-    const tag=raw.match(/^\\s*tag:\\s*(.+)$/m);
-    const query=raw.match(/^\\s*query:\\s*(.+)$/m);
+    const version=raw.match(/^version:\s*(\d+)$/m);
+    const tag=raw.match(/^\s*tag:\s*(.+)$/m);
+    const query=raw.match(/^\s*query:\s*(.+)$/m);
     return {version:version?Number(version[1]):null,
       filter:{tag:tag?JSON.parse(tag[1]):null,query:query?JSON.parse(query[1]):null}};
   },
@@ -507,7 +507,8 @@ test('saved page restores filters and can update only after explicit confirmatio
 test('saved query restores search UI; invalid or duplicate save names are blocked',async()=>{
   const t=await fixture();
   const saved=await t.plugin.createSavedPage(t.home.path,'检索摘录',{tag:'',query:'测试标题'});
-  await t.pane.openFile(saved);await wait();
+  await t.pane.openFile(saved);
+  await new Promise(resolve=>setTimeout(resolve,500));
   const root=t.pane.contentEl;
   assert.equal(root.querySelector('.ex-search').value,'测试标题');
   assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
