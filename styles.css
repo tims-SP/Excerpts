@@ -332,6 +332,11 @@
 }
 .excerpts-root .ex-note-heading { margin: 0 0 var(--ex-space-2); font-size: 1.08em; font-weight: 600; line-height: 1.45; }
 .excerpts-root .ex-content-viewport { min-width: 0; }
+.excerpts-root .ex-card[data-preview-kind="text"] .ex-content-viewport { --ex-preview-limit: 200px; }
+.excerpts-root .ex-card[data-preview-kind="image"] .ex-content-viewport { --ex-preview-limit: 280px; }
+.excerpts-root .ex-card[data-preview-kind="video"] .ex-content-viewport { --ex-preview-limit: 300px; }
+.excerpts-root .ex-card[data-preview-kind="mixed"] .ex-content-viewport { --ex-preview-limit: 360px; }
+.excerpts-root .ex-card[data-preview-kind="multimedia"] .ex-content-viewport { --ex-preview-limit: 400px; }
 .excerpts-root .ex-content-clamped {
   max-height: var(--ex-preview-limit, 200px); overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom,#000 80%,transparent 100%);
@@ -343,6 +348,7 @@
   color: var(--text-muted); font-size: var(--font-ui-smaller, 12px);
 }
 .excerpts-root button.ex-expand-body[hidden] { display: none !important; }
+.excerpts-root .ex-preview-error { color: var(--text-muted); font-size: var(--font-ui-small, 13px); margin: 0; }
 .excerpts-root .ex-native-markdown { font-family: inherit; font-size: inherit; line-height: inherit; overflow-wrap: anywhere; }
 .excerpts-root .ex-native-markdown > :first-child { margin-top: 0; }
 .excerpts-root .ex-native-markdown > :last-child { margin-bottom: 0; }
@@ -500,6 +506,11 @@
   .excerpts-root .ex-toolbar,
   .excerpts-root .ex-search-wrap,
   .excerpts-root .ex-filter-tags { width: 100%; margin-left: 0; }
+  .excerpts-root .ex-card[data-preview-kind="text"] .ex-content-viewport { --ex-preview-limit: 160px; }
+  .excerpts-root .ex-card[data-preview-kind="image"] .ex-content-viewport { --ex-preview-limit: 240px; }
+  .excerpts-root .ex-card[data-preview-kind="video"] .ex-content-viewport { --ex-preview-limit: 260px; }
+  .excerpts-root .ex-card[data-preview-kind="mixed"] .ex-content-viewport { --ex-preview-limit: 300px; }
+  .excerpts-root .ex-card[data-preview-kind="multimedia"] .ex-content-viewport { --ex-preview-limit: 320px; }
   .excerpts-root .ex-virtual-row { grid-template-columns: minmax(0, 1fr); gap: var(--ex-space-2); }
   .excerpts-root .ex-virtual-row.ex-virtual-day-start { padding-top: var(--ex-space-5); }
   .excerpts-root .ex-virtual-row.ex-virtual-first-row { padding-top: 0; }

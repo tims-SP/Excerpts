@@ -1,4 +1,5 @@
 import { ParsedMarkdown } from "./model";
+import { visibleMediaMarkdown } from "./codec";
 
 export type PreviewKind = "text" | "image" | "video" | "mixed" | "multimedia";
 export type PreviewAction = "none" | "expand" | "read";
@@ -14,7 +15,7 @@ const EMBED = /!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)]*\)|<(?:iframe|embed|object|audi
 
 /** Classification is read-only. Unrecognized embeds are treated conservatively. */
 export function classifyPreview(parsed: ParsedMarkdown): PreviewKind {
-  const body = parsed.body;
+  const body = visibleMediaMarkdown(parsed.body);
   const videos = [...body.matchAll(VIDEO)].length;
   const images = [...body.matchAll(IMAGE)].length;
   const embedded = [...body.matchAll(EMBED)].length;

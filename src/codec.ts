@@ -83,3 +83,30 @@ export function findSectionHeadingLine(raw: string, sectionIndex: number): numbe
   }
   return null;
 }
+
+/**
+ * Remove fenced and inline code before detecting *rendered* Markdown media.
+ * Only the classification copy changes; the original Markdown is untouched.
+ */
+export function visibleMediaMarkdown(markdown: string): string {
+  let fenceChar = "";
+  let fenceLength = 0;
+  const lines = markdown.split(/\r\n?|\n/);
+  return lines.map(line => {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (marker) {
+      const char = marker[1][0];
+      if (!fenceChar) {
+        fenceChar = char;
+        fenceLength = marker[1].length;
+      } else if (char === fenceChar && marker[1].length >= fenceLength &&
+          marker[2].trim() === "") {
+        fenceChar = "";
+        fenceLength = 0;
+      }
+      return "";
+    }
+    if (fenceChar || /^(?: {4}|\t)/.test(line)) return "";
+    return line.replace(/(`+)([\s\S]*?)\1/g, " ");
+  }).join("\n");
+}
