@@ -1,7 +1,8 @@
 import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { findSectionHeadingLine } from "./codec";
 import type ExcerptsPlugin from "./main";
-import { EntryRepository } from "./repository";
+import { DeleteCandidate, EntryRepository } from "./repository";
+import { DeleteExcerptModal } from "./delete-modal";
 import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace } from "./model";
 import { PageFilter, isFiltered } from "./page-config";
@@ -80,6 +81,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reflowCaptureTags: () => void = () => {};
   private openTagEditors = new Set<string>();
   private pendingTags = new Set<string>();
+  private selectionMode: "normal" | "selecting" | "deleting" = "normal";
+  private selectionScope = new Set<string>();
+  private selectedPaths = new Set<string>();
+  private selectedCandidates = new Map<string, DeleteCandidate>();
+  private selectionToolbarEl!: HTMLElement;
+  private selectionCountEl!: HTMLElement;
+  private selectionAllButton!: HTMLButtonElement;
+  private selectionDoneButton!: HTMLButtonElement;
+  private selectionFooterEl!: HTMLElement;
+  private selectedFooterCountEl!: HTMLElement;
+  private deleteSelectedButton!: HTMLButtonElement;
+  private deleteBusy = false;
+  private searchReady = true;
   private disposed = false;
   constructor(container: HTMLElement, private plugin: ExcerptsPlugin, public readonly workspace: Workspace,
     private repo: EntryRepository, private savedFilter: PageFilter | null = null,
@@ -106,11 +120,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
     this.tagResizeObserver?.disconnect();
+    this.selectedPaths.clear(); this.selectedCandidates.clear(); this.selectionScope.clear();
     this.unmountMarkdown();
     this.queue = [];
   }
   requestRefresh(force = false): void {
-    if (this.disposed) return;
+    if (this.disposed || this.deleteBusy) return;
     if (this.refreshTimer) clearTimeout(this.refreshTimer);
     this.refreshTimer = setTimeout(() => {
       if (force) this.repo.invalidate();
@@ -384,11 +399,36 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     pageMenuButton.setAttribute("aria-haspopup", "menu");
     actions.append(pageMenuButton);
     toolbar.append(actions);
-    root.append(toolbar, this.searchWrap);
+    this.selectionToolbarEl = node("div", "ex-toolbar ex-selection-toolbar");
+    this.selectionToolbarEl.hidden = true;
+    const selectionTitle = node("div", "ex-toolbar-title");
+    this.selectionCountEl = node("span", "ex-selection-count");
+    selectionTitle.append(this.selectionCountEl);
+    const selectionActions = node("div", "ex-toolbar-actions");
+    this.selectionAllButton = button("全选", () => this.toggleSelectAll(), "ex-select-all");
+    this.selectionDoneButton = button("完成", () => this.exitSelectionMode(), "ex-select-done");
+    selectionActions.append(this.selectionAllButton, this.selectionDoneButton);
+    this.selectionToolbarEl.append(selectionTitle, selectionActions);
+    root.append(toolbar, this.selectionToolbarEl, this.searchWrap);
+    this.containerEl.addEventListener("keydown", event => {
+      if (event.key === "Escape" && this.selectionMode === "selecting") {
+        event.preventDefault();
+        this.exitSelectionMode();
+      }
+    });
     this.tagBar = node("div", "ex-filter-tags");
     root.append(this.tagBar);
     this.listEl = node("div", "ex-card-list");
     root.append(this.listEl);
+    this.selectionFooterEl = node("div", "ex-selection-footer");
+    this.selectionFooterEl.hidden = true;
+    this.selectedFooterCountEl = node("span", "ex-selection-footer-count");
+    const footerActions = node("div", "ex-selection-footer-actions");
+    footerActions.append(button("取消", () => this.exitSelectionMode(), "ex-select-cancel"));
+    this.deleteSelectedButton = button("删除 (0)", () => this.confirmBulkDelete(), "ex-delete-selected mod-warning");
+    footerActions.append(this.deleteSelectedButton);
+    this.selectionFooterEl.append(this.selectedFooterCountEl, footerActions);
+    root.append(this.selectionFooterEl);
   }
   private currentFilter(): PageFilter {
     return { tag: this.tagFilter.trim(), query: this.searchText.trim() };
@@ -418,6 +458,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const current = this.currentFilter();
     const changed = this.isPageDirty();
     const menu = new Menu();
+    menu.addItem(item => item.setTitle("批量选择").setIcon("check-square")
+      .setDisabled(!this.searchReady || !this.visibleItems().length || this.pendingTags.size > 0)
+      .onClick(() => this.enterSelectionMode()));
+    menu.addSeparator();
     if (this.savedFilter && changed) {
       menu.addItem(item => item.setTitle("更新当前页面").setIcon("save")
         .onClick(() => void this.updateCurrentPage().catch(notify)));
@@ -465,13 +509,182 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.savedFilter = filter;
     new Notice("已更新当前摘录页");
   }
+  /** Freeze the current filtered result set; no Markdown bodies are read for selection. */
+  private enterSelectionMode(): void {
+    if (this.selectionMode !== "normal" || this.deleteBusy || !this.searchReady ||
+        this.pendingTags.size || !this.visibleItems().length) return;
+    for (const path of [...this.openTagEditors]) {
+      const item = this.items.find(card => card.path === path);
+      if (!item) continue;
+      const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+        .find(element => element.dataset.path === path);
+      this.closeTagEditor(item, card);
+    }
+    this.selectionScope = new Set(this.visibleItems().map(item => item.path));
+    this.selectedPaths.clear();
+    this.selectedCandidates.clear();
+    this.selectionMode = "selecting";
+    this.updateSelectionUI();
+  }
+  private exitSelectionMode(): void {
+    if (this.selectionMode !== "selecting") return;
+    this.selectionMode = "normal";
+    this.selectionScope.clear();
+    this.selectedPaths.clear();
+    this.selectedCandidates.clear();
+    this.updateSelectionUI();
+    this.drawCards();
+  }
+  private paintCardSelection(card: HTMLElement, path: string): void {
+    const active = this.selectionMode !== "normal";
+    const checked = this.selectedPaths.has(path);
+    card.classList.toggle("ex-is-selected", active && checked);
+    if (active) {
+      card.setAttribute("role", "checkbox");
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("aria-checked", String(checked));
+      card.setAttribute("aria-label", (checked ? "取消选择：" : "选择：") +
+        (this.items.find(item => item.path === path)?.basename ?? path));
+    } else {
+      card.removeAttribute("role"); card.removeAttribute("tabindex");
+      card.removeAttribute("aria-checked"); card.removeAttribute("aria-label");
+    }
+    for (const selector of [".ex-quote", ".ex-extras", ".ex-tag-editor", ".ex-chips"]) {
+      const element = card.querySelector<HTMLElement>(selector);
+      if (element) element.inert = active;
+    }
+    const mark = card.querySelector<HTMLElement>(".ex-selection-indicator");
+    if (mark) setIcon(mark, checked ? "check-circle-2" : "circle");
+  }
+  private updateSelectionControls(): void {
+    if (this.selectionMode === "normal") return;
+    const chosen = this.selectedPaths.size, total = this.selectionScope.size;
+    this.selectionCountEl.textContent = "已选 " + chosen + " / " + total;
+    this.selectedFooterCountEl.textContent = "已选择 " + chosen + " 条";
+    this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
+    this.selectionAllButton.disabled = this.deleteBusy || total === 0;
+    this.selectionDoneButton.disabled = this.deleteBusy;
+    const cancel = this.selectionFooterEl.querySelector<HTMLButtonElement>(".ex-select-cancel");
+    if (cancel) cancel.disabled = this.deleteBusy;
+    this.deleteSelectedButton.textContent = "删除 (" + chosen + ")";
+    this.deleteSelectedButton.disabled = this.deleteBusy || chosen === 0;
+  }
+  private updateSelectionUI(): void {
+    const active = this.selectionMode !== "normal";
+    this.containerEl.classList.toggle("ex-is-selecting", active);
+    const ordinary = this.containerEl.querySelector<HTMLElement>(".ex-toolbar:not(.ex-selection-toolbar)");
+    if (ordinary) ordinary.hidden = active;
+    this.selectionToolbarEl.hidden = !active;
+    this.selectionFooterEl.hidden = !active;
+    for (const card of this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+      this.paintCardSelection(card, card.dataset.path ?? "");
+    this.updateSelectionControls();
+  }
+  private toggleSelection(path: string): void {
+    if (this.selectionMode !== "selecting" || !this.selectionScope.has(path)) return;
+    if (this.selectedPaths.has(path)) {
+      this.selectedPaths.delete(path);
+      this.selectedCandidates.delete(path);
+    } else {
+      const snapshot = this.repo.snapshotForDelete(path, this.workspace);
+      if (!snapshot) { new Notice("该摘录已不存在，请刷新后重试"); return; }
+      this.selectedPaths.add(path);
+      this.selectedCandidates.set(path, snapshot);
+    }
+    const card = [...this.listEl.querySelectorAll<HTMLElement>(".ex-card")]
+      .find(element => element.dataset.path === path);
+    if (card) this.paintCardSelection(card, path);
+    this.updateSelectionControls();
+  }
+  private toggleSelectAll(): void {
+    if (this.selectionMode !== "selecting") return;
+    if (this.selectedPaths.size === this.selectionScope.size) {
+      this.selectedPaths.clear(); this.selectedCandidates.clear();
+    } else {
+      this.selectedPaths.clear(); this.selectedCandidates.clear();
+      for (const path of this.selectionScope) {
+        const snapshot = this.repo.snapshotForDelete(path, this.workspace);
+        if (!snapshot) continue;
+        this.selectedPaths.add(path);
+        this.selectedCandidates.set(path, snapshot);
+      }
+    }
+    for (const card of this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+      this.paintCardSelection(card, card.dataset.path ?? "");
+    this.updateSelectionControls();
+  }
+  private confirmSingleDelete(path: string): void {
+    if (this.deleteBusy || this.selectionMode !== "normal") return;
+    const snapshot = this.repo.snapshotForDelete(path, this.workspace);
+    if (!snapshot) { new Notice("该摘录已不存在"); return; }
+    new DeleteExcerptModal(this.plugin.app, [path],
+      async () => this.performDeletion([snapshot], false)).open();
+  }
+  private confirmBulkDelete(): void {
+    if (this.deleteBusy || this.selectionMode !== "selecting" || !this.selectedPaths.size) return;
+    const candidates = [...this.selectedPaths].map(path => this.selectedCandidates.get(path))
+      .filter((candidate): candidate is DeleteCandidate => Boolean(candidate));
+    if (!candidates.length) return;
+    new DeleteExcerptModal(this.plugin.app, candidates.map(candidate => candidate.path),
+      async () => this.performDeletion(candidates, true)).open();
+  }
+  private async performDeletion(candidates: readonly DeleteCandidate[], bulk: boolean): Promise<void> {
+    if (this.deleteBusy) return;
+    this.deleteBusy = true;
+    if (bulk) this.selectionMode = "deleting";
+    this.updateSelectionUI();
+    let result;
+    try {
+      result = await this.repo.deleteEntries(this.workspace, candidates);
+    } finally {
+      this.deleteBusy = false;
+      if (this.selectionMode === "deleting") this.selectionMode = "selecting";
+    }
+    for (const path of result.deleted) {
+      this.selectedPaths.delete(path); this.selectedCandidates.delete(path);
+      this.selectionScope.delete(path);
+      this.sectionsShown.delete(path); this.expandedBodies.delete(path);
+      this.expandedTagRows.delete(path); this.openTagEditors.delete(path);
+    }
+    for (const failed of result.failed) {
+      if (failed.reason.includes("已被修改") || failed.reason.includes("已不存在")) {
+        this.selectedPaths.delete(failed.path);
+        this.selectedCandidates.delete(failed.path);
+      }
+    }
+    if (bulk && !result.failed.length) {
+      this.selectionMode = "normal";
+      this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
+    }
+    this.repo.invalidate();
+    await this.reload();
+    this.updateSelectionUI();
+    if (result.failed.length) {
+      const reasons = result.failed.slice(0, 3)
+        .map(item => item.path.split("/").pop() + "：" + item.reason).join("；");
+      new Notice("已删除 " + result.deleted.length + " 条，未删除 " +
+        result.failed.length + " 条。" + reasons, 9000);
+    } else {
+      new Notice("已删除 " + result.deleted.length + " 条摘录");
+    }
+  }
   private showSuggestions: () => void = () => {};
   private async reload(): Promise<void> {
+    if (this.deleteBusy) return;
     const token = ++this.refreshToken;
     const cards = this.repo.list(this.workspace);
     cards.sort((a, b) => b.ctime - a.ctime);
     if (this.disposed || token !== this.refreshToken) return;
     this.items = cards;
+    if (this.selectionMode !== "normal") {
+      const indexed = new Set(cards.map(card => card.path));
+      for (const path of this.selectionScope) {
+        if (!indexed.has(path)) {
+          this.selectionScope.delete(path); this.selectedPaths.delete(path);
+          this.selectedCandidates.delete(path);
+        }
+      }
+    }
     this.showSuggestions();
     this.renderTagsFilter();
     if (this.searchText) this.scheduleSearch();
@@ -480,7 +693,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scheduleSearch(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     const token = ++this.searchToken;
-    if (!this.searchText) { this.matches = null; this.drawCards(); return; }
+    if (!this.searchText) { this.searchReady = true; this.matches = null; this.drawCards(); return; }
+    this.searchReady = false;
     this.countEl.textContent = "搜索准备中…";
     this.searchTimer = setTimeout(() => void this.search(token), 350);
   }
@@ -491,6 +705,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         done => { if (token === this.searchToken) this.countEl.textContent = "搜索中 " + done + "/" + this.items.length; });
       if (this.disposed || token !== this.searchToken) return;
       this.matches = matches;
+      this.searchReady = true;
       this.pageSize = 40;
       this.drawCards();
     } catch (error) { if (!this.disposed) notify(error); }
@@ -500,7 +715,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       (!this.tagFilter || item.tags.includes(this.tagFilter)) &&
       (!this.searchText || (this.matches !== null && this.matches.has(item.path)))
     );
-    return found;
+    return this.selectionMode === "normal" ? found :
+      found.filter(item => this.selectionScope.has(item.path));
   }
   private renderTagsFilter(): void {
     this.tagBar.replaceChildren();
@@ -550,6 +766,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       empty.append(node("p", "ex-empty-description", this.items.length ?
         "试试其他关键词，或清除筛选条件。" : "写下喜欢的句子，未来的某一天再读到它。"));
       this.listEl.append(empty);
+      if (this.selectionMode !== "normal") this.updateSelectionControls();
       return;
     }
     if (typeof IntersectionObserver !== "undefined") {
@@ -564,6 +781,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }, { rootMargin: "350px 0px" });
     }
     this.appendPage(visible, 0, Math.min(this.pageSize, visible.length), token);
+    if (this.selectionMode !== "normal") this.updateSelectionControls();
   }
   private appendPage(visible: CardIndex[], start: number, end: number, token: number): void {
     if (this.disposed || token !== this.renderToken) return;
@@ -626,28 +844,48 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const options = iconButton("ellipsis", "卡片选项", () =>
       void this.showCardMenu(item, options).catch(notify), "ex-card-options");
     options.setAttribute("aria-haspopup", "menu");
-    actions.append(options);
+    const indicator = node("span", "ex-selection-indicator");
+    indicator.setAttribute("aria-hidden", "true");
+    setIcon(indicator, "circle");
+    actions.append(options, indicator);
     footer.append(actions);
     card.append(footer);
     this.renderTags(tags, item, this.openTagEditors.has(item.path));
+    card.addEventListener("click", event => {
+      if (this.selectionMode !== "selecting") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.toggleSelection(item.path);
+    }, true);
+    card.addEventListener("keydown", event => {
+      if (this.selectionMode !== "selecting" || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.toggleSelection(item.path);
+    }, true);
+    this.paintCardSelection(card, item.path);
     return card;
   }
   private async showCardMenu(item: CardIndex, anchor: HTMLButtonElement): Promise<void> {
-    const parsed = await this.repo.read(item.path);
+    let parsed: ParsedMarkdown | null = null;
+    try { parsed = await this.repo.read(item.path); } catch { /* Deletion remains available if parsing fails. */ }
     if (this.disposed || !anchor.isConnected) return;
     const menu = new Menu();
     menu.addItem(entry => entry.setTitle("编辑原文").onClick(() =>
       void this.plugin.openMarkdown(item.path).catch(notify)));
     const seen = new Map<string, number>();
-    for (let index = 0; index < parsed.sections.length; index++) {
-      const section = parsed.sections[index];
+    for (let index = 0; index < (parsed?.sections.length ?? 0); index++) {
+      const section = parsed!.sections[index];
       const count = (seen.get(section.name) ?? 0) + 1;
       seen.set(section.name, count);
-      const suffix = parsed.sections.filter(part => part.name === section.name).length > 1
+      const suffix = parsed!.sections.filter(part => part.name === section.name).length > 1
         ? "（第 " + count + " 个）" : "";
       menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() =>
         void this.openSection(item.path, index).catch(notify)));
     }
+    menu.addSeparator();
+    menu.addItem(entry => entry.setTitle("删除摘录").setIcon("trash-2").setWarning()
+      .onClick(() => this.confirmSingleDelete(item.path)));
     const rect = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
   }
