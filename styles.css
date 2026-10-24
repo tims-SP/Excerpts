@@ -102,18 +102,65 @@
 .excerpts-root .ex-filter-tags[hidden],
 .excerpts-root .ex-tag-editor[hidden],
 .excerpts-root .ex-group-body[hidden] { display: none !important; }
-.excerpts-root .ex-tag-suggestions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
-.excerpts-root .ex-tags-input, .excerpts-root .ex-tag-custom, .excerpts-root .ex-input {
-  box-sizing: border-box; width: 100%; min-width: 0; height: 44px;
-  padding: 8px 12px; border: 1px solid var(--ex-border);
-  border-radius: var(--radius-m, 8px); background: var(--background-primary);
-  color: var(--text-normal); font: inherit; font-size: max(14px, var(--font-ui-medium, 14px));
-  box-shadow: none; appearance: none;
+.excerpts-root .ex-tag-picker { min-width: 0; display: flex; flex-direction: column; gap: var(--ex-space-2); }
+.excerpts-root .ex-tag-search {
+  display: flex; align-items: center; width: 100%; min-width: 0; height: 40px;
+  gap: 8px; padding: 0 10px; border-radius: var(--radius-m, 8px);
+  background: var(--background-primary); border: 1px solid transparent;
 }
-.excerpts-root .ex-tags-input:focus, .excerpts-root .ex-tag-custom:focus, .excerpts-root .ex-input:focus {
+.excerpts-root .ex-composer .ex-tag-search { background: var(--background-secondary); }
+.excerpts-root .ex-tag-search:focus-within {
   border-color: var(--background-modifier-border-focus, var(--interactive-accent));
+  outline: none;
+}
+.excerpts-root .ex-tag-search-icon { display: inline-flex; color: var(--text-muted); flex: 0 0 16px; }
+.excerpts-root .ex-tag-search-icon svg { width: 16px; height: 16px; }
+.excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom),
+.excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom):is(:hover,:focus,:focus-visible) {
+  display: block; flex: 1 1 auto; min-width: 0; width: 100%; height: 100%;
+  font-family: var(--font-interface); font-size: var(--font-ui-medium,14px);
+  margin: 0; padding: 0; line-height: normal;
+  border: 0 !important; border-radius: 0 !important; box-shadow: none !important;
+  outline: none !important; background: transparent !important; background-image: none !important;
+  color: var(--text-normal); -webkit-text-fill-color: var(--text-normal);
+  appearance: none; -webkit-appearance: none;
+}
+.excerpts-root .ex-tag-search input::-webkit-search-cancel-button { display: none; }
+.excerpts-root .ex-tag-search-clear {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 5px; color: var(--text-muted);
+  border: 0; border-radius: var(--radius-s, 4px); background: transparent; box-shadow: none;
+}
+.excerpts-root .ex-tag-search-clear[hidden] { display: none !important; }
+.excerpts-root .ex-tag-search-clear svg { width: 14px; height: 14px; }
+.excerpts-root .ex-tag-suggestions {
+  display: flex; flex-direction: column; width: 100%; min-width: 0;
+  max-height: 220px; overflow-x: hidden; overflow-y: auto; gap: 2px;
+}
+.excerpts-root .ex-tag-choice {
+  display: flex; flex: 0 0 auto; width: 100%; min-height: 36px;
+  align-items: center; justify-content: space-between; gap: 10px;
+  text-align: left; padding: 6px 10px; border: 0; border-radius: var(--radius-s, 5px);
+  color: var(--text-normal); background: transparent; box-shadow: none;
+  font-family: var(--font-interface); font-size: var(--font-ui-small,13px); font-weight: 400;
+}
+.excerpts-root .ex-tag-choice:hover, .excerpts-root .ex-tag-choice.ex-is-active { background: var(--background-modifier-hover); }
+.excerpts-root .ex-tag-choice:disabled { cursor: not-allowed; opacity: .65; }
+.excerpts-root .ex-tag-choice-name { min-width: 0; overflow-wrap: anywhere; }
+.excerpts-root .ex-tag-choice-check { display: inline-flex; flex: 0 0 16px; color: var(--text-accent); }
+.excerpts-root .ex-tag-choice-check svg { width: 16px; height: 16px; }
+.excerpts-root .ex-tag-choice-hint, .excerpts-root .ex-tag-choice-empty {
+  color: var(--text-muted); font-size: var(--font-ui-smaller, 12px);
+}
+.excerpts-root .ex-tag-choice-empty { padding: 8px 10px; margin: 0; }
+.excerpts-root .ex-input {
+  box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 40px;
+  padding: 8px 12px; border: 1px solid var(--ex-border); border-radius: var(--radius-m,8px);
+  background: var(--background-primary); color: var(--text-normal); font-size: var(--font-ui-medium,14px);
   box-shadow: none;
 }
+.excerpts-root .ex-input:focus { border-color: var(--background-modifier-border-focus,var(--interactive-accent)); box-shadow: none; }
+
 
 /* Timeline toolbar and the on-demand search/filter controls. */
 .excerpts-root .ex-toolbar { min-height: 36px; gap: var(--ex-space-3); margin-bottom: var(--ex-space-3); }
@@ -213,14 +260,29 @@
 /* Tag editing belongs directly above the footer, never between prose and H2 content. */
 .excerpts-root .ex-tag-editor {
   display: flex; flex: 0 1 auto; flex-direction: column; align-items: stretch;
-  gap: var(--ex-space-2); width: 100%; min-width: 0;
+  gap: var(--ex-space-3); width: 100%; min-width: 0;
   padding: var(--ex-space-2) 0 0; margin-top: var(--ex-space-3);
   background: transparent; border: 0; border-top: 1px solid var(--ex-border);
   border-radius: 0;
 }
-.excerpts-root .ex-tag-custom { flex: 0 1 auto; width: 100%; height: 44px; min-height: 44px; align-self: stretch; }
-.excerpts-root button.ex-tag-option { min-height: 30px; padding: 5px 9px; border-radius: 999px; background: var(--background-secondary); font-size: 12px; }
-.excerpts-root button.ex-tag-option.ex-selected { color: var(--text-normal); background: var(--background-modifier-hover); font-weight: 500; }
+.excerpts-root .ex-tag-editor-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.excerpts-root .ex-tag-editor-title { font-size: var(--font-ui-small,13px); font-weight: 500; color: var(--text-normal); }
+.excerpts-root .ex-tag-editor-count { font-size: var(--font-ui-smaller,12px); color: var(--text-muted); }
+.excerpts-root .ex-tag-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.excerpts-root button.ex-tag-cancel { font-size: var(--font-ui-small,13px); color: var(--text-muted); }
+.excerpts-root button.ex-tag-done {
+  font-size: var(--font-ui-small,13px); min-height: 32px;
+  padding-inline: 16px; font-weight: 500;
+  background: var(--interactive-accent); color: var(--text-on-accent);
+}
+.excerpts-root button.ex-tag-done:hover { color: var(--text-on-accent); background: var(--interactive-accent-hover); }
+.excerpts-root button.ex-tag-done:disabled { opacity: .55; }
+.excerpts-root .ex-tag-inline-hint {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  color: var(--text-muted); font-size: var(--font-ui-smaller,12px); line-height: 1.4;
+}
+.excerpts-root button.ex-tag-source { padding: 4px 6px; min-height: 28px; font-size: 12px; }
+
 
 /* Micro pills: tiny *visual* surface, sufficient independent touch target. */
 .excerpts-root .ex-card-footer {
@@ -305,8 +367,11 @@
   .excerpts-root button.ex-icon-button { width: 44px; height: 44px; padding: 12px; }
   .excerpts-root .ex-chips { min-height: 44px; }
   .excerpts-root button.ex-tag { height: 44px; }
-  .excerpts-root button.ex-tag-option { min-height: 44px; }
-  .excerpts-root .ex-tags-input,.excerpts-root .ex-tag-custom,.excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
+  .excerpts-root .ex-tag-choice { min-height: 44px; }
+  .excerpts-root .ex-tag-search { min-height: 44px; height: 44px; }
+  .excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom) { font-size: 16px; }
+  .excerpts-root .ex-tag-search-clear { min-width: 32px; min-height: 32px; }
+  .excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
