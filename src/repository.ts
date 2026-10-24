@@ -1,9 +1,19 @@
-import { App, TFile, TFolder, getAllTags } from "obsidian";
+import { App, MarkdownView, TFile, TFolder, getAllTags } from "obsidian";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath, validateRelativePath } from "./model";
 import { parseMarkdown } from "./codec";
 import { excerptFileStem, fitFileStem } from "./naming";
 
 const filenameKey = (path: string): string => path.normalize("NFC").toLocaleLowerCase("en-US");
+
+/** An in-session identity snapshot, not a persistent item ID. */
+export interface DeleteCandidate {
+  path: string;
+  file: TFile;
+  mtime: number;
+  size: number;
+}
+export interface DeleteFailure { path: string; reason: string }
+export interface DeleteResult { deleted: string[]; failed: DeleteFailure[] }
 
 export class EntryRepository {
   private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
@@ -136,6 +146,46 @@ export class EntryRepository {
       }
     }
     throw new Error("无法生成唯一文件名");
+  }
+  snapshotForDelete(path: string, ws: Workspace): DeleteCandidate | null {
+    if (!isExcerptPath(path, ws)) return null;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension !== "md") return null;
+    return { path, file, mtime: file.stat.mtime, size: file.stat.size };
+  }
+  /** Serialize trash operations; a stale, moved, open or modified file must never be removed. */
+  async deleteEntries(ws: Workspace, candidates: readonly DeleteCandidate[]): Promise<DeleteResult> {
+    const result: DeleteResult = { deleted: [], failed: [] };
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const { path } = candidate;
+      if (seen.has(path)) continue;
+      seen.add(path);
+      try {
+        const current = this.app.vault.getAbstractFileByPath(path);
+        if (!(current instanceof TFile) || current !== candidate.file ||
+            current.extension !== "md" || !isExcerptPath(path, ws)) {
+          result.failed.push({ path, reason: "文件已不存在或位置发生变化" });
+          continue;
+        }
+        if (current.stat.mtime !== candidate.mtime || current.stat.size !== candidate.size) {
+          result.failed.push({ path, reason: "文件已被修改，请重新选择" });
+          continue;
+        }
+        const editorOpen = this.app.workspace.getLeavesOfType("markdown").some(leaf =>
+          leaf.view instanceof MarkdownView && leaf.view.file === current);
+        if (editorOpen) {
+          result.failed.push({ path, reason: "文件正在编辑器中打开，请先关闭" });
+          continue;
+        }
+        await this.app.fileManager.trashFile(current);
+        this.invalidate(path);
+        result.deleted.push(path);
+      } catch (error) {
+        result.failed.push({ path, reason: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return result;
   }
   async readRaw(path: string): Promise<string> {
     return this.app.vault.cachedRead(this.file(path));
