@@ -1721,7 +1721,9 @@ test('saving and native editor opening do not trigger an index scan',async()=>{
   assert.equal(textarea.disabled,false);
   assert.equal(textarea.value,'');
   assert.equal(scans,0);
-  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  assert.equal(root.querySelector('.ex-count').textContent,'2 / 2',
+    'nonempty native editor creation updates the current list without a scan');
   await t.close();
 });
 
