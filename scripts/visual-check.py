@@ -117,6 +117,7 @@ with sync_playwright() as playwright:
             assert layout["saveRight"] <= layout["innerRight"]+1, (theme,width,layout)
             assert layout["tagsRight"] <= layout["saveRight"], (theme,width,layout)
 
+            page.screenshot(path=str(root / "artifacts" / f"composer-idle-{theme}-{width}.png"), full_page=True)
             # Even many tags cannot push the save button away or produce a second footer row.
             page.locator(".ex-capture-tag-toggle").click()
             for row in page.locator(".ex-capture-tags .ex-tag-choice").all():
