@@ -5,7 +5,7 @@
 本仓库的界面回归采用三个相互独立的门槛：
 
 1. **普通单元/DOM 测试**：`npm run verify`；对行为、Markdown 读写、菜单、锁和状态流转负责。
-2. **静态 UI 清单**：`tests/fixtures/visual-class-contract.json` 锁定源文件和 CSS 中所有 `ex-` 前缀类名/变量标识符。新增、删除、重命名时，`tests/visual-contract.test.cjs` 会失败，必须人工检查涉及的 UI 状态后同步更新清单；不能让新 UI 自动绕过截图检查。
+2. **静态 UI 清单**：`tests/fixtures/visual-class-contract.json` 锁定源文件和 CSS 中所有 `ex-` 前缀类名/变量标识符。新增、删除、重命名时，`tests/visual-contract.test.cjs` 会失败；另外，`styles.css` 的 Git blob SHA 已锁定，颜色、间距和圆角等样式代码修改必须先审查截图再显式更新哈希。必须人工检查涉及的 UI 状态后同步更新清单；不能让新 UI 自动绕过截图检查。
 3. **Chromium 运行态截图和几何断言**：`scripts/spacing-check.py`、`scripts/visual-check.py`、`scripts/visual-audit.py`。使用编译好的真实 `main.js` 和 `styles.css`，在最小 Obsidian WebView 模拟中运行。断言失败导致 Screenshot QA 工作流失败；无论成功与否尽可能上传截图。
 
 本方案**不修改业务代码迎合截图测试**。有业务功能无法在模拟宿主中可靠验证时，明确列入真实客户端待验收项，不伪造“通过”。
