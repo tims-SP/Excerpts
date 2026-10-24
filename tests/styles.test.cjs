@@ -152,3 +152,13 @@ test('filter pills and overflow pills retain small visual surfaces over large to
   assert.match(css,/\.excerpts-root button\.ex-capture-tag-toggle\s*\{[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
   assert.match(css,/\.excerpts-root \.ex-filter-tags button\.ex-btn\.ex-selected::before/);
 });
+
+
+test('native Markdown edit action is a separate secondary control with a compact mobile target',()=>{
+  assert.match(css,/\.excerpts-root button\.ex-open-editor\s*\{/);
+  assert.match(css,/min-height:\s*36px; height:\s*36px/);
+  assert.match(css,/\.excerpts-root \.ex-open-editor-icon svg\s*\{ width:\s*16px/);
+  assert.match(css,/@container \(max-width: 700px\)[\s\S]*?button\.ex-open-editor\s*\{[\s\S]*?min-width:\s*44px; min-height:\s*44px/);
+  assert.match(css,/\.ex-open-editor-label \{ display: none; \}/);
+  assert.match(css,/\.ex-compose-actions > button\.ex-btn-primary/);
+});
