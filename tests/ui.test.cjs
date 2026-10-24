@@ -861,6 +861,61 @@ test('clear filter during a canceled search restores bulk selection availability
   await t.close();
 });
 
+test('select all excludes externally missing files, and a second click cancels selection',async()=>{
+  const t=await fixture();
+  const missing=await t.plugin.app.vault.create('摘录/已不存在.md','外部删除的内容');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  t.files.delete(missing.path); // A vault change after entering selection mode.
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 1 \/ 1/);
+  assert.equal(root.querySelector('.ex-select-all').textContent,'取消全选');
+  assert.equal(root.querySelectorAll('.ex-card').length,1,'stale card is removed once');
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 1/);
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  assert.equal(t.files.has(t.md.path),true);
+  await t.close();
+});
+
+test('clicking an externally removed card prunes it from the current selection',async()=>{
+  const t=await fixture();
+  const stale=await t.plugin.app.vault.create('摘录/失效.md','已不存在');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  const card=Array.from(root.querySelectorAll('.ex-card')).find(el=>el.dataset.path===stale.path);
+  assert.ok(card);
+  t.files.delete(stale.path);
+  card.click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 1/);
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  await t.close();
+});
+
+test('batched selection keeps its original progress denominator when a file disappears',async()=>{
+  const t=await fixture();
+  for(let i=0;i<201;i++) await t.plugin.app.vault.create('摘录/候选-'+i+'.md','内容');
+  t.plugin.refreshViews(true);await wait();
+  const root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  t.files.delete(t.md.path);
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/正在选择 200 \/ 202/);
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  await wait();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 201 \/ 201/);
+  assert.equal(root.querySelector('.ex-select-all').textContent,'取消全选');
+  root.querySelector('.ex-select-all').click();
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0 \/ 201/);
+  await t.close();
+});
+
 test('manual refresh updates stale index without external auto-rescan',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   const next=await t.plugin.app.vault.create('摘录/新增.md','新内容');
