@@ -923,9 +923,10 @@ test('manual refresh updates stale index without external auto-rescan',async()=>
   await wait();
   assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[0].title,'刷新摘录');
-  assert.equal(Menu.last.items[0].disabled,false);
-  Menu.last.items[0].handler();await wait();
+  const refresh=Menu.last.items.find(item=>item.title==='刷新摘录');
+  assert.ok(refresh);
+  assert.equal(refresh.disabled,false);
+  refresh.handler();await wait();
   assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 2 条');
   assert.equal(root.querySelectorAll('.ex-card').length,2);
   await t.close();
@@ -964,7 +965,7 @@ test('scan indicator shows real running state and settles without progress',asyn
   assert.match(root.querySelector('.ex-scan-text').textContent,/扫描中/);
   assert.equal(root.querySelector('.ex-scan-progress').getAttribute('aria-valuenow'),'0');
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[0].disabled,true);
+  assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,true);
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.equal(status.dataset.state,'done');
   assert.equal(root.querySelector('.ex-scan-progress').hidden,true);
@@ -979,6 +980,6 @@ test('scan failure leaves previous cards visible and enables retry',async()=>{
   assert.equal(root.querySelector('.ex-scan-text').textContent,'扫描失败');
   assert.equal(root.querySelectorAll('.ex-card').length,1);
   clickByLabel(root,'页面选项');
-  assert.equal(Menu.last.items[0].disabled,false);
+  assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,false);
   await t.close();
 });
