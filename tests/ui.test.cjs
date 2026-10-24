@@ -328,8 +328,15 @@ test('inline Markdown tags remain visible but cannot be removed from frontmatter
   assert.ok(protectedRow);
   assert.equal(protectedRow.disabled,true);
   assert.ok(card.querySelector('.ex-tag-inline-hint').textContent.includes('Markdown'));
+  assert.match(card.querySelector('.ex-tag-inline-hint').textContent,/先结束标签编辑/);
+  assert.equal(card.querySelector('.ex-tag-source'),null,'no unusable edit link inside staged tag editing');
   card.querySelector('.ex-tag-cancel').click();
   assert.equal(t.getTagWrites(),0);
+  Menu.last=null;
+  clickByLabel(t.pane.contentEl,'卡片选项');
+  await waitFor(()=>Menu.last?.items?.some(item=>item.title==='编辑原文'),'native edit from card options');
+  Menu.last.items.find(item=>item.title==='编辑原文').handler();
+  await waitFor(()=>t.leaf.lastFile===t.md,'source opens after tag editor closes');
   await t.close();
 });
 
@@ -1180,7 +1187,11 @@ test('moving a homepage folder invalidates the old view and preserves a copyable
   assert.deepEqual(renderer.workspace,oldWorkspace,'runtime path must not silently migrate');
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'invalid');
   assert.equal(root.querySelector('.ex-scan-text').textContent,'页面已失效 · 请重新打开');
-  assert.match(root.querySelector('.ex-scan-status').title,/复制未保存的草稿/);
+  const hint=root.querySelector('.ex-page-hint');
+  assert.ok(hint && !hint.hidden,'invalid page warning must be readable on touch screens');
+  assert.match(hint.textContent,/未保存的草稿.*先复制.*重新打开/);
+  assert.equal(hint.dataset.state,'invalid');
+  assert.match(root.querySelector('.ex-scan-status').title,/复制未保存的草稿|未保存的草稿.*先复制/);
   assert.equal(text.value,'尚未保存的草稿');
   assert.equal(text.disabled,false,'allow draft selection and copy');
   assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
@@ -1203,6 +1214,53 @@ test('moving a homepage folder invalidates the old view and preserves a copyable
     'new home view indexed');
   assert.equal([...t.plugin.rendered][0].homeInvalid,false);
   assert.equal([...t.plugin.rendered][0].workspace.homePath,'收藏/首页.excerpts');
+  await t.close();
+});
+
+test('opening another excerpt page during scanning requires explicit manual refresh',async()=>{
+  const t=await fixture();
+  const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  let release, scans=0;
+  t.plugin.repo.scan=async(...args)=>{
+    scans++;
+    if(scans===1) await new Promise(resolve=>{release=resolve;});
+    return original(...args);
+  };
+  t.plugin.refreshViews(true);
+  await waitFor(()=>typeof release==='function','first page scan started');
+  const first=[...t.plugin.rendered][0];
+  assert.equal(first.scanStatus,'scanning');
+
+  const secondPane=t.plugin.factory({});
+  document.body.append(secondPane.contentEl);
+  await secondPane.openFile(t.home);
+  const second=[...t.plugin.rendered].find(renderer=>renderer!==first);
+  assert.ok(second);
+  const root=secondPane.contentEl;
+  assert.equal(second.scanStatus,'blocked');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'blocked');
+  assert.equal(root.querySelector('.ex-scan-text').textContent,'未扫描 · 请手动刷新');
+  assert.match(root.querySelector('.ex-page-hint').textContent,/其他摘录页.*手动刷新/);
+  assert.equal(root.querySelector('.ex-page-hint').hidden,false);
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'blocked');
+  assert.equal(root.querySelector('.ex-search').disabled,true);
+  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
+  assert.equal(scans,1,'the second initial scan is rejected, never queued');
+
+  release();
+  await waitFor(()=>first.scanStatus==='done','first scan completes');
+  assert.equal(scans,1,'finishing another page never replays a blocked scan');
+  assert.equal(second.scanStatus,'blocked','the refusal and manual guidance persist');
+
+  clickByLabel(root,'页面选项');
+  const refresh=Menu.last.items.find(item=>item.title==='刷新摘录');
+  assert.equal(refresh.disabled,false);
+  assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
+  refresh.handler();
+  await waitFor(()=>second.scanStatus==='done' && scans===2,'explicit second page refresh');
+  assert.equal(root.querySelector('.ex-page-hint').hidden,true);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  await secondPane.onUnloadFile(t.home);secondPane.contentEl.remove();
   await t.close();
 });
 
