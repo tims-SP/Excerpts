@@ -67,6 +67,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private searchToken = 0;
   private scanStatus: "idle" | "scanning" | "done" | "stale" | "error" = "idle";
   private scanDirty = false;
+  private homeInvalid = false;
   private scanDone = 0;
   private scanTotal = 0;
   private lastScanCount: number | null = null;
@@ -150,6 +151,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private reason(action: "save" | "refresh" | "search" | "filter" | "tag" | "select" | "delete" | "page"): string | null {
     if (this.disposed) return "页面已关闭";
+    if (this.homeInvalid) return "摘录页位置已变化，请从文件列表重新打开";
     if (this.plugin.isBusy(this)) return "另一个摘录页面正在操作，请完成后再试";
     if (this.scanStatus === "scanning") return "正在扫描，请完成后再操作";
     if (this.saveBusy) return "正在保存，请完成后再操作";
@@ -176,7 +178,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed || !this.searchButton) return;
     const searching = !this.searchReady;
     this.searchInput.disabled = Boolean(this.reason("search")) || searching;
-    const canClear = this.scanStatus !== "scanning" && Boolean(this.searchText) &&
+    const canClear = !this.homeInvalid && this.scanStatus !== "scanning" && Boolean(this.searchText) &&
       (searching || this.scanStatus === "stale" || this.scanStatus === "error");
     this.searchButton.disabled = !canClear && Boolean(this.reason("search"));
     this.searchButton.title = canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
@@ -196,7 +198,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Mark cached results obsolete without scheduling any scan. */
   markStale(path?: string): void {
-    if (this.disposed || (path && path !== this.workspace.homePath &&
+    if (this.disposed || this.homeInvalid || (path && path !== this.workspace.homePath &&
         !isExcerptPath(path, this.workspace))) return;
     if (this.scanStatus === "scanning") this.scanDirty = true;
     else this.scanStatus = "stale";
@@ -216,41 +218,53 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.workspace.recursive = this.plugin.settings.recursive;
     void this.reload(force);
   }
-  /** Follow moves of the open .excerpts file or one of its parent folders. */
-  relocateHomePath(path: string): void {
-    if (this.disposed || path === this.workspace.homePath) return;
-    const oldPath = this.workspace.homePath;
-    const draft = composerDrafts.get(oldPath);
-    if (draft) { composerDrafts.set(path, draft); composerDrafts.delete(oldPath); }
-    this.workspace.homePath = path;
-    const slash = path.lastIndexOf("/");
-    this.workspace.rootFolder = slash >= 0 ? path.slice(0, slash) || "/" : "/";
-    const title = this.containerEl.querySelector<HTMLElement>(".ex-title");
-    if (title && this.savedFilter) title.textContent = path.split("/").pop()?.replace(/\.excerpts$/i, "") ?? "摘录";
-    // An external rename changes the scope; cancel the old scan instead of restarting it.
-    this.refreshToken++;
+  /** An externally moved/deleted .excerpts entry cannot safely write using its old path. */
+  invalidateHome(): void {
+    if (this.disposed || this.homeInvalid) return;
+    this.homeInvalid = true;
+    this.refreshToken++; this.searchToken++;
     if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    this.scanRevealTimer = null; this.searchTimer = null;
     this.scanVisible = false;
     this.scanStatus = "stale";
-    this.scanDirty = false;
-    this.markStale();
+    this.searchReady = true;
+    if (!this.deleteBusy) {
+      this.selectionMode = "normal";
+      this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
+      this.openTagEditors.clear();
+      this.updateSelectionUI();
+      // Leave the composer and its unsaved text intact, but discard in-place editors.
+      for (const editor of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-tag-editor"))) {
+        editor.hidden = true;
+        editor.replaceChildren();
+      }
+    }
+    this.renderScanStatus();
+    this.announceScan("摘录页位置已变化，请从文件列表重新打开");
+    this.updateAvailability();
+    new Notice("摘录页位置已变化，请从文件列表重新打开");
   }
   private renderScanStatus(): void {
-    const status = this.scanStatus === "scanning" && !this.scanVisible
-      ? (this.lastScanCount === null ? "idle" : "done") : this.scanStatus;
+    const status = this.homeInvalid ? "invalid" :
+      this.scanStatus === "scanning" && !this.scanVisible
+        ? (this.lastScanCount === null ? "idle" : "done") : this.scanStatus;
     const labels = {
       idle: "未扫描",
       scanning: "扫描中 " + this.scanDone.toLocaleString("zh-CN") + "/" +
         this.scanTotal.toLocaleString("zh-CN"),
       done: "已扫描 · " + (this.lastScanCount ?? 0).toLocaleString("zh-CN") + " 条",
       stale: "待刷新 · " + (this.lastScanCount ?? 0).toLocaleString("zh-CN") + " 条",
-      error: "扫描失败"
+      error: "扫描失败",
+      invalid: "页面已失效 · 请重新打开"
     };
     this.scanStatusEl.dataset.state = status;
     this.scanTextEl.textContent = labels[status];
+    this.scanStatusEl.title = this.homeInvalid ?
+      "当前页面不能继续操作。复制未保存的草稿后，请从文件列表重新打开摘录页。" : "";
     setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
       status === "done" ? "check" : status === "stale" ? "refresh-cw" :
-      status === "error" ? "alert-circle" : "circle-dashed");
+      status === "error" || status === "invalid" ? "alert-circle" : "circle-dashed");
     this.scanProgressEl.hidden = status !== "scanning";
     if (status === "scanning") {
       this.scanProgressEl.setAttribute("aria-valuenow", String(this.scanDone));
@@ -743,7 +757,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectedFooterCountEl.textContent = this.selectionBusy ?
       "正在选择…" : "已选择 " + chosen + " 条";
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
-    this.selectionAllButton.disabled = this.deleteBusy || this.selectionBusy || total === 0;
+    this.selectionAllButton.disabled = this.homeInvalid || this.deleteBusy || this.selectionBusy || total === 0;
     this.selectionDoneButton.disabled = this.deleteBusy || this.selectionBusy;
     const cancel = this.selectionFooterEl.querySelector<HTMLButtonElement>(".ex-select-cancel");
     if (cancel) cancel.disabled = this.deleteBusy || this.selectionBusy;
@@ -763,7 +777,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateSelectionControls();
   }
   private toggleSelection(path: string): void {
-    if (this.selectionMode !== "selecting" || this.selectionBusy || !this.selectionScope.has(path)) return;
+    if (this.homeInvalid || this.selectionMode !== "selecting" || this.selectionBusy || !this.selectionScope.has(path)) return;
     if (this.selectedPaths.has(path)) {
       this.selectedPaths.delete(path);
       this.selectedCandidates.delete(path);
@@ -791,7 +805,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateSelectionControls();
   }
   private async toggleSelectAll(): Promise<void> {
-    if (this.selectionMode !== "selecting" || this.selectionBusy || this.deleteBusy) return;
+    if (this.homeInvalid || this.selectionMode !== "selecting" || this.selectionBusy || this.deleteBusy) return;
     const allSelected = this.selectedPaths.size === this.selectionScope.size;
     this.selectedPaths.clear(); this.selectedCandidates.clear();
     if (allSelected) {
@@ -897,7 +911,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private showSuggestions: () => void = () => {};
   private async reload(force = false): Promise<void> {
-    if (this.disposed || this.isBusy() || this.plugin.isBusy(this)) return;
+    if (this.disposed || this.homeInvalid || this.isBusy() || this.plugin.isBusy(this)) return;
     const token = ++this.refreshToken;
     const cancelled = () => this.disposed || token !== this.refreshToken;
     // Supersede in-flight full-text searches immediately, not after the scan completes.
@@ -1392,12 +1406,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const inlineInfo = item.inlineTags.length
       ? node("div", "ex-tag-inline-hint", "正文标签仅能在 Markdown 原文中修改。") : null;
     if (inlineInfo) {
-      const openOriginal = button("编辑原文", () =>
-        void this.plugin.openMarkdown(item.path).catch(notify), "ex-tag-source");
+      const openOriginal = button("编辑原文", () => {
+        if (!this.guard("page")) return;
+        void this.plugin.openMarkdown(item.path).catch(notify);
+      }, "ex-tag-source");
       inlineInfo.append(openOriginal);
     }
     const commit = async () => {
-      if (this.pendingTags.has(item.path)) return;
+      if (this.pendingTags.has(item.path) || !this.guard("tag")) return;
       if (original.length === selected.size && original.every(tag => selected.has(tag))) {
         this.closeTagEditor(item, card); return;
       }
