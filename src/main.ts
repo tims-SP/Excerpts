@@ -11,6 +11,8 @@ export default class ExcerptsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   repo!: EntryRepository;
   private rendered = new Set<ExcerptsRenderChild>();
+  /** Exclusive owner of the single Vault-wide index scan; never released before scan settles. */
+  private scanOwner: ExcerptsRenderChild | null = null;
   private settingsTab: ExcerptsSettingTab | null = null;
   /** Session-only candidates: never sweep unrelated or pre-existing notes. */
   private temporaryEditors = new Map<TFile, { path: string; frontmatter: string }>();
@@ -153,8 +155,21 @@ export default class ExcerptsPlugin extends Plugin {
     }
   }
   canOpenHome(): boolean { return !this.isBusy(); }
+  /** Acquire synchronously before any scan work or yield. Failed attempts are not queued. */
+  tryAcquireScan(owner: ExcerptsRenderChild): boolean {
+    if (this.scanOwner !== null) return false;
+    this.scanOwner = owner;
+    return true;
+  }
+  /** A cancelled/unloaded scan keeps its lock until its async task actually settles. */
+  releaseScan(owner: ExcerptsRenderChild): void {
+    if (this.scanOwner !== owner) return;
+    this.scanOwner = null;
+    this.notifyActivityChange(owner);
+  }
   isBusy(except?: ExcerptsRenderChild): boolean {
-    return [...this.rendered].some(child => child !== except && child.isBusy());
+    return (this.scanOwner !== null && this.scanOwner !== except) ||
+      [...this.rendered].some(child => child !== except && child.isBusy());
   }
   notifyActivityChange(sender: ExcerptsRenderChild): void {
     for (const child of this.rendered) if (child !== sender) child.syncControls();
