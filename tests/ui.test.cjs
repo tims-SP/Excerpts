@@ -346,11 +346,11 @@ test('capture composer has a separate writing body, a single stable footer and f
   const composer=root.querySelector('.ex-composer');
   assert.ok(composer.querySelector('.ex-compose-body > .ex-compose-text'));
   assert.equal(root.querySelector('.ex-compose-text').rows,3);
-  assert.equal(root.querySelector('.ex-compose-text').placeholder,'现在想记录的是…');
+  assert.equal(root.querySelector('.ex-compose-text').placeholder,'摘录文字，或写下想法…');
   assert.equal(composer.children.length,3);
   assert.equal(composer.children[0].className,'ex-compose-body');
-  assert.equal(composer.children[1].className,'ex-capture-tags');
-  assert.equal(composer.children[2].className,'ex-compose-actions');
+  assert.equal(composer.children[1].className,'ex-compose-actions');
+  assert.equal(composer.children[2].className,'ex-capture-tags');
   const actions=composer.querySelector('.ex-compose-actions');
   assert.equal(actions.children.length,3);
   assert.equal(actions.children[0].className,'ex-capture-options');
@@ -360,6 +360,7 @@ test('capture composer has a separate writing body, a single stable footer and f
   const toggle=actions.querySelector('.ex-capture-tag-toggle');
   assert.equal(toggle.textContent,'标签');
   assert.equal(toggle.getAttribute('aria-expanded'),'false');
+  assert.equal(actions.children[0].firstElementChild,toggle,'tag entry must precede selected chips');
   await t.close();
 });
 

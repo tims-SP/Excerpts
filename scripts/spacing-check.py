@@ -60,7 +60,7 @@ with sync_playwright() as playwright:
                 };
             }""")
             assert coords["documentWidth"] <= width, (theme, width, coords)
-            assert coords["composerBg"] != coords["cardBg"], (theme, width, "composer/card surface", coords)
+            assert coords["composerBg"] == coords["cardBg"], (theme, width, "shared quiet surface", coords)
             assert coords["moreRight"] <= coords["cardRight"], (theme, width, coords)
             assert coords["inputHeight"] > 0, coords
             # Container queries use the Obsidian pane width, not the device category.

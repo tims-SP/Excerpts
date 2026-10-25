@@ -11,6 +11,7 @@
   --ex-input-surface: var(--background-primary);
   --ex-chip-surface: var(--background-primary);
   --ex-radius-surface: var(--radius-l, 12px);
+  --ex-radius-composer: 16px;
   --ex-radius-input: var(--radius-m, 8px);
   --ex-radius-option: var(--radius-s, 4px);
   --ex-radius-pill: 999px;
@@ -85,39 +86,44 @@
 }
 .excerpts-root button.ex-btn-primary:hover { background: var(--interactive-accent-hover); color: var(--text-on-accent); }
 
-/* Flomo-inspired capture card: one quiet outer surface with generous editable space.
- * Everything inside uses the same text baseline; footer controls stay at the bottom. */
+/* A quiet capture canvas; editable text and controls never overlap. */
 .excerpts-root .ex-composer {
   --ex-compose-pad-x: 20px;
-  --ex-compose-pad-top: 16px;
+  --ex-compose-pad-top: 20px;
   --ex-compose-pad-bottom: 12px;
   display: flex; flex-direction: column; min-width: 0;
   margin-bottom: 28px;
   padding: var(--ex-compose-pad-top) var(--ex-compose-pad-x) var(--ex-compose-pad-bottom);
-  background: var(--background-primary); border: 1px solid var(--ex-border);
-  border-radius: var(--ex-radius-surface); box-shadow: none;
+  background: var(--background-secondary);
+  border: 1px solid color-mix(in srgb, var(--ex-border) 45%, transparent);
+  border-radius: var(--ex-radius-composer); box-shadow: none;
   transition: border-color 140ms ease;
 }
-.excerpts-root .ex-composer:hover { border-color: var(--background-modifier-border-hover, var(--ex-border)); }
+.excerpts-root .ex-composer:hover {
+  border-color: color-mix(in srgb, var(--ex-border) 65%, transparent);
+}
 .excerpts-root .ex-composer:focus-within {
-  border-color: var(--background-modifier-border-focus, var(--interactive-accent));
+  border-color: color-mix(in srgb, var(--background-modifier-border-focus, var(--interactive-accent)) 65%, var(--ex-border));
 }
 .excerpts-root .ex-compose-body { display: block; width: 100%; min-width: 0; }
 .excerpts-root .ex-composer textarea.ex-compose-text,
 .excerpts-root .ex-composer textarea.ex-compose-text:is(:hover, :focus, :focus-visible) {
   display: block; width: 100%; min-width: 0; max-width: 100%;
-  min-height: 84px; height: auto; max-height: 320px;
+  min-height: 96px; height: auto; max-height: 320px;
   margin: 0; padding: 0; border: 0 !important; border-radius: 0 !important;
   background: transparent !important; background-image: none !important;
   box-shadow: none !important; outline: none !important;
   appearance: none; -webkit-appearance: none;
   color: var(--text-normal); -webkit-text-fill-color: var(--text-normal);
   font-family: var(--font-text, var(--font-interface));
-  font-size: var(--font-text-size, 16px); font-weight: 400;
-  line-height: 1.65; letter-spacing: inherit; text-align: left;
+  font-size: max(16px, var(--font-text-size, 16px)); font-weight: 400;
+  line-height: 1.6; letter-spacing: inherit; text-align: left;
   resize: none; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere;
 }
-.excerpts-root .ex-composer textarea.ex-compose-text::placeholder { color: var(--text-muted); opacity: 1; }
+.excerpts-root .ex-composer textarea.ex-compose-text::placeholder {
+  color: var(--text-muted); opacity: 1;
+  font: inherit; line-height: inherit;
+}
 .excerpts-root .ex-compose-actions {
   display: flex; align-items: center; justify-content: space-between;
   min-height: 36px; margin-top: 12px; padding: 0; gap: 12px;
@@ -152,42 +158,56 @@
   background: transparent; color: var(--text-muted); border-radius: var(--ex-radius-pill);
   font-size: 11px; font-weight: 400;
 }
-/* Secondary native Markdown entry beside Save, never over the text area. */
+/* Secondary native Markdown entry remains icon-only on every screen. */
 .excerpts-root button.ex-open-editor {
-  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-  min-height: 36px; height: 36px; padding: 0 10px; gap: 6px;
-  border: 0; border-radius: var(--ex-radius-input);
-  background: transparent; color: var(--text-muted);
-  font-size: 12px; font-weight: 400; box-shadow: none;
+  flex: 0 0 36px; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; min-width: 36px; min-height: 36px; height: 36px;
+  padding: 0; border: 0; border-radius: var(--ex-radius-input);
+  background: transparent; color: var(--text-muted); box-shadow: none;
 }
 .excerpts-root button.ex-open-editor:hover {
   color: var(--text-normal); background: var(--background-modifier-hover);
 }
+.excerpts-root .ex-open-editor-label { display: none; }
 .excerpts-root .ex-open-editor-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px;
+  width: 18px; height: 18px;
 }
-.excerpts-root .ex-open-editor-icon svg { width: 16px; height: 16px; }
+.excerpts-root .ex-open-editor-icon svg { width: 18px; height: 18px; }
 .excerpts-root .ex-compose-actions { gap: 8px; }
+/* 44px mobile hit target paints an optically quieter 36px save capsule. */
 .excerpts-root .ex-compose-actions > button.ex-btn-primary {
-  flex: 0 0 auto; width: 64px; min-width: 64px; min-height: 36px;
-  padding: 0 12px; border-radius: var(--ex-radius-pill); border: 0; box-shadow: none;
+  position: relative; isolation: isolate; z-index: 0;
+  flex: 0 0 64px; width: 64px; min-width: 64px;
+  min-height: 36px; height: 36px; padding: 0 12px;
+  border-radius: var(--ex-radius-pill); border: 0; box-shadow: none;
+  background: transparent; color: var(--text-on-accent);
   font-size: 13px; font-weight: 500;
 }
+.excerpts-root .ex-compose-actions > button.ex-btn-primary::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  border-radius: inherit; background: var(--interactive-accent);
+}
 .excerpts-root .ex-compose-actions > button.ex-btn-primary:disabled {
-  color: var(--text-muted); background: var(--background-modifier-hover); opacity: 1;
+  color: var(--text-muted); background: transparent; opacity: 1;
+}
+.excerpts-root .ex-compose-actions > button.ex-btn-primary:disabled::before {
+  background: var(--background-modifier-hover);
 }
 .excerpts-root .ex-compose-actions > button.ex-btn-primary:hover:not(:disabled) {
-  color: var(--text-on-accent); background: var(--interactive-accent-hover);
+  color: var(--text-on-accent); background: transparent;
+}
+.excerpts-root .ex-compose-actions > button.ex-btn-primary:hover:not(:disabled)::before {
+  background: var(--interactive-accent-hover);
 }
 .excerpts-root .ex-capture-tags {
   display: flex; flex-direction: column; min-width: 0;
   padding: 12px 0 0; margin-top: 12px;
-  border-top: 1px solid var(--ex-border);
+  border-top: 1px solid color-mix(in srgb, var(--ex-border) 55%, transparent);
 }
 .excerpts-root .ex-composer .ex-tag-picker { gap: 8px; }
 .excerpts-root .ex-composer .ex-tag-suggestions { max-height: 192px; }
-.excerpts-root .ex-composer .ex-tag-search { background: var(--background-secondary); }
+.excerpts-root .ex-composer .ex-tag-search { background: var(--background-primary); }
 .excerpts-root .ex-capture-tags[hidden],
 .excerpts-root .ex-search-wrap[hidden],
 .excerpts-root .ex-filter-tags[hidden],
@@ -199,7 +219,7 @@
   gap: 8px; padding: 0 10px; border-radius: var(--ex-radius-input);
   background: var(--background-primary); border: 1px solid transparent;
 }
-.excerpts-root .ex-composer .ex-tag-search { background: var(--background-secondary); }
+.excerpts-root .ex-composer .ex-tag-search { background: var(--background-primary); }
 .excerpts-root .ex-tag-search:focus-within {
   border-color: var(--background-modifier-border-focus, var(--interactive-accent));
   outline: none;
@@ -479,26 +499,28 @@
   .excerpts-root .ex-scan-text { font-size: 11px; }
   .excerpts-root .ex-scan-progress { width: 80px; }
   .excerpts-root .ex-composer {
-    --ex-compose-pad-x: 14px; --ex-compose-pad-top: 14px;
-    --ex-compose-pad-bottom: 10px; margin-bottom: 24px;
+    --ex-compose-pad-x: 16px; --ex-compose-pad-top: 18px;
+    --ex-compose-pad-bottom: 12px; margin-bottom: 24px;
   }
   .excerpts-root .ex-composer textarea.ex-compose-text {
-    min-height: 78px; max-height: min(240px, 34dvh);
+    min-height: 88px; max-height: min(240px, 34dvh);
     font-size: max(16px, var(--font-text-size, 16px));
   }
-  .excerpts-root .ex-compose-actions { min-height: 44px; margin-top: 10px; gap: 8px; }
+  .excerpts-root .ex-compose-actions { min-height: 44px; margin-top: 12px; gap: 8px; }
   .excerpts-root button.ex-open-editor {
     width: 44px; min-width: 44px; min-height: 44px; height: 44px; padding: 0;
   }
-  .excerpts-root .ex-open-editor-label { display: none; }
   .excerpts-root .ex-open-editor-icon,
   .excerpts-root .ex-open-editor-icon svg { width: 18px; height: 18px; }
   .excerpts-root .ex-capture-options { min-height: 44px; }
   .excerpts-root .ex-capture-selected { height: 44px; }
-  .excerpts-root .ex-capture-tags { margin-top: 10px; padding-top: 10px; }
+  .excerpts-root .ex-capture-tags { margin-top: 12px; padding-top: 12px; }
   .excerpts-root .ex-composer .ex-tag-suggestions { max-height: 176px; }
   .excerpts-root .ex-compose-actions > button.ex-btn-primary {
-    width: 72px; min-width: 72px; min-height: 44px;
+    width: 72px; min-width: 72px; min-height: 44px; height: 44px;
+  }
+  .excerpts-root .ex-compose-actions > button.ex-btn-primary::before {
+    top: 4px; bottom: 4px;
   }
   .excerpts-root button.ex-capture-tag-toggle { min-height: 44px; }
   .excerpts-root button.ex-capture-overflow { min-height: 44px; }

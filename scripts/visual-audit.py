@@ -152,7 +152,7 @@ def geometry(page, theme, width):
     assert result["quote"][3] <= result["cardFooter"][2] + 2, ("card text/footer overlap", ctx)
     assert result["cardFooter"][3] <= result["card"][3] + 1, ("card footer escaped", ctx)
     assert result["tagRadius"] == "999px" and result["tagVisual"] == "22px", ("tag pill drift", ctx)
-    assert result["composerRadius"] == "12px", ("composer shape drift", ctx)
+    assert result["composerRadius"] == "16px", ("composer shape drift", ctx)
     assert result["textareaBorder"] == "0px", ("textarea border drift", ctx)
     assert result["textareaBg"] == "rgba(0, 0, 0, 0)", ("textarea chrome drift", ctx)
     assert result["cardPadding"] == (14 if width <= 700 else 20), ("card inset drift", ctx)

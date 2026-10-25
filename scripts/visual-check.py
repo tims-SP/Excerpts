@@ -104,15 +104,15 @@ with sync_playwright() as playwright:
                 };
             }""")
             compact = page.locator(".excerpts-native-host").evaluate("(el) => el.clientWidth <= 700")
-            assert layout["placeholder"] == "现在想记录的是…", (theme,width,layout)
-            assert layout["radius"] == "12px", (theme,width,layout)
+            assert layout["placeholder"] == "摘录文字，或写下想法…", (theme,width,layout)
+            assert layout["radius"] == "16px", (theme,width,layout)
             assert layout["saveRadius"] == "999px", (theme,width,layout)
             assert layout["textareaBorder"] == "0px", (theme,width,layout)
             assert layout["textareaBg"] == "rgba(0, 0, 0, 0)", (theme,width,layout)
-            assert layout["paddingLeft"] == (14 if compact else 20), (theme,width,layout)
-            assert layout["paddingTop"] == (14 if compact else 16), (theme,width,layout)
-            assert layout["paddingBottom"] == (10 if compact else 12), (theme,width,layout)
-            assert layout["textHeight"] >= (78 if compact else 84), (theme,width,layout)
+            assert layout["paddingLeft"] == (16 if compact else 20), (theme,width,layout)
+            assert layout["paddingTop"] == (18 if compact else 20), (theme,width,layout)
+            assert layout["paddingBottom"] == 12, (theme,width,layout)
+            assert layout["textHeight"] >= (88 if compact else 96), (theme,width,layout)
             assert layout["footerHeight"] >= (44 if compact else 36), (theme,width,layout)
             assert abs(layout["bodyLeft"] - layout["textLeft"]) < 1, (theme,width,layout)
             assert layout["footerTop"] >= layout["textTop"] + layout["textHeight"], (theme,width,layout)
@@ -136,6 +136,9 @@ with sync_playwright() as playwright:
 
             # Even many tags cannot push the save button away or produce a second footer row.
             page.locator(".ex-capture-tag-toggle").click()
+            panel = page.locator(".ex-capture-tags").bounding_box()
+            footer = page.locator(".ex-compose-actions").bounding_box()
+            assert panel["y"] >= footer["y"] + footer["height"] - 1, (theme,width,"tag panel covers footer")
             for row in page.locator(".ex-capture-tags .ex-tag-choice").all():
                 if row.get_attribute("aria-selected") == "false":
                     row.click()
