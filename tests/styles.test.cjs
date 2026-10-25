@@ -110,6 +110,11 @@ test('section and footer vertical rhythm is compact without shrinking touch cont
   assert.match(css,/\.excerpts-root \.ex-card-footer\s*\{[^}]*margin-top:\s*var\(--ex-space-2\)/);
   assert.match(css,/\.excerpts-root \.ex-native-markdown p \{[^}]*var\(--ex-prose-gap/);
   assert.match(css,/\.excerpts-root \.ex-tag-editor\s*\{[^}]*padding:\s*var\(--ex-space-2\) 0 0; margin-top:\s*var\(--ex-space-3\)/);
+  assert.match(css,/\.excerpts-root \.ex-tag-selected\s*\{[^}]*flex-wrap: wrap/);
+  assert.match(css,/\.excerpts-root \.ex-tag-selected-chip\s*\{[^}]*max-width: 100%/);
+  assert.match(css,/\.excerpts-root button\.ex-add-tag\.ex-is-cancelling/);
+  assert.match(css,/\.excerpts-root \.ex-tag-editor \.ex-tag-suggestions\s*\{\s*max-height: 192px;/);
+  assert.doesNotMatch(css,/\.excerpts-root button\.ex-tag-cancel\s*\{/);
   assert.match(css,/\.excerpts-root button\.ex-group-trigger\s*\{[^}]*min-height:\s*40px/);
 });
 
