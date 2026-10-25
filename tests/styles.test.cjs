@@ -17,14 +17,14 @@ test('composer remains a single-surface textarea with theme-native focus and res
   assert.match(css,/border-radius:\s*0\s*!important/);
   assert.match(css,/background-image:\s*none\s*!important/);
   assert.match(css,/appearance:\s*none/);
-  assert.match(css,/min-height:\s*84px; height: auto; max-height: 320px/);
-  assert.match(css,/min-height:\s*78px; max-height: min\(240px, 34dvh\)/);
+  assert.match(css,/min-height:\s*96px; height: auto; max-height: 320px/);
+  assert.match(css,/min-height:\s*88px; max-height: min\(240px, 34dvh\)/);
   assert.match(css,/--ex-compose-pad-x: 20px/);
-  assert.match(css,/--ex-compose-pad-top: 16px/);
+  assert.match(css,/--ex-compose-pad-top: 20px/);
   assert.match(css,/--ex-compose-pad-bottom: 12px/);
-  assert.match(css,/--ex-compose-pad-x: 14px/);
-  assert.match(css,/--ex-compose-pad-top: 14px/);
-  assert.match(css,/--ex-compose-pad-bottom: 10px/);
+  assert.match(css,/--ex-compose-pad-x: 16px/);
+  assert.match(css,/--ex-compose-pad-top: 18px/);
+  assert.match(css,/--ex-compose-pad-bottom: 12px/);
   assert.match(css,/\.ex-compose-body/);
   assert.match(css,/\.ex-capture-overflow/);
   assert.match(css,/\.ex-capture-tag-toggle/);
@@ -91,8 +91,8 @@ test('section and footer vertical rhythm is compact without shrinking touch cont
 test('flomo composer controls remain aligned, single-row and distinct from markdown cards',()=>{
   const composer=css.match(/\.excerpts-root \.ex-composer \{([\s\S]*?)\}/)?.[1]||'';
   const actions=css.match(/\.excerpts-root \.ex-compose-actions \{([\s\S]*?)\}/)?.[1]||'';
-  assert.match(composer,/border-radius:\s*var\(--ex-radius-surface\)/);
-  assert.match(composer,/background: var\(--background-primary\)/);
+  assert.match(composer,/border-radius:\s*var\(--ex-radius-composer\)/);
+  assert.match(composer,/background: var\(--background-secondary\)/);
   assert.match(composer,/padding: var\(--ex-compose-pad-top\) var\(--ex-compose-pad-x\) var\(--ex-compose-pad-bottom\)/);
   assert.match(actions,/margin-top: 12px/);
   assert.match(actions,/min-height: 36px/);
@@ -101,7 +101,7 @@ test('flomo composer controls remain aligned, single-row and distinct from markd
   assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?width: 64px/);
   assert.match(css,/\.excerpts-root \.ex-compose-actions > button\.ex-btn-primary \{[\s\S]*?border-radius:\s*var\(--ex-radius-pill\)/);
   assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-suggestions \{ max-height: 192px/);
-  assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-search \{ background: var\(--background-secondary\)/);
+  assert.match(css,/\.excerpts-root \.ex-composer \.ex-tag-search \{ background: var\(--background-primary\)/);
   assert.match(css,/@container \(max-width: 700px\)[\s\S]*?width: 72px/);
 });
 
@@ -112,7 +112,7 @@ test('mobile feed gutters are 8/12px, with 14px card insets and no extra host pa
   assert.match(css,/padding: var\(--ex-space-5\) var\(--ex-space-5\) 64px/); // Desktop remains at 24px.
   assert.match(narrow,/\.excerpts-root \{ padding: var\(--ex-space-4\) 12px 56px; \}/);
   assert.match(compact,/\.excerpts-root \{ padding: var\(--ex-space-3\) 8px 48px; \}/);
-  assert.match(narrow,/--ex-compose-pad-x: 14px/);
+  assert.match(narrow,/--ex-compose-pad-x: 16px/);
   assert.match(narrow,/--ex-card-pad: 14px/);
   assert.match(narrow,/\.excerpts-root \.ex-day-rail \{ padding: 0;/);
   assert.doesNotMatch(compact,/--ex-card-pad:/); // Inherit the 14px inset below 400px.
@@ -136,7 +136,7 @@ test('semantic shape tokens distinguish themed surfaces, inputs, options and pil
   assert.match(root,/--ex-radius-input:\s*var\(--radius-m, 8px\)/);
   assert.match(root,/--ex-radius-option:\s*var\(--radius-s, 4px\)/);
   assert.match(root,/--ex-radius-pill:\s*999px/);
-  assert.match(css,/\.excerpts-root \.ex-composer\s*\{[^}]*border-radius:\s*var\(--ex-radius-surface\)/);
+  assert.match(css,/\.excerpts-root \.ex-composer\s*\{[^}]*border-radius:\s*var\(--ex-radius-composer\)/);
   assert.match(css,/\.excerpts-root \.ex-card\s*\{[^}]*border-radius:\s*var\(--ex-radius-surface\)/);
   assert.match(css,/\.excerpts-root button\.ex-icon-button\s*\{[^}]*border-radius:\s*50%/);
   assert.match(css,/\.excerpts-root button\.ex-tag-done\s*\{[^}]*border-radius:\s*var\(--ex-radius-pill\)/);
@@ -157,7 +157,7 @@ test('filter pills and overflow pills retain small visual surfaces over large to
 test('native Markdown edit action is a separate secondary control with a compact mobile target',()=>{
   assert.match(css,/\.excerpts-root button\.ex-open-editor\s*\{/);
   assert.match(css,/min-height:\s*36px; height:\s*36px/);
-  assert.match(css,/\.excerpts-root \.ex-open-editor-icon svg\s*\{ width:\s*16px/);
+  assert.match(css,/\.excerpts-root \.ex-open-editor-icon svg\s*\{ width:\s*18px/);
   assert.match(css,/@container \(max-width: 700px\)[\s\S]*?button\.ex-open-editor\s*\{[\s\S]*?min-width:\s*44px; min-height:\s*44px/);
   assert.match(css,/\.ex-open-editor-label \{ display: none; \}/);
   assert.match(css,/\.ex-compose-actions > button\.ex-btn-primary/);
