@@ -163,7 +163,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
         if (this.pageMode === "calendar") {
-          this.syncCalendarScrollOwner();
           this.calendarView?.onShown(); // Move date detail when a responsive breakpoint changes.
           return; // Hidden feed geometry is not measurable.
         }
@@ -971,23 +970,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.containerEl.dataset.page = "calendar";
     viewport.scrollTop = 0; // Most recent month is rendered first on narrow views.
     this.calendarView.onShown();
-    this.syncCalendarScrollOwner();
-    if (typeof requestAnimationFrame === "function")
-      requestAnimationFrame(() => this.syncCalendarScrollOwner());
     this.calendarView.element.querySelector<HTMLButtonElement>(".ex-calendar-back")?.focus({ preventScroll: true });
   }
-  /** Never apply sticky positioning against an Obsidian-owned outer scrollport. */
-  private syncCalendarScrollOwner(): void {
-    if (this.pageMode !== "calendar" || this.disposed) return;
-    const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
-    if (!viewport) return;
-    const overflow = viewport.ownerDocument.defaultView?.getComputedStyle(viewport).overflowY;
-    const ownsScroll = viewport.clientHeight > 0 &&
-      viewport.scrollHeight > viewport.clientHeight + 2 &&
-      (overflow === "auto" || overflow === "scroll");
-    this.containerEl.dataset.calendarScrollOwner = ownsScroll ? "own" : "outer";
-  }
-
   private showFeed(restore = true): void {
     if (this.pageMode !== "calendar") return;
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
@@ -995,7 +979,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.calendarView) this.calendarView.element.hidden = true;
     this.feedEl.hidden = false;
     delete this.containerEl.dataset.page;
-    delete this.containerEl.dataset.calendarScrollOwner;
     // Layout is measurable only once the feed is visible again.
     if (viewport) viewport.scrollTop = restore ? this.feedScrollTop : 0;
     this.timeline?.setSuspended(false);
