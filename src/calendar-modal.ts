@@ -111,7 +111,7 @@ export class ExcerptsCalendarModal extends Modal {
     }
     const fragment = document.createDocumentFragment();
     let shownMonth = "";
-    for (const week of data.weeks) {
+    for (const [weekIndex, week] of data.weeks.entries()) {
       const row = document.createElement("div");
       row.className = "ex-calendar-week-row";
       const month = document.createElement("span");
@@ -120,10 +120,17 @@ export class ExcerptsCalendarModal extends Modal {
       // Label the first week containing a new month, including midweek boundaries.
       const monthKey = valid.length ? valid[valid.length - 1].date.slice(0, 7) : "";
       if (monthKey && monthKey !== shownMonth) {
-        const monthNumber = Number(monthKey.slice(5, 7));
-        month.textContent = monthNumber + "月";
-        month.title = monthKey.slice(0, 4) + "年" + monthNumber + "月";
-        if (monthNumber === 1 || !shownMonth) month.dataset.year = monthKey.slice(0, 4);
+        const following = data.weeks[weekIndex + 1]?.filter(day => day.inRange);
+        const followingMonth = following?.[following.length - 1]?.date.slice(0, 7);
+        // A single clipped opening week would collide with the next month's desktop label.
+        const omitClippedStart = weekIndex === 0 && followingMonth &&
+          followingMonth !== monthKey;
+        if (!omitClippedStart) {
+          const monthNumber = Number(monthKey.slice(5, 7));
+          month.textContent = monthNumber + "月";
+          month.title = monthKey.slice(0, 4) + "年" + monthNumber + "月";
+          if (monthNumber === 1 || !shownMonth) month.dataset.year = monthKey.slice(0, 4);
+        }
         shownMonth = monthKey;
       }
       const cells = document.createElement("div");

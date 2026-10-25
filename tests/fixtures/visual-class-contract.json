@@ -216,6 +216,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "fabc1d651e5c1a767e08b1e868f1557a97df94be",
-  "stylesheet_review": "CSS layout/color/shape changes require reviewing Screenshot QA artifacts and explicitly approving a new stylesheet_git_blob_sha."
+  "stylesheet_git_blob_sha": "13d2251d3c3352038d98a165a7c7974481bd6736",
+  "stylesheet_review": "Reviewed Screenshot QA for mobile 320/390px and narrow 768px vertical calendar, desktop 1280px horizontal calendar, light/dark, and browser layout geometry; explicit approval of styles.css git blob SHA."
 }
