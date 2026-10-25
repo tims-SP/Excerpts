@@ -166,6 +166,7 @@
     "ex-scan-status",
     "ex-scan-text",
     "ex-search",
+    "ex-search-clear",
     "ex-search-wrap",
     "ex-section",
     "ex-select-all",
