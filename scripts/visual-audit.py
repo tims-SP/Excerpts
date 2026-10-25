@@ -68,7 +68,8 @@ SCENARIOS = [
     "home", "composer-picker", "composer-draft", "search-empty",
     "filter", "page-menu", "section-open", "card-picker", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
-    "saved-filter-error", "settings", "folder", "stale", "scan-progress", "invalid"
+    "saved-filter-error", "settings", "folder", "scan-complete",
+    "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
 WIDTHS = (320, 390, 768, 1280)
@@ -175,8 +176,10 @@ with sync_playwright() as playwright:
             if theme == "dark":
                 page.evaluate("document.documentElement.classList.add('theme-dark')")
             page.wait_for_selector(".ex-card .ex-section", timeout=15000)
+            page.wait_for_selector(".ex-scan-status[hidden]", timeout=5000)
+            assert page.locator(".ex-scan-status").get_attribute("data-state") == "done"
             manifest["geometry"][key] = geometry(page, theme, width)
-            screenshot(page, theme, width, "home", "page-header", "scan-status",
+            screenshot(page, theme, width, "home", "page-header",
                        "composer", "composer-input", "composer-toolbar", "composer-save",
                        "composer-edit-document", "list-toolbar", "date-rail",
                        "card", "card-content", "card-sections", "card-tags",
@@ -289,8 +292,36 @@ with sync_playwright() as playwright:
               document.getElementById('mount').hidden = false;
             }""")
 
-            # Status painter is exercised in isolation; no fake completed scan
-            # or modified application business behavior.
+            # The completed index is real; exercise its visual feedback separately.
+            page.evaluate("""() => {
+              const renderer = window.__pane.renderer;
+              if (renderer.scanStatus !== 'done') throw Error('expected ready index');
+              renderer.completionVisible = true;
+              renderer.renderScanStatus();
+            }""")
+            assert page.locator(".ex-scan-status").is_visible()
+            screenshot(page, theme, width, "scan-complete", "scan-status")
+            page.evaluate("""() => {
+              const renderer = window.__pane.renderer;
+              renderer.completionVisible = false;
+              renderer.renderScanStatus();
+            }""")
+            assert not page.locator(".ex-scan-status").is_visible()
+            # Persistent exceptional statuses share the existing painter.
+            page.evaluate("""() => {
+              const renderer = window.__pane.renderer;
+              renderer.scanStatus = 'blocked';
+              renderer.renderScanStatus();
+            }""")
+            assert page.locator(".ex-scan-status").is_visible()
+            screenshot(page, theme, width, "scan-blocked", "scan-status")
+            page.evaluate("""() => {
+              const renderer = window.__pane.renderer;
+              renderer.scanStatus = 'error';
+              renderer.renderScanStatus();
+            }""")
+            assert page.locator(".ex-scan-status").is_visible()
+            screenshot(page, theme, width, "scan-error", "scan-status")
             page.evaluate("""() => {
               const renderer = window.__pane.renderer;
               renderer.scanStatus = 'stale';
@@ -301,7 +332,7 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "stale", "scan-status")
             page.evaluate("""() => {
               const r = window.__pane.renderer;
-              r.scanStatus = 'scanning'; r.scanVisible = true;
+              r.scanStatus = 'scanning';
               r.scanDone = 2; r.scanTotal = 3; r.renderScanStatus();
             }""")
             assert page.locator(".ex-scan-progress").is_visible()

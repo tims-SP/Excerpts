@@ -45,6 +45,7 @@
 .excerpts-root .ex-title { margin: 0; font-size: var(--h3-size, 1.25em); font-weight: var(--h3-weight, 600); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .excerpts-root .ex-brand { min-width: 0; flex: 1 1 auto; }
 .excerpts-root .ex-scan-status { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; min-width: 0; color: var(--text-muted); }
+.excerpts-root .ex-scan-status[hidden] { display: none !important; }
 .excerpts-root .ex-scan-line { display: flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
 .excerpts-root .ex-scan-text { font-size: 12px; line-height: 16px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .excerpts-root .ex-scan-icon { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; flex: 0 0 12px; }

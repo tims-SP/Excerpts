@@ -75,8 +75,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanDone = 0;
   private scanTotal = 0;
   private lastScanCount: number | null = null;
-  private scanVisible = false;
-  private scanRevealTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Display-only; the index remains ready after the completion feedback hides. */
+  private completionVisible = false;
+  private scanCompletionTimer: ReturnType<typeof setTimeout> | null = null;
   private scanStatusEl!: HTMLElement;
   private pageHintEl!: HTMLElement;
   private scanTextEl!: HTMLElement;
@@ -168,7 +169,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   onunload(): void {
     this.disposed = true;
     this.refreshToken++; this.renderToken++; this.searchToken++;
-    if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+    this.clearScanCompletion();
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.observer?.disconnect();
     this.mediaObserver?.disconnect();
@@ -369,6 +370,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     }
     const staleSelection = this.scanStatus === "done" && this.selectionMode === "selecting";
+    if (this.scanStatus === "done") this.clearScanCompletion();
     if (this.scanStatus === "scanning") this.scanDirty = true;
     // A page without a committed index remains unscanned, even when Vault files change.
     else if (this.scanStatus !== "blocked" && this.scanStatus !== "idle") this.scanStatus = "stale";
@@ -396,10 +398,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.homeInvalid = true;
     this.homeInvalidCause = cause;
     this.refreshToken++; this.searchToken++;
-    if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+    this.clearScanCompletion();
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.scanRevealTimer = null; this.searchTimer = null;
-    this.scanVisible = false;
+    this.searchTimer = null;
     this.scanStatus = "stale";
     this.searchReady = true;
     if (!this.deleteBusy) {
@@ -423,10 +424,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.updateAvailability();
     new Notice(message);
   }
+  private clearScanCompletion(): void {
+    if (this.scanCompletionTimer !== null) clearTimeout(this.scanCompletionTimer);
+    this.scanCompletionTimer = null;
+    this.completionVisible = false;
+  }
   private renderScanStatus(): void {
-    const status = this.homeInvalid ? "invalid" :
-      this.scanStatus === "scanning" && !this.scanVisible
-        ? (this.lastScanCount === null ? "idle" : "done") : this.scanStatus;
+    const status = this.homeInvalid ? "invalid" : this.scanStatus;
+    this.scanStatusEl.hidden = status === "idle" || (status === "done" && !this.completionVisible);
     const labels = {
       idle: "未扫描",
       blocked: "未扫描 · 请手动刷新",
@@ -491,8 +496,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scanAnnouncementEl = node("span", "ex-scan-announcement");
     this.scanAnnouncementEl.setAttribute("role", "status");
     this.scanAnnouncementEl.setAttribute("aria-live", "polite");
-    this.scanStatusEl.append(scanLine, this.scanProgressEl, this.scanAnnouncementEl);
-    header.append(this.scanStatusEl);
+    this.scanStatusEl.append(scanLine, this.scanProgressEl);
+    // Screen-reader announcements remain available after the visual status hides.
+    header.append(this.scanStatusEl, this.scanAnnouncementEl);
     this.pageHintEl = node("p", "ex-page-hint");
     this.pageHintEl.setAttribute("role", "status");
     root.append(header, this.pageHintEl);
@@ -1177,26 +1183,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.searchTimer = null;
       this.searchReady = !this.searchText;
       this.matches = null;
-      if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
+      this.clearScanCompletion();
       this.scanDirty = false;
       this.scanStatus = "scanning";
       this.scanDone = 0;
       this.scanTotal = 0;
-      this.scanVisible = false;
       this.renderScanStatus();
       this.updateAvailability();
-      this.scanRevealTimer = setTimeout(() => {
-        if (cancelled()) return;
-        this.scanVisible = true;
-        this.renderScanStatus();
-      }, 150);
       if (force) this.repo.invalidate();
       const cards = await this.repo.scan(this.workspace, this.plugin.settings.scanBatchSize,
         (done, total) => {
           if (cancelled()) return;
           this.scanDone = done;
           this.scanTotal = total;
-          if (this.scanVisible) this.renderScanStatus();
+          this.renderScanStatus();
         }, cancelled);
       if (cancelled() || !cards) return;
       cards.sort((a, b) => b.ctime - a.ctime);
@@ -1211,9 +1211,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       // Scanning is prohibited during selection; there is no scope to reconcile.
       if (this.searchText && !this.scanDirty) this.scheduleSearch(scannedScrollPolicy);
       else { this.searchReady = true; this.matches = null; this.drawCards(scannedScrollPolicy); }
-      this.announceScan("摘录扫描完成，共 " + cards.length + " 条");
+      this.completionVisible = this.scanStatus === "done";
+      this.announceScan(this.scanStatus === "done"
+        ? "摘录扫描完成，共 " + cards.length + " 条"
+        : "摘录扫描期间内容已变化，请手动刷新");
     } catch (error) {
       if (!cancelled()) {
+        this.clearScanCompletion();
         this.scanStatus = "error";
         this.announceScan("摘录扫描失败");
         // The old feed remains usable after a failed scan.
@@ -1223,11 +1227,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     } finally {
       try {
         if (!cancelled()) {
-          if (this.scanRevealTimer) clearTimeout(this.scanRevealTimer);
-          this.scanRevealTimer = null;
-          this.scanVisible = false;
           this.renderScanStatus();
           this.updateAvailability();
+          if (this.scanStatus === "done" && this.completionVisible) {
+            this.scanCompletionTimer = setTimeout(() => {
+              this.scanCompletionTimer = null;
+              if (this.disposed || this.homeInvalid || this.scanStatus !== "done") return;
+              this.completionVisible = false;
+              this.renderScanStatus();
+            }, 2000);
+          }
         }
       } finally {
         // Never unlock when merely cancelling: await the scan's actual termination first.

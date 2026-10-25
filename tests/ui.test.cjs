@@ -109,6 +109,41 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   }};
 }
 
+test('successful scans show immediate progress and dismiss only the visual status after two seconds',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const status=root.querySelector('.ex-scan-status');
+  assert.equal(renderer.scanStatus,'done');
+  assert.equal(status.hidden,false,'completion feedback is initially visible');
+  await waitFor(()=>status.hidden,'successful status dismissal',3500);
+  assert.equal(renderer.scanStatus,'done','visual dismissal must preserve the ready index');
+  assert.equal(renderer.items.length,1);
+  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,false);
+  renderer.requestRefresh(true);
+  assert.equal(renderer.scanStatus,'scanning');
+  assert.equal(status.hidden,false,'scanning appears immediately, without a 150ms delay');
+  await waitFor(()=>renderer.scanStatus==='done','refresh complete');
+  assert.equal(status.hidden,false,'refresh restarts the two-second completion window');
+  await t.close();
+  assert.equal(renderer.scanCompletionTimer,null,'unloading clears the completion timer');
+});
+
+test('stale and error statuses remain visible beyond the success timeout',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const status=root.querySelector('.ex-scan-status');
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(renderer.scanStatus,'stale');
+  assert.equal(status.hidden,false);
+  assert.equal(renderer.scanCompletionTimer,null,'stale invalidation cancels the completion timer');
+  await new Promise(resolve=>setTimeout(resolve,2100));
+  assert.equal(status.hidden,false,'stale feedback remains visible');
+  t.plugin.repo.scan=async()=>{throw new Error('expected scan failure');};
+  renderer.requestRefresh(true);
+  await waitFor(()=>renderer.scanStatus==='error','failed refresh');
+  assert.equal(status.hidden,false,'errors remain visible');
+  assert.equal(renderer.scanCompletionTimer,null,'errors have no dismissal timer');
+  await t.close();
+});
+
 test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
@@ -1939,6 +1974,7 @@ test('external edits to the current .excerpts invalidate the page, metadata even
   t.vaultEvents.get('modify')(saved);
   assert.equal(renderer.homeInvalid,true);
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'invalid');
+  assert.equal(root.querySelector('.ex-scan-status').hidden,false);
   assert.match(root.querySelector('.ex-page-hint').textContent,/筛选配置已变化/);
   assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
   assert.equal(root.querySelector('.ex-search').disabled,true);
@@ -2029,6 +2065,8 @@ test('global scan ownership survives page unloading until the cancelled promise 
   const next=[...t.plugin.rendered].find(v=>v!==oldRenderer);
   assert.ok(next);
   assert.equal(next.scanStatus,'blocked');
+  assert.equal(next.containerEl.querySelector('.ex-scan-status').hidden,false,
+    'blocked status remains visible until explicit refresh');
   assert.equal(calls,1);
 
   await t.pane.onUnloadFile(t.home);

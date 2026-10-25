@@ -43,7 +43,8 @@ test('screenshot suite covers runtime states and records component crops for rev
   for (const state of ['home','composer-picker','composer-draft','search-empty','filter',
                        'page-menu','section-open','card-picker','card-menu',
                        'single-delete','selection','bulk-delete','saved-filter',
-                       'saved-filter-error','settings','folder','stale','scan-progress','invalid']) {
+                       'saved-filter-error','settings','folder','scan-complete',
+                       'scan-blocked','scan-error','stale','scan-progress','invalid']) {
     assert.ok(suite.includes('"' + state + '"'), 'missing screenshot scenario: ' + state);
   }
   assert.match(suite, /loc\.screenshot\(/);
