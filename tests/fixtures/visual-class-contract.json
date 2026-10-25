@@ -226,6 +226,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "e9af07306d56b08df4145f428e62918941694dba",
+  "stylesheet_git_blob_sha": "a44f4e92979c79b85b703cac8260c8e365c8edff",
   "stylesheet_review": "Reviewed non-sticky calendar navigation in Chromium: light/dark at 320/390/430/768px, mock native header with inner and outer scrolling at middle/oldest dates; dates remain below native bar. No real Android acceptance claimed."
 }
