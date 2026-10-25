@@ -117,7 +117,8 @@ test('successful scans show immediate progress and dismiss only the visual statu
   await waitFor(()=>status.hidden,'successful status dismissal',3500);
   assert.equal(renderer.scanStatus,'done','visual dismissal must preserve the ready index');
   assert.equal(renderer.items.length,1);
-  assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,false);
+  assert.equal(root.querySelector('button[aria-label="搜索"]').disabled,false,
+    'search remains enabled with a valid but visually hidden index');
   renderer.requestRefresh(true);
   assert.equal(renderer.scanStatus,'scanning');
   assert.equal(status.hidden,false,'scanning appears immediately, without a 150ms delay');
