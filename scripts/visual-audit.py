@@ -72,7 +72,7 @@ REQUIRED = {
 # Names deliberately identify states as well as components. New features should
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
-    "home", "calendar", "calendar-date", "composer-picker", "composer-draft", "search-empty",
+    "home", "calendar", "calendar-date", "composer-picker", "composer-draft", "search-idle", "search-empty",
     "filter", "page-menu", "section-open", "card-picker", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
@@ -259,9 +259,15 @@ with sync_playwright() as playwright:
 
             page.locator('.ex-toolbar button[aria-label="搜索"]').click()
             assert page.locator(".ex-search-wrap").is_visible()
+            assert page.locator(".ex-search-clear").is_hidden(), (key,"empty search clear")
+            screenshot(page, theme, width, "search-idle", "list-search")
             page.locator(".ex-search").fill("不存在的测试查询零结果")
+            assert page.locator(".ex-search-clear").is_visible(), (key,"filled search clear")
             page.wait_for_selector(".ex-empty", timeout=15000)
             screenshot(page, theme, width, "search-empty", "list-search", "empty-results")
+            page.locator(".ex-search-clear").click()
+            assert page.locator(".ex-search").input_value() == "", (key,"clear search value")
+            assert page.locator(".ex-search-wrap").is_visible(), (key,"search remains expanded")
             page.locator(".ex-search").press("Escape")
             page.wait_for_selector(".ex-card .ex-section", timeout=15000)
 
@@ -346,6 +352,16 @@ with sync_playwright() as playwright:
             assert path_geometry["right"] <= width + 1, (key,"path input overflow",path_geometry)
             if width <= 480:
                 assert path_geometry["height"] >= 44, (key,"path touch target",path_geometry)
+            controls = path_field.locator("xpath=..")
+            create_button = controls.locator("button")
+            assert create_button.count() == 1, (key,"create control")
+            field_box = path_field.bounding_box()
+            button_box = create_button.bounding_box()
+            assert abs((field_box["y"] + field_box["height"]/2) -
+                       (button_box["y"] + button_box["height"]/2)) <= 4, (
+                       key,"settings path and create button must remain inline",field_box,button_box)
+            assert button_box["x"] + button_box["width"] <= width + 1, (
+                   key,"create button overflow",button_box)
             screenshot(page, theme, width, "settings", "settings")
             page.evaluate("""() => {
               document.querySelector('.ex-settings-fixture').remove();
