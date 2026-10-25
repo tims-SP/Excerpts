@@ -293,10 +293,12 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "page-menu", "list-menu")
             page.locator(".menu").evaluate("(el) => el.remove()")
 
-            card = page.locator(".ex-card").first
-            if card.locator(".ex-tag-overflow").is_visible():
-                card.locator(".ex-tag-overflow").click()
-            card.locator('.ex-tag[aria-label="筛选标签：读书笔记"]').click()
+            filter_choice = page.locator('.ex-filter-tags button', has_text="#读书笔记")
+            if filter_choice.count():
+                filter_choice.first.click()
+            else:
+                page.locator('.ex-filter-tags button', has_text="更多标签").click()
+                page.locator('.menu button', has_text="#读书笔记").first.click()
             card = page.locator(".ex-card").first
             # Selecting from +N leaves this row expanded. Explicitly fold it
             # before checking the bug the user reported.
