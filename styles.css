@@ -121,7 +121,7 @@
   resize: none; overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere;
 }
 .excerpts-root .ex-composer textarea.ex-compose-text::placeholder {
-  color: var(--text-muted); opacity: 1;
+  color: var(--text-normal); opacity: 0.5;
   font: inherit; line-height: inherit;
 }
 .excerpts-root .ex-compose-actions {
