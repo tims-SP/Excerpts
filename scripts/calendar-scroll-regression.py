@@ -1,7 +1,7 @@
-"""Test browser scroll ownership against a mock Obsidian mobile top bar.
+"""Check a normal-flow calendar beneath a mock Obsidian mobile top bar.
 
-This is not an Android native acceptance test, but catches sticky content
-escaping into the space between the native header and plugin navigation.
+This does not replace a real Android acceptance test. Both inner and outer
+scrollports must scroll the navigation away, without a sticky workaround.
 """
 from pathlib import Path
 import os
@@ -32,7 +32,8 @@ with sync_playwright() as p:
             }""")
             page.locator('.ex-page-options').click()
             page.locator('.menu button',has_text='摘录日历').click()
-            page.wait_for_function("document.querySelector('.excerpts-root').dataset.calendarScrollOwner === 'own'")
+            assert page.locator('.excerpts-root').get_attribute('data-calendar-scroll-owner') is None
+            assert page.locator('.ex-calendar-nav').evaluate('el => getComputedStyle(el).position') == 'static' 
             page.locator('.ex-calendar-mobile .ex-calendar-day').first.click()
             assert page.locator('.ex-calendar-selected').evaluate('el => el.closest(".ex-calendar-month-section") !== null')
             assert page.locator('.ex-calendar-selected').evaluate('el => getComputedStyle(el).position !== "sticky"')
@@ -43,19 +44,22 @@ with sync_playwright() as p:
                    const host=document.querySelector('.excerpts-native-host').getBoundingClientRect();
                    const nav=document.querySelector('.ex-calendar-nav').getBoundingClientRect();
                    const bar=document.getElementById('native-toolbar').getBoundingClientRect();
-                   const at=document.elementFromPoint(nav.left+nav.width/2,Math.max(nav.top+2,host.top+2));
+                   const barHit=document.elementFromPoint(bar.left+bar.width/2,bar.top+bar.height/2);
+                   const hostHit=document.elementFromPoint(host.left+host.width/2,host.top+4);
                    return {hostY:host.top,navY:nav.top,navBottom:nav.bottom,barBottom:bar.bottom,
-                      hitNav:Boolean(at?.closest('.ex-calendar-nav')),
+                      barHitNative:Boolean(barHit?.closest('#native-toolbar')),
+                      hostHitNav:Boolean(hostHit?.closest('.ex-calendar-nav')),
                       actualScroll:document.querySelector('.excerpts-native-host').scrollTop,
-                      mode:document.querySelector('.excerpts-root').dataset.calendarScrollOwner,
-                      selectedPosition:getComputedStyle(document.querySelector('.ex-calendar-selected')).position,
-                      viewportScroll:document.documentElement.scrollTop};
+                      navPosition:getComputedStyle(document.querySelector('.ex-calendar-nav')).position,
+                      selectedPosition:getComputedStyle(document.querySelector('.ex-calendar-selected')).position};
                 }""")
                 assert info['actualScroll']>100,(width,theme,depth,info)
                 assert info['hostY'] >= info['barBottom']-2,(width,theme,depth,info)
-                assert info['navY'] >= info['hostY']-2,(width,theme,depth,info)
-                assert info['navY'] <= info['hostY']+3,(width,theme,depth,info)
-                assert info['hitNav'],(width,theme,depth,info)
+                assert info['navBottom'] < info['hostY']+1,(width,theme,depth,info)
+                assert not info['hostHitNav'],(width,theme,depth,info)
+                assert info['barHitNative'],(width,theme,depth,info)
+                assert info['navPosition']=='static',(width,theme,depth,info)
+                assert info['selectedPosition'] not in ('sticky','fixed'),(width,theme,depth,info)
                 page.screenshot(path=str(OUTPUT/f'{theme}-{width}-{depth}.png'))
                 print(theme,width,depth,info)
             page.locator('.ex-calendar-back').click()
@@ -79,8 +83,8 @@ with sync_playwright() as p:
         ?.closest('.ex-calendar-month-section'))""",timeout=3000)
     page.screenshot(path=str(OUTPUT/'responsive-detail-rotation-390.png'))
     page.close()
-    # Nested/outer scrolling is common in themed or mobile Obsidian panes. The
-    # plugin must disable its own sticky nav instead of pinning to the wrong viewport.
+    # Nested/outer scrolling is common in mobile panes. The plugin no longer
+    # enables any sticky nav, regardless of which scrollport moves.
     page=browser.new_page(viewport={'width':390,'height':840},is_mobile=True,has_touch=True)
     page.set_content(html,wait_until='domcontentloaded')
     page.wait_for_function('window.__ready === true || !!window.__error')
@@ -97,13 +101,18 @@ with sync_playwright() as p:
     }""")
     page.locator('.ex-page-options').click()
     page.locator('.menu button',has_text='摘录日历').click()
-    mode=page.locator('.excerpts-root').get_attribute('data-calendar-scroll-owner')
-    assert mode=='outer',mode
-    assert page.locator('.ex-calendar-nav').evaluate('el=>getComputedStyle(el).position')=='relative'
+    assert page.locator('.excerpts-root').get_attribute('data-calendar-scroll-owner') is None
+    assert page.locator('.ex-calendar-nav').evaluate('el=>getComputedStyle(el).position')=='static' 
     page.evaluate("""() => {const m=document.querySelector('#mount');m.scrollTop=m.scrollHeight/2;}""")
     page.wait_for_timeout(80)
     assert page.locator('#mount').evaluate('el=>el.scrollTop')>100
-    assert page.locator('.ex-calendar-nav').evaluate('el=>getComputedStyle(el).position')=='relative'
+    assert page.locator('.ex-calendar-nav').evaluate('el=>getComputedStyle(el).position')=='static'
+    assert page.locator('.ex-calendar-nav').evaluate(
+        "el=>el.getBoundingClientRect().bottom < document.getElementById('mount').getBoundingClientRect().top")
+    assert page.evaluate("""() => {
+        const b=document.getElementById('native-toolbar').getBoundingClientRect();
+        return Boolean(document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)?.closest('#native-toolbar'));
+    }""")
     page.screenshot(path=str(OUTPUT/'outer-scroll-fallback-390.png'))
     page.close()
     browser.close()

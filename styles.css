@@ -791,14 +791,8 @@
 .excerpts-root .ex-calendar-shell * { box-sizing: border-box; }
 .excerpts-root .ex-calendar-nav {
   display: flex; align-items: center; gap: 8px; min-height: 48px;
-  position: relative; z-index: 5;
+  position: static; /* Deliberately scrolls with the page in mobile Obsidian. */
   background: var(--background-primary); padding: 0 0 12px;
-}
-/* Only enable sticky navigation when our own FileView content owns vertical scrolling.
-   Obsidian mobile can instead use a parent scrollport, which requires normal flow. */
-.excerpts-root[data-calendar-scroll-owner="own"] .ex-calendar-nav {
-  position: sticky;
-  top: 0;
 }
 .excerpts-root button.ex-calendar-back {
   display: inline-flex; align-items: center; justify-content: center;

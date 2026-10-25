@@ -200,7 +200,7 @@ test('calendar navigation preserves the original feed DOM, draft, filters and sc
   await t.close();
 });
 
-test('calendar sticks only to the actual scroll host and clears the mode on return',async()=>{
+test('calendar navigation never enters a sticky ownership mode as host height changes',async()=>{
   const t=await fixture(),root=t.pane.contentEl;
   const host=root.closest('.excerpts-native-host');
   const calendarRoot=root.querySelector('.excerpts-root');
@@ -209,12 +209,16 @@ test('calendar sticks only to the actual scroll host and clears the mode on retu
   let contentHeight=600;
   Object.defineProperty(host,'scrollHeight',{configurable:true,get(){return contentHeight;}});
   clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();
-  assert.equal(calendarRoot.dataset.calendarScrollOwner,'outer','equal-height host must not claim sticky');
+  const nav=root.querySelector('.ex-calendar-nav');
+  assert.equal(nav.querySelectorAll('.ex-calendar-back').length,1);
+  assert.equal(calendarRoot.dataset.calendarScrollOwner,undefined);
   contentHeight=2600;
-  t.pane.renderer.syncCalendarScrollOwner();
-  assert.equal(calendarRoot.dataset.calendarScrollOwner,'own','scrollable host enables sticky');
+  host.dispatchEvent(new window.Event('scroll'));
+  assert.equal(calendarRoot.dataset.calendarScrollOwner,undefined,'deep scrolling cannot enable calendar sticky');
+  assert.equal(root.querySelector('.ex-calendar-nav'),nav,'scrolling does not rebuild navigation');
   root.querySelector('.ex-calendar-back').click();
-  assert.equal(calendarRoot.dataset.calendarScrollOwner,undefined,'navigation does not leave sticky state on the feed');
+  assert.equal(root.querySelector('.ex-calendar-shell').hidden,true);
+  assert.equal(root.querySelector('.ex-feed-view').hidden,false);
   await t.close();
 });
 

@@ -199,3 +199,13 @@ test('scan status is a minimal responsive indicator, never a floating card overl
   assert.match(css,/\.ex-page-hint\[data-state="invalid"\]/);
   assert.doesNotMatch(css,/button\.ex-tag-source/);
 });
+
+// Do not restore the Android sticky behavior without a real-device acceptance test.
+test('calendar title and day detail stay in normal page flow',()=>{
+  const nav = css.match(/\.excerpts-root \.ex-calendar-nav\s*\{([^}]*)\}/)?.[1]||'';
+  assert.match(nav,/position:\s*static/);
+  assert.doesNotMatch(nav,/(?:top:|z-index:|sticky|fixed)/);
+  assert.doesNotMatch(css,/data-calendar-scroll-owner|\.ex-calendar-nav\s*\{[^}]*position:\s*sticky/);
+  const detail = css.match(/\.excerpts-root \.ex-calendar-selected\s*\{([^}]*)\}/)?.[1]||'';
+  assert.doesNotMatch(detail,/position:\s*(?:sticky|fixed)/);
+});
