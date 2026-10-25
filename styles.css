@@ -13,6 +13,7 @@
   --ex-radius-surface: var(--radius-l, 12px);
   --ex-radius-composer: 16px;
   --ex-radius-input: var(--radius-m, 8px);
+  --ex-radius-field: 10px;
   --ex-radius-option: var(--radius-s, 4px);
   --ex-radius-pill: 999px;
   --ex-text-small: var(--font-ui-small, 13px);
@@ -216,13 +217,13 @@
 .excerpts-root .ex-tag-picker { min-width: 0; display: flex; flex-direction: column; gap: var(--ex-space-2); }
 .excerpts-root .ex-tag-search {
   display: flex; align-items: center; width: 100%; min-width: 0; height: 40px;
-  gap: 8px; padding: 0 10px; border-radius: var(--ex-radius-input);
+  gap: 8px; padding: 0 10px; border-radius: var(--ex-radius-field);
   background: var(--background-primary); border: 1px solid transparent;
 }
 .excerpts-root .ex-composer .ex-tag-search { background: var(--background-primary); }
 .excerpts-root .ex-tag-search:focus-within {
-  border-color: var(--background-modifier-border-focus, var(--interactive-accent));
-  outline: none;
+  border-color: transparent;
+  outline: 2px solid var(--interactive-accent); outline-offset: 1px;
 }
 .excerpts-root .ex-tag-search-icon { display: inline-flex; color: var(--text-muted); flex: 0 0 16px; }
 .excerpts-root .ex-tag-search-icon svg { width: 16px; height: 16px; }
@@ -236,10 +237,16 @@
   color: var(--text-normal); -webkit-text-fill-color: var(--text-normal);
   appearance: none; -webkit-appearance: none;
 }
+.excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom):focus-visible {
+  outline: none !important;
+}
+.excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom)::placeholder {
+  color: var(--text-normal); opacity: 0.5;
+}
 .excerpts-root .ex-tag-search input::-webkit-search-cancel-button { display: none; }
 .excerpts-root .ex-tag-search-clear {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; padding: 5px; color: var(--text-muted);
+  width: 32px; height: 32px; padding: 8px; color: var(--text-muted);
   border: 0; border-radius: var(--ex-radius-option); background: transparent; box-shadow: none;
 }
 .excerpts-root .ex-tag-search-clear[hidden] { display: none !important; }
@@ -271,6 +278,26 @@
   box-shadow: none;
 }
 .excerpts-root .ex-input:focus { border-color: var(--background-modifier-border-focus,var(--interactive-accent)); box-shadow: none; }
+/* List search is a light surface, not a second capture card. */
+.excerpts-root input.ex-search,
+.excerpts-root input.ex-search:is(:hover,:focus) {
+  min-height: 40px; height: 40px; padding: 8px 12px;
+  background: var(--background-secondary); border: 1px solid transparent;
+  border-radius: var(--ex-radius-field); box-shadow: none;
+  color: var(--text-normal); font-family: var(--font-interface);
+  font-size: var(--font-ui-medium,14px); line-height: 1.4;
+  appearance: none; -webkit-appearance: none;
+}
+.excerpts-root input.ex-search:hover:not(:focus) { background: var(--background-modifier-hover); }
+.excerpts-root input.ex-search:focus,
+.excerpts-root input.ex-search:focus-visible {
+  border-color: transparent;
+  outline: 2px solid var(--interactive-accent); outline-offset: 1px;
+}
+.excerpts-root input.ex-search::placeholder {
+  color: var(--text-normal); opacity: 0.5;
+}
+.excerpts-root input.ex-search::-webkit-search-cancel-button { display: none; }
 
 
 /* Timeline toolbar and the on-demand search/filter controls. */
@@ -571,8 +598,8 @@
   .excerpts-root .ex-tag-choice { min-height: 44px; }
   .excerpts-root .ex-tag-search { min-height: 44px; height: 44px; }
   .excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom) { font-size: 16px; }
-  .excerpts-root .ex-tag-search-clear { min-width: 32px; min-height: 32px; }
-  .excerpts-root .ex-search { min-height: 44px; font-size: 16px; }
+  .excerpts-root .ex-tag-search-clear { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .excerpts-root input.ex-search { min-height: 44px; height: 44px; font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
@@ -737,6 +764,7 @@
 .ex-save-page-modal {
   --ex-modal-gap: 20px;
   --ex-radius-input: var(--radius-m, 8px);
+  --ex-radius-field: 10px;
   --ex-radius-pill: 999px;
   width: min(420px, calc(100vw - 32px)); max-width: 420px;
 }
@@ -749,18 +777,22 @@
   margin: 4px 0 var(--ex-modal-gap); color: var(--text-muted);
   font-size: var(--font-ui-small, 13px); line-height: 1.5;
 }
-.ex-save-page-modal .ex-save-page-field { display: flex; flex-direction: column; gap: 6px; }
+.ex-save-page-modal .ex-save-page-field { display: flex; flex-direction: column; gap: 8px; }
 .ex-save-page-modal .ex-save-page-label { font-size: var(--font-ui-small, 13px); font-weight: 500; }
 .ex-save-page-modal input.ex-save-page-input,
 .ex-save-page-modal input.ex-save-page-input:is(:hover,:focus) {
   display: block; box-sizing: border-box; width: 100%; min-height: 40px;
   padding: 8px 12px; border: 1px solid var(--background-modifier-border);
-  border-radius: var(--ex-radius-input); background: var(--background-primary);
+  border-radius: var(--ex-radius-field); background: var(--background-primary);
   background-image: none; box-shadow: none;
   color: var(--text-normal); font-size: 14px; line-height: 1.5;
 }
 .ex-save-page-modal input.ex-save-page-input:focus {
-  border-color: var(--background-modifier-border-focus, var(--interactive-accent));
+  border-color: var(--background-modifier-border);
+  outline: 2px solid var(--interactive-accent); outline-offset: 1px;
+}
+.ex-save-page-modal input.ex-save-page-input::placeholder {
+  color: var(--text-normal); opacity: 0.5;
 }
 .ex-save-page-modal .ex-save-page-hint {
   min-height: 18px; color: var(--text-muted);
@@ -789,11 +821,24 @@
 .ex-save-page-modal :is(button,input):focus-visible {
   outline: 2px solid var(--interactive-accent); outline-offset: 2px;
 }
+/* This native Setting field is scoped to the Excerpts settings tab. */
+.ex-settings-root .setting-item-control:has(input[type="text"]) {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.ex-settings-root .setting-item-control input[type="text"] {
+  min-width: 0; max-width: 100%; flex: 1 1 180px;
+}
+.ex-settings-root .setting-item-control input[type="text"]::placeholder {
+  color: var(--text-normal); opacity: 0.5;
+}
 .ex-page-error { padding: 24px; color: var(--text-error); font-size: var(--font-ui-small, 13px); }
 
 @media (pointer: coarse) {
   .ex-save-page-modal input.ex-save-page-input { min-height: 44px; font-size: 16px; }
   .ex-save-page-modal .ex-save-page-footer button { min-height: 44px; }
+  .ex-settings-root .setting-item-control input[type="text"] {
+    min-height: 44px; font-size: 16px;
+  }
 }
 @media (max-width: 500px) {
   .ex-save-page-modal .modal-content { padding: 16px; }
