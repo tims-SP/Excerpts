@@ -564,24 +564,35 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (tagsPane.hidden) openTagPanel();
       else closeTagPanel(true);
     }, "ex-capture-tag-toggle");
-    tagToggle.setAttribute("aria-label", "添加标签");
-    tagToggle.setAttribute("aria-expanded", "false");
     const updateTagToggle = () => {
+      const expanded = !tagsPane.hidden;
+      const label = expanded ? "关闭标签选择" : "添加标签";
       tagToggle.replaceChildren();
       const icon = node("span", "ex-capture-toggle-icon");
-      setIcon(icon, selectedTags.size ? "plus" : "hash");
+      setIcon(icon, expanded ? "x" : selectedTags.size ? "plus" : "hash");
       tagToggle.append(icon);
-      if (!selectedTags.size) tagToggle.append(node("span", "ex-capture-toggle-text", "标签"));
+      if (expanded || !selectedTags.size)
+        tagToggle.append(node("span", "ex-capture-toggle-text", expanded ? "关闭" : "标签"));
+      tagToggle.setAttribute("aria-label", label);
+      tagToggle.setAttribute("aria-expanded", String(expanded));
+      tagToggle.title = label;
+    };
+    const reflowTags = () => {
+      if (typeof requestAnimationFrame === "function")
+        requestAnimationFrame(this.reflowCaptureTags);
+      else setTimeout(this.reflowCaptureTags, 0);
     };
     const openTagPanel = () => {
       if (saving) return;
       tagsPane.hidden = false;
-      tagToggle.setAttribute("aria-expanded", "true");
+      updateTagToggle();
+      reflowTags();
       picker.focus();
     };
     const closeTagPanel = (restoreFocus: boolean) => {
       tagsPane.hidden = true;
-      tagToggle.setAttribute("aria-expanded", "false");
+      updateTagToggle();
+      reflowTags();
       if (restoreFocus) tagToggle.focus();
     };
     const repaintSelected = () => {
@@ -601,11 +612,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       selectedChips.hidden = !selectedTags.size;
       updateTagToggle();
-      const schedule = () => {
-        if (typeof requestAnimationFrame === "function") requestAnimationFrame(this.reflowCaptureTags);
-        else setTimeout(this.reflowCaptureTags, 0);
-      };
-      schedule();
+      reflowTags();
     };
     this.reflowCaptureTags = () => {
       if (!selectedChips.isConnected || selectedChips.hidden || !selectedChips.clientWidth) return;
