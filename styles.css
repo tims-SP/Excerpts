@@ -599,7 +599,8 @@
   .excerpts-root .ex-tag-search { min-height: 44px; height: 44px; }
   .excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom) { font-size: 16px; }
   .excerpts-root .ex-tag-search-clear { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
-  .excerpts-root input.ex-search { min-height: 44px; height: 44px; font-size: 16px; }
+  .excerpts-root input.ex-search,
+  .excerpts-root input.ex-search:is(:hover,:focus) { min-height: 44px; height: 44px; font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
