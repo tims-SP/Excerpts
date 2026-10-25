@@ -454,7 +454,7 @@
 .excerpts-root button.ex-group-read { align-self: flex-start; min-height: 32px; font-size: var(--font-ui-smaller, 12px); }
 .excerpts-root button.ex-group-read[hidden] { display: none !important; }
 
-/* Tag editing belongs directly above the footer, never between prose and H2 content. */
+/* The tag editor expands directly below the card footer in normal document flow. */
 .excerpts-root .ex-tag-editor {
   display: flex; flex: 0 1 auto; flex-direction: column; align-items: stretch;
   gap: var(--ex-space-3); width: 100%; min-width: 0;
@@ -462,11 +462,30 @@
   background: transparent; border: 0; border-top: 1px solid var(--ex-border);
   border-radius: 0;
 }
-.excerpts-root .ex-tag-editor-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.excerpts-root .ex-tag-editor-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.excerpts-root .ex-tag-selected {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 5px;
+  width: 100%; min-width: 0; padding: 0; margin: 0;
+}
+.excerpts-root .ex-tag-selected-chip {
+  display: inline-flex; align-items: center; max-width: 100%; min-width: 0;
+  gap: 4px; min-height: 22px; padding: 3px 7px; box-sizing: border-box;
+  border-radius: var(--ex-radius-pill); background: var(--ex-chip-surface);
+  font-size: 11px; line-height: 16px; color: var(--text-muted);
+}
+.excerpts-root .ex-tag-selected-label {
+  display: block; min-width: 0; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis;
+}
+.excerpts-root .ex-tag-selected-lock,
+.excerpts-root .ex-tag-selected-lock svg {
+  display: inline-flex; flex: 0 0 11px; width: 11px; height: 11px;
+}
+.excerpts-root .ex-tag-selected-empty { color: var(--text-muted); font-size: 12px; }
+.excerpts-root .ex-tag-editor .ex-tag-suggestions { max-height: 192px; }
 .excerpts-root .ex-tag-editor-title { font-size: var(--font-ui-small,13px); font-weight: 500; color: var(--text-normal); }
 .excerpts-root .ex-tag-editor-count { font-size: var(--font-ui-smaller,12px); color: var(--text-muted); }
 .excerpts-root .ex-tag-editor-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.excerpts-root button.ex-tag-cancel { font-size: var(--font-ui-small,13px); color: var(--text-muted); }
 .excerpts-root button.ex-tag-done {
   font-size: var(--font-ui-small,13px); min-height: 32px;
   padding-inline: 16px; font-weight: 500;
@@ -489,8 +508,8 @@
   display: flex; align-items: center; flex: 1 1 auto; min-width: 0; min-height: 36px;
   flex-wrap: nowrap; gap: 5px; overflow: hidden;
 }
-.excerpts-root .ex-chips.ex-tags-editing,
 .excerpts-root .ex-chips.ex-tags-expanded { flex-wrap: wrap; overflow: visible; }
+.excerpts-root .ex-chips.ex-tags-editing { flex-wrap: nowrap; overflow: visible; }
 .excerpts-root .ex-chips .ex-btn[hidden] { display: none !important; }
 .excerpts-root button.ex-tag {
   position: relative; isolation: isolate; flex: 0 0 auto;
@@ -523,7 +542,16 @@
 }
 .excerpts-root button.ex-tag-overflow:hover { background: transparent; }
 .excerpts-root button.ex-tag-overflow:hover::before { background: var(--background-modifier-hover); }
-.excerpts-root .ex-chips.ex-tags-empty button.ex-add-tag { padding-inline: 0 8px; }
+.excerpts-root .ex-chips.ex-tags-empty:not(.ex-tags-editing) button.ex-add-tag { padding-inline: 0 8px; }
+.excerpts-root button.ex-add-tag.ex-is-cancelling {
+  display: inline-flex; align-items: center; flex: 0 0 auto;
+  gap: 5px; padding-inline: 8px; color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+.excerpts-root .ex-card-tag-toggle-icon,
+.excerpts-root .ex-card-tag-toggle-icon svg {
+  display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center;
+}
 .excerpts-root .ex-card-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .excerpts-root button.ex-card-options { position: static; margin: 0; color: var(--text-muted); }
 .excerpts-root button.ex-tag-remove { color: var(--text-normal); }
@@ -617,6 +645,8 @@
   .excerpts-root .ex-chips { min-height: 44px; }
   .excerpts-root button.ex-tag { height: 44px; }
   .excerpts-root .ex-tag-choice { min-height: 44px; }
+  .excerpts-root .ex-tag-editor .ex-tag-suggestions { max-height: 176px; }
+  .excerpts-root button.ex-tag-done { min-height: 44px; }
   .excerpts-root .ex-tag-search { min-height: 44px; height: 44px; }
   .excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom) { font-size: 16px; }
   .excerpts-root .ex-tag-search-clear { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
