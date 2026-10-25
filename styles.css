@@ -244,6 +244,9 @@
   color: var(--text-normal); opacity: 0.5;
 }
 .excerpts-root .ex-tag-search input::-webkit-search-cancel-button { display: none; }
+.excerpts-root .ex-tag-search:has(input:disabled) {
+  opacity: .55; cursor: not-allowed;
+}
 .excerpts-root .ex-tag-search-clear {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
   width: 32px; height: 32px; padding: 8px; color: var(--text-muted);
@@ -281,7 +284,7 @@
 /* List search is a light surface, not a second capture card. */
 .excerpts-root input.ex-search,
 .excerpts-root input.ex-search:is(:hover,:focus) {
-  min-height: 40px; height: 40px; padding: 8px 12px;
+  min-height: 40px; height: 40px; padding: 8px 52px 8px 12px;
   background: var(--background-secondary); border: 1px solid transparent;
   border-radius: var(--ex-radius-field); box-shadow: none;
   color: var(--text-normal); font-family: var(--font-interface);
@@ -298,6 +301,24 @@
   color: var(--text-normal); opacity: 0.5;
 }
 .excerpts-root input.ex-search::-webkit-search-cancel-button { display: none; }
+.excerpts-root input.ex-search:disabled {
+  color: var(--text-muted); opacity: .65; cursor: not-allowed;
+}
+.excerpts-root button.ex-search-clear {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; min-height: 32px; padding: 8px;
+  color: var(--text-muted); background: transparent; border: 0; box-shadow: none;
+  border-radius: 50%;
+}
+.excerpts-root button.ex-search-clear svg { width: 14px; height: 14px; }
+.excerpts-root button.ex-search-clear:hover:not(:disabled) {
+  color: var(--text-normal); background: var(--background-modifier-hover);
+}
+.excerpts-root input.ex-search:placeholder-shown + button.ex-search-clear {
+  visibility: hidden; pointer-events: none;
+}
+.excerpts-root button.ex-search-clear:disabled { opacity: .45; cursor: not-allowed; }
 
 
 /* Timeline toolbar and the on-demand search/filter controls. */
@@ -308,7 +329,7 @@
   color: var(--text-muted); font-size: var(--font-ui-smaller, 12px); font-variant-numeric: tabular-nums;
 }
 .excerpts-root .ex-toolbar-actions { display: flex; align-items: center; gap: var(--ex-space-1); }
-.excerpts-root .ex-search-wrap { margin-bottom: var(--ex-space-3); }
+.excerpts-root .ex-search-wrap { position: relative; margin-bottom: var(--ex-space-3); }
 .excerpts-root .ex-filter-tags {
   display: flex; align-items: center; gap: 5px; overflow-x: auto;
   padding-bottom: 4px; margin-bottom: var(--ex-space-4);
@@ -600,7 +621,12 @@
   .excerpts-root .ex-tag-search :is(input.ex-tags-input,input.ex-tag-custom) { font-size: 16px; }
   .excerpts-root .ex-tag-search-clear { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
   .excerpts-root input.ex-search,
-  .excerpts-root input.ex-search:is(:hover,:focus) { min-height: 44px; height: 44px; font-size: 16px; }
+  .excerpts-root input.ex-search:is(:hover,:focus) {
+    min-height: 44px; height: 44px; font-size: 16px; padding-right: 56px;
+  }
+  .excerpts-root button.ex-search-clear {
+    width: 44px; height: 44px; min-height: 44px; padding: 15px; right: 0;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
@@ -824,10 +850,14 @@
 }
 /* This native Setting field is scoped to the Excerpts settings tab. */
 .ex-settings-root .setting-item-control:has(input[type="text"]) {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  display: flex; flex-wrap: nowrap; align-items: center;
+  min-width: 0; max-width: 100%; gap: 8px;
 }
 .ex-settings-root .setting-item-control input[type="text"] {
-  min-width: 0; max-width: 100%; flex: 1 1 180px;
+  flex: 1 1 160px; min-width: 0; max-width: min(240px, 100%);
+}
+.ex-settings-root .setting-item-control:has(input[type="text"]) button {
+  flex: 0 0 auto;
 }
 .ex-settings-root .setting-item-control input[type="text"]::placeholder {
   color: var(--text-normal); opacity: 0.5;

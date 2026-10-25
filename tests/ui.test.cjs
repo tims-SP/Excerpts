@@ -949,6 +949,27 @@ test('stale frontmatter refuses save and retains draft picker for retry or cance
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   await t.close();
 });
+test('list search clear preserves its surface, respects locks and restores results',async()=>{
+  const t=await fixture();const root=t.pane.contentEl,renderer=t.pane.renderer;
+  clickByLabel(root,'搜索');
+  const field=root.querySelector('.ex-search'),clear=root.querySelector('.ex-search-clear');
+  assert.ok(clear,'dedicated clear control exists');
+  assert.equal(clear.getAttribute('aria-label'),'清空搜索');
+  assert.equal(field.nextElementSibling,clear,'button follows the input in its reserved area');
+  field.value='不会命中的关键词';
+  field.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(renderer.searchText,'不会命中的关键词');
+  clear.click();
+  assert.equal(field.value,'');
+  assert.equal(renderer.searchText,'');
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,false,'clear must not close search');
+  renderer.scanStatus='scanning';renderer.updateAvailability();
+  assert.equal(field.disabled,true);
+  assert.equal(clear.disabled,true);
+  renderer.scanStatus='done';renderer.updateAvailability();
+  assert.equal(clear.disabled,false);
+  await t.close();
+});
 test('tag search clear only clears the query, not the picker or selected tags',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   clickByLabel(root,'添加标签');

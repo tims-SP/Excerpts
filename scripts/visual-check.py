@@ -176,6 +176,21 @@ with sync_playwright() as playwright:
             })""")
             assert focused_geo["height"] == search_geo["height"], (theme,width,focused_geo)
             assert focused_geo["border"] == "1px" and focused_geo["outline"] == "2px", (theme,width,focused_geo)
+            # The clear action must stay visible at 32/44px without overlapping text;
+            # clearing must preserve search focus and the open search surface.
+            clear = page.locator(".ex-search-clear")
+            assert not clear.is_visible(), (theme,width,"empty search clear should be hidden")
+            search.fill("不存在的测试关键词")
+            assert clear.is_visible(), (theme,width,"filled search clear should be visible")
+            clear_rect = clear.bounding_box()
+            input_rect = search.bounding_box()
+            padding_right = search.evaluate("el => parseFloat(getComputedStyle(el).paddingRight)")
+            assert clear_rect["width"] >= (44 if width <= 480 else 32), (theme,width,clear_rect)
+            assert input_rect["x"] + input_rect["width"] - clear_rect["x"] <= padding_right + 1, (theme,width,"clear overlaps text area")
+            clear.click()
+            assert search.input_value() == "", (theme,width,"clear left a query")
+            assert page.locator(".ex-search-wrap").is_visible(), (theme,width,"clear closed search box")
+            assert not clear.is_visible(), (theme,width,"clear should hide after reset")
             search.press("Escape")
             card = page.locator(".ex-card").first
             source = card.locator(".ex-group-trigger").first

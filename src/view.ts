@@ -66,6 +66,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private searchInput!: HTMLInputElement;
+  private searchClearButton!: HTMLButtonElement;
   private searchButton!: HTMLButtonElement;
   private searchWrap!: HTMLElement;
   private tagBar!: HTMLElement;
@@ -270,8 +271,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private updateAvailability(broadcast = true): void {
     if (this.disposed || !this.searchButton) return;
     const searching = !this.searchReady;
-    this.searchInput.disabled = Boolean(this.searchQueryBlockReason());
+    const searchBlock = this.searchQueryBlockReason();
+    this.searchInput.disabled = Boolean(searchBlock);
     const canClear = this.canClearSearch();
+    this.searchClearButton.disabled = Boolean(searchBlock) && !canClear;
     const canCloseEmpty = this.canCloseEmptySearch();
     this.searchButton.disabled = !canClear && !canCloseEmpty && Boolean(this.reason("search"));
     this.searchButton.title = canCloseEmpty ? "关闭搜索" :
@@ -771,7 +774,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchInput.type = "search";
     this.searchInput.placeholder = "搜索摘录内容或标签…";
     this.searchInput.setAttribute("aria-label", "搜索摘录");
-    this.searchWrap.append(this.searchInput);
+    // A native search input with one accessible clear action. The trailing
+    // control sits in reserved input padding, never above entered text.
+    this.searchClearButton = iconButton("x", "清空搜索", () => {
+      const blocked = this.searchQueryBlockReason();
+      if (blocked && !this.canClearSearch()) { new Notice(blocked); return; }
+      this.searchText = "";
+      this.searchInput.value = "";
+      this.scheduleSearch();
+      this.searchInput.focus();
+    }, "ex-search-clear");
+    this.searchWrap.append(this.searchInput, this.searchClearButton);
     const searchButton = iconButton("search", "搜索", () => {
       if (this.canCloseEmptySearch()) {
         this.searchWrap.hidden = true;
