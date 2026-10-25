@@ -255,6 +255,25 @@ with sync_playwright() as playwright:
             assert preview["wrap"] == "wrap" and preview["height"] >= 22 and preview["maxHeight"] == "none", (theme,width,preview)
             assert preview["overflowY"] != "auto", (theme,width,preview)
             assert cancel.bounding_box()["x"] + cancel.bounding_box()["width"] <= footer_box["x"]+footer_box["width"]+1, (theme,width,"footer overflow")
+            # Dense mobile staged tags must wrap naturally; never invent a
+            # second scroll pane or collapse them to +N while editing.
+            if width <= 390:
+                picker_input = card.locator(".ex-tag-custom")
+                for index in range(15):
+                    name = "密集标签" + str(index)
+                    picker_input.fill(name)
+                    option = card.locator(".ex-tag-choice", has_text="创建 #" + name).first
+                    assert option.count(), (theme,width,"cannot add staged tag",name)
+                    option.click()
+                dense = card.locator(".ex-tag-selected")
+                dense_count = card.locator(".ex-tag-selected-chip").count()
+                assert dense_count >= 16, (theme,width,"dense preview lost tags",dense_count)
+                dense_rect = dense.bounding_box()
+                assert dense_rect["height"] > preview["height"], (theme,width,"dense preview did not wrap",dense_rect)
+                assert dense.evaluate("el => getComputedStyle(el).overflowY") != "auto"
+                assert card.locator(".ex-tag-editor").is_visible(), (theme,width,"dense card editor hidden")
+                assert card.locator(".ex-tag-done").is_visible(), (theme,width,"complete action inaccessible")
+                page.screenshot(path=str(root / "artifacts" / f"dense-card-tags-{theme}-{width}.png"), full_page=True)
             page.screenshot(path=str(root / "artifacts" / f"interaction-{theme}-{width}.png"), full_page=True)
             assert not errors, (theme, width, errors)
             print("OK", theme, width, geometry["pillHeight"], "dateX", geometry["dateX"])
