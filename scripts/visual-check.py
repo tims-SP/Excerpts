@@ -135,7 +135,12 @@ with sync_playwright() as playwright:
             filter_button.click()
 
             # Even many tags cannot push the save button away or produce a second footer row.
-            page.locator(".ex-capture-tag-toggle").click()
+            toggle = page.locator(".ex-capture-tag-toggle")
+            assert toggle.get_attribute("aria-label") == "添加标签", (theme,width,"closed action label")
+            toggle.click()
+            assert toggle.get_attribute("aria-label") == "关闭标签选择", (theme,width,"open action label")
+            assert toggle.get_attribute("aria-expanded") == "true", (theme,width,"open state")
+            assert toggle.inner_text() == "关闭", (theme,width,"visible exit cue")
             panel = page.locator(".ex-capture-tags").bounding_box()
             footer = page.locator(".ex-compose-actions").bounding_box()
             assert panel["y"] >= footer["y"] + footer["height"] - 1, (theme,width,"tag panel covers footer")
@@ -144,6 +149,8 @@ with sync_playwright() as playwright:
                     row.click()
             page.wait_for_timeout(60)
             assert page.locator(".ex-capture-selected .ex-capture-chip").count() >= 5
+            assert toggle.get_attribute("aria-label") == "关闭标签选择", (theme,width,"selected action label")
+            assert toggle.inner_text() == "关闭", (theme,width,"selected exit cue")
             assert "×" not in page.locator(".ex-capture-selected").inner_text()
             if compact:
                 assert page.locator(".ex-capture-overflow").is_visible(), (theme,width,"top tag +N")
@@ -151,9 +158,20 @@ with sync_playwright() as playwright:
             save_after = page.locator(".ex-compose-actions > .ex-btn-primary").bounding_box()
             assert footer_after["height"] <= (46 if compact else 38), (theme,width,footer_after)
             assert save_after["x"] + save_after["width"] <= layout["innerRight"]+1, (theme,width,save_after)
+            assert abs(save_after["x"] + save_after["width"] - layout["saveRight"]) <= 1, (theme,width,"save shifted")
+            toggle_box = toggle.bounding_box()
+            chip_box = page.locator(".ex-capture-selected").bounding_box()
+            assert toggle_box["x"] + toggle_box["width"] <= chip_box["x"] + 1, (theme,width,"tags overlap close")
+            assert toggle_box["height"] >= (44 if width <= 480 else 36), (theme,width,"close hit size")
             page.screenshot(path=str(root / "artifacts" / f"composer-{theme}-{width}.png"), full_page=True)
             page.locator(".ex-compose-text").focus()
             assert page.locator(".ex-capture-tags").evaluate("(el) => el.hidden")
+            assert toggle.get_attribute("aria-label") == "添加标签", (theme,width,"body focus restores tag action")
+            assert toggle.get_attribute("aria-expanded") == "false", (theme,width,"body focus closes")
+            toggle.click()
+            assert toggle.get_attribute("aria-label") == "关闭标签选择", (theme,width,"reopen after focus")
+            toggle.click()
+            assert toggle.get_attribute("aria-label") == "添加标签", (theme,width,"close via button")
             assert page.locator(".ex-capture-selected").is_visible()
             page.screenshot(path=str(root / "artifacts" / f"feed-{theme}-{width}.png"), full_page=True)
 
