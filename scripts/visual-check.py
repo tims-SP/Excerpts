@@ -232,7 +232,6 @@ with sync_playwright() as playwright:
             card = page.locator(".ex-card").first
             assert card.locator(".ex-tag").first.inner_text() == "#生活", (theme,width,"source order not restored")
             source = card.locator(".ex-group-trigger").first
-            source = card.locator(".ex-group-trigger").first
             source.click()
             assert source.get_attribute("aria-expanded") == "true"
             assert card.locator(".ex-group-body:not([hidden])").count() == 1
