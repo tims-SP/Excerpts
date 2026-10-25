@@ -212,10 +212,13 @@ with sync_playwright() as playwright:
             search.press("Escape")
             # The last source tag must remain visible and highlighted even on
             # narrow cards that would otherwise hide it behind +N.
-            card = page.locator(".ex-card").first
-            if card.locator(".ex-tag-overflow").is_visible():
-                card.locator(".ex-tag-overflow").click()
-            card.locator('.ex-tag[aria-label="筛选标签：读书笔记"]').click()
+            page.locator('.ex-toolbar button[aria-label="筛选标签"]').click()
+            filter_choice = page.locator('.ex-filter-tags button', has_text="#读书笔记")
+            if filter_choice.count():
+                filter_choice.first.click()
+            else:
+                page.locator('.ex-filter-tags button', has_text="更多标签").click()
+                page.locator('.menu button', has_text="#读书笔记").first.click()
             card = page.locator(".ex-card").first
             # Selecting from +N leaves this row expanded. Explicitly fold it
             # before checking the bug the user reported.
