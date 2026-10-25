@@ -42,7 +42,7 @@ test('secondary fields share restrained geometry without changing the composer o
   assert.match(css,/\.excerpts-root input\.ex-search:focus,[\s\S]*?border-color: transparent;[\s\S]*?outline: 2px solid var\(--interactive-accent\)/);
   assert.match(css,/\.excerpts-root \.ex-tag-search:focus-within\s*\{[^}]*outline: 2px solid var\(--interactive-accent\)/);
   assert.match(css,/\.excerpts-root \.ex-tag-search :is\(input\.ex-tags-input,input\.ex-tag-custom\):focus-visible\s*\{\s*outline: none !important/);
-  assert.match(css,/\.excerpts-root input\.ex-search:is\(:hover,:focus\) \{ min-height: 44px; height: 44px;/);
+  assert.match(css,/\.excerpts-root input\.ex-search:is\(:hover,:focus\) \{\s*min-height: 44px; height: 44px;/);
   assert.match(css,/\.excerpts-root \.ex-tag-search-clear \{ width: 44px; height: 44px;/);
   assert.match(css,/\.excerpts-root \.ex-search-wrap \{ position: relative;/);
   assert.match(css,/\.excerpts-root button\.ex-search-clear \{[^}]*position: absolute;[^}]*width: 32px; height: 32px;/);
