@@ -25,7 +25,7 @@
   font-family: var(--font-interface);
 }
 .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { box-sizing: border-box; }
-.excerpts-native-host { container-type: inline-size; overflow-x: hidden; overflow-y: auto; min-width: 0; }
+.excerpts-native-host { container-type: inline-size; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; min-width: 0; }
 /* The Obsidian mobile FileView may provide its own gutters; this view sizes its own. */
 .is-mobile .excerpts-native-host { padding-inline: 0; }
 .excerpts-root .ex-header,
@@ -791,8 +791,14 @@
 .excerpts-root .ex-calendar-shell * { box-sizing: border-box; }
 .excerpts-root .ex-calendar-nav {
   display: flex; align-items: center; gap: 8px; min-height: 48px;
-  position: sticky; top: 0; z-index: 5;
+  position: relative; z-index: 5;
   background: var(--background-primary); padding: 0 0 12px;
+}
+/* Only enable sticky navigation when our own FileView content owns vertical scrolling.
+   Obsidian mobile can instead use a parent scrollport, which requires normal flow. */
+.excerpts-root[data-calendar-scroll-owner="own"] .ex-calendar-nav {
+  position: sticky;
+  top: 0;
 }
 .excerpts-root button.ex-calendar-back {
   display: inline-flex; align-items: center; justify-content: center;
@@ -818,8 +824,8 @@
 .excerpts-root .ex-calendar-warning { margin: 0 0 12px; color: var(--text-warning, var(--text-muted)); }
 .excerpts-root .ex-calendar-warning[hidden], .excerpts-root .ex-calendar-selected[hidden] { display: none !important; }
 .excerpts-root .ex-calendar-selected {
-  position: sticky; top: 48px; z-index: 4; background: var(--background-primary);
-  padding: 10px 0; margin-bottom: 14px; border-bottom: 1px solid var(--background-modifier-border);
+  position: relative; margin: 12px 0 0; padding: 10px 0;
+  border-top: 1px solid var(--background-modifier-border); background: transparent;
   color: var(--text-normal); font-size: 13px; font-variant-numeric: tabular-nums;
 }
 .excerpts-root .ex-calendar-layout {

@@ -200,6 +200,44 @@ test('calendar navigation preserves the original feed DOM, draft, filters and sc
   await t.close();
 });
 
+test('calendar sticks only to the actual scroll host and clears the mode on return',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  const host=root.closest('.excerpts-native-host');
+  const calendarRoot=root.querySelector('.excerpts-root');
+  host.style.overflowY='auto';
+  Object.defineProperty(host,'clientHeight',{configurable:true,get(){return 600;}});
+  let contentHeight=600;
+  Object.defineProperty(host,'scrollHeight',{configurable:true,get(){return contentHeight;}});
+  clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();
+  assert.equal(calendarRoot.dataset.calendarScrollOwner,'outer','equal-height host must not claim sticky');
+  contentHeight=2600;
+  t.pane.renderer.syncCalendarScrollOwner();
+  assert.equal(calendarRoot.dataset.calendarScrollOwner,'own','scrollable host enables sticky');
+  root.querySelector('.ex-calendar-back').click();
+  assert.equal(calendarRoot.dataset.calendarScrollOwner,undefined,'navigation does not leave sticky state on the feed');
+  await t.close();
+});
+
+test('selected date has one detail node in its month, never a second sticky layer',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();
+  const month=root.querySelector('.ex-calendar-mobile .ex-calendar-month-section');
+  const button=month.querySelector('.ex-calendar-day');
+  button.click();
+  const detail=root.querySelector('.ex-calendar-selected');
+  assert.equal(detail.closest('.ex-calendar-month-section'),month);
+  assert.equal(root.querySelectorAll('.ex-calendar-selected').length,1);
+  const another=root.querySelectorAll('.ex-calendar-month-section')[1];
+  another.querySelector('.ex-calendar-day').click();
+  assert.equal(detail.closest('.ex-calendar-month-section'),another);
+  assert.equal(root.querySelectorAll('.ex-calendar-selected').length,1);
+  const calendar=t.pane.renderer.calendarView;
+  calendar.update(t.pane.renderer.items,'done');
+  assert.ok(detail.closest('.ex-calendar-month-section'),'detail follows rebuilt months');
+  root.querySelector('.ex-calendar-back').click();
+  await t.close();
+});
+
 test('hidden list updates are deferred; changes render once on return without losing draft',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const input=root.querySelector('.ex-compose-text');

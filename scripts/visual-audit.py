@@ -5,6 +5,7 @@ Screenshots are review artifacts; assertions are mandatory CI gates. No automati
 baseline update is permitted. Business behavior is never patched for these tests.
 """
 import hashlib
+import os
 import json
 import struct
 from pathlib import Path
@@ -163,7 +164,10 @@ def assert_no_runtime_errors(errors, key, state):
 
 
 with sync_playwright() as playwright:
-    browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+    launch = {"headless": True, "args": ["--no-sandbox"]}
+    if os.environ.get("EXCERPTS_CHROMIUM"):
+        launch["executable_path"] = os.environ["EXCERPTS_CHROMIUM"]
+    browser = playwright.chromium.launch(**launch)
     for theme in THEMES:
         for width in WIDTHS:
             key = f"{theme}-{width}"
