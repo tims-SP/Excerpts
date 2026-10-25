@@ -867,18 +867,19 @@
   }
   .ex-calendar-modal .ex-calendar-axis {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
-    grid-template-rows: auto; gap: 4px; padding: 6px 0 8px 64px; flex: none;
+    grid-template-rows: auto; gap: 4px; padding: 6px 0 8px 70px; flex: none;
     position: sticky; top: 0; z-index: 1; background: var(--background-primary);
     width: 100%; font-size: 11px; line-height: 16px;
   }
   .ex-calendar-modal .ex-calendar-rows { display: flex; flex-direction: column; gap: 5px; width: 100%; }
   .ex-calendar-modal .ex-calendar-week-row {
-    display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 6px;
+    display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 6px;
     align-items: center; width: 100%;
   }
   .ex-calendar-modal .ex-calendar-month {
-    width: 58px; height: auto; overflow: visible; line-height: 16px; font-size: 11px;
+    width: 64px; height: auto; overflow: visible; line-height: 16px; font-size: 11px;
   }
+  .ex-calendar-modal .ex-calendar-month[data-year]::before { content: attr(data-year) "年"; }
   .ex-calendar-modal .ex-calendar-week {
     display: grid; grid-template-columns: repeat(7, minmax(0,1fr));
     grid-template-rows: auto; gap: 4px; width: 100%; justify-items: center;

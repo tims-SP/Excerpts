@@ -121,8 +121,9 @@ export class ExcerptsCalendarModal extends Modal {
       const monthKey = valid.length ? valid[valid.length - 1].date.slice(0, 7) : "";
       if (monthKey && monthKey !== shownMonth) {
         const monthNumber = Number(monthKey.slice(5, 7));
-        month.textContent = (monthNumber === 1 || !shownMonth ? monthKey.slice(0, 4) + "年" : "") +
-          monthNumber + "月";
+        month.textContent = monthNumber + "月";
+        month.title = monthKey.slice(0, 4) + "年" + monthNumber + "月";
+        if (monthNumber === 1 || !shownMonth) month.dataset.year = monthKey.slice(0, 4);
         shownMonth = monthKey;
       }
       const cells = document.createElement("div");
