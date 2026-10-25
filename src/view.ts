@@ -527,7 +527,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     form.setAttribute("aria-label", "快速摘录");
     const body = node("div", "ex-compose-body");
     const quote = node("textarea", "ex-compose-text");
-    quote.placeholder = "现在想记录的是…";
+    quote.placeholder = "摘录文字，或写下想法…";
     quote.rows = 3;
     const draftKey = this.workspace.kind + ":" + this.workspace.homePath;
     const priorDraft = composerDrafts.get(draftKey);
@@ -643,7 +643,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       retryOpenTarget = null;
       this.showSuggestions();
     };
-    options.append(selectedChips, tagToggle);
+    options.append(tagToggle, selectedChips);
     const editorButton = button("", () => void save(true), "ex-open-editor");
     editorButton.title = "进入 Markdown 编辑器";
     editorButton.setAttribute("aria-label", "编辑文档");
@@ -670,7 +670,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const tagSearch = picker.input;
     tagsPane.append(picker.element);
     body.append(quote);
-    form.append(body, tagsPane, composeActions);
+    form.append(body, composeActions, tagsPane);
     root.append(form);
     let saving = false;
     let resume = false;
