@@ -1624,7 +1624,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     card.append(node("div", "ex-extras"));
     const editor = node("div", "ex-tag-editor");
     editor.hidden = true;
-    card.append(editor);
     const footer = node("div", "ex-card-footer");
     const tags = node("div", "ex-chips");
     footer.append(tags);
@@ -1637,7 +1636,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     setIcon(indicator, "circle");
     actions.append(options, indicator);
     footer.append(actions);
-    card.append(footer);
+    card.append(footer, editor);
     this.renderTags(tags, item, this.openTagEditors.has(item.path));
     card.addEventListener("click", event => {
       if (this.selectionMode !== "selecting") return;
@@ -1951,16 +1950,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     mount.classList.toggle("ex-tags-empty", !item.tags.length);
     mount.classList.toggle("ex-tags-editing", editorOpen);
     mount.classList.toggle("ex-tags-expanded", !editorOpen && this.expandedTagRows.has(item.path));
-    for (const tag of item.tags) {
+    if (!editorOpen) for (const tag of item.tags) {
       const pill = button("", () => {
-        if (editorOpen || !this.guard("filter")) return;
+        if (!this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
         this.renderTagsFilter(); this.drawCards("top");
       }, "ex-tag");
       pill.setAttribute("aria-label", "筛选标签：" + tag);
       pill.replaceChildren(node("span", "ex-tag-label", "#" + tag));
-      pill.setAttribute("aria-pressed", String(!editorOpen && this.tagFilter === tag));
-      if (!editorOpen && this.tagFilter === tag) pill.classList.add("ex-selected");
+      pill.setAttribute("aria-pressed", String(this.tagFilter === tag));
+      if (this.tagFilter === tag) pill.classList.add("ex-selected");
       mount.append(pill);
     }
     if (!editorOpen && !this.expandedTagRows.has(item.path)) {
@@ -1979,7 +1978,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       collapse.setAttribute("aria-label", "收起标签");
       mount.append(collapse);
     }
-    const toggle = button(item.tags.length ? "+" : "＋ 标签", () => {
+    const toggle = button(editorOpen ? "" : item.tags.length ? "+" : "＋ 标签", () => {
       if (this.pendingTags.has(item.path)) return;
       if (this.openTagEditors.has(item.path)) this.closeTagEditor(item, card);
       else {
@@ -1994,7 +1993,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         if (editor) this.renderTagEditor(editor, item);
       }
     }, "ex-add-tag");
+    if (editorOpen) {
+      toggle.classList.add("ex-is-cancelling");
+      const icon = node("span", "ex-card-tag-toggle-icon");
+      setIcon(icon, "x");
+      toggle.append(icon, node("span", "ex-card-tag-toggle-text", "取消"));
+    }
     toggle.setAttribute("aria-label", editorOpen ? "取消标签编辑" : "添加标签");
+    toggle.title = editorOpen ? "取消标签编辑" : "添加标签";
     toggle.setAttribute("aria-expanded", String(editorOpen));
     mount.append(toggle);
     if (!editorOpen) this.scheduleTagReflow(mount);
@@ -2023,13 +2029,37 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const heading = node("div", "ex-tag-editor-head");
     const title = node("strong", "ex-tag-editor-title", "编辑标签");
     const counter = node("span", "ex-tag-editor-count");
-    const updateCount = () => { counter.textContent = "已选 " + selected.size; };
+    const preview = node("div", "ex-tag-selected");
+    preview.setAttribute("aria-label", "待提交标签预览");
+    const isDirty = () => original.length !== selected.size ||
+      original.some(tag => !selected.has(tag));
+    const updatePreview = () => {
+      preview.replaceChildren();
+      // A tag appearing both in YAML and the body is shown just once.
+      const all = [...new Set([...selected, ...item.inlineTags])];
+      for (const tag of all) {
+        const pill = node("span", "ex-tag-selected-chip");
+        pill.title = "#" + tag;
+        pill.setAttribute("aria-label", "#" + tag +
+          (item.inlineTags.includes(tag) ? "，正文标签，只读" : ""));
+        if (item.inlineTags.includes(tag)) {
+          pill.classList.add("ex-tag-selected-readonly");
+          const lock = node("span", "ex-tag-selected-lock");
+          lock.setAttribute("aria-hidden", "true");
+          setIcon(lock, "lock");
+          pill.append(lock);
+        }
+        pill.append(node("span", "ex-tag-selected-label", "#" + tag));
+        preview.append(pill);
+      }
+      if (!all.length) preview.append(node("span", "ex-tag-selected-empty", "尚未选择标签"));
+      counter.textContent = "已选 " + all.length + (isDirty() ? " · 未保存" : "");
+    };
     heading.append(title, counter);
-    updateCount();
+    updatePreview();
     const controls = node("div", "ex-tag-editor-actions");
-    const cancel = button("取消", () => this.closeTagEditor(item, card), "ex-tag-cancel");
     const done = button("完成", () => void commit(), "ex-tag-done");
-    controls.append(cancel, done);
+    controls.append(done);
     const picker = new TagPicker({
       available: () => this.availableTags,
       selected: () => selected,
@@ -2038,7 +2068,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         if (this.pendingTags.has(item.path)) return;
         if (add) selected.add(tag);
         else selected.delete(tag);
-        updateCount();
+        updatePreview();
       },
       onEscape: () => { if (!this.pendingTags.has(item.path)) this.closeTagEditor(item, card); }
     });
@@ -2047,11 +2077,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           "正文标签请在 Markdown 原文中修改。先结束标签编辑，再从卡片选项进入原文。") : null;
     const commit = async () => {
       if (this.pendingTags.has(item.path) || !this.guard("tag")) return;
-      if (original.length === selected.size && original.every(tag => selected.has(tag))) {
+      if (!isDirty()) {
         this.closeTagEditor(item, card); return;
       }
       this.pendingTags.add(item.path);
-      picker.setDisabled(true); cancel.disabled = true; done.disabled = true;
+      picker.setDisabled(true); done.disabled = true;
+      card?.querySelector<HTMLButtonElement>(".ex-add-tag")?.setAttribute("disabled", "");
+      counter.textContent = "保存中…";
       done.textContent = "保存中…";
       try {
         if (!(targetFile instanceof TFile))
@@ -2067,8 +2099,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       } catch (error) {
         notify(error);
         if (editor.isConnected) {
-          picker.setDisabled(false); cancel.disabled = false; done.disabled = false;
+          picker.setDisabled(false); done.disabled = false;
           done.textContent = "完成";
+          updatePreview();
           picker.focus();
         }
       } finally {
@@ -2076,7 +2109,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.updateAvailability();
       }
     };
-    editor.append(heading, picker.element);
+    editor.append(heading, preview, picker.element);
     if (inlineInfo) editor.append(inlineInfo);
     editor.append(controls);
     picker.focus();

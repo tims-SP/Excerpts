@@ -91,7 +91,12 @@ with sync_playwright() as playwright:
             expected_height = 44 if width <= 480 else 40
             assert abs(search_surface.bounding_box()["height"] - expected_height) <= 1, (theme,width,search_surface.bounding_box())
             assert field.bounding_box()["height"] >= expected_height - 4, (theme,width,field.bounding_box())
-            assert field.bounding_box()["y"] + field.bounding_box()["height"] <= card.locator(".ex-card-footer").bounding_box()["y"] + 1
+            footer_box = card.locator(".ex-card-footer").bounding_box()
+            editor_box = editor.bounding_box()
+            assert editor_box["y"] >= footer_box["y"] + footer_box["height"] - 1, (
+                theme, width, "tag editor should expand below footer")
+            assert field.bounding_box()["y"] >= editor_box["y"], (
+                theme, width, "search input must remain inside editor")
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
             print("OK", theme, width, "editor-and-footer", coords["cardLeft"])
             page.close()
