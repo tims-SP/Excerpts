@@ -373,9 +373,10 @@ test('capture chip opens picker to edit instead of deleting, and returning to bo
   const chip=root.querySelector('.ex-capture-selected .ex-capture-chip');
   assert.ok(chip);assert.equal(chip.textContent,'#哲学');
   assert.equal(chip.getAttribute('aria-label'),'编辑标签：哲学');
-  assert.equal(root.querySelector('.ex-capture-tag-toggle').textContent,'');
+  assert.equal(root.querySelector('.ex-capture-tag-toggle').textContent,'关闭');
+  assert.equal(root.querySelector('.ex-capture-tag-toggle').getAttribute('aria-label'),'关闭标签选择');
   const priorChips=root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length;
-  clickByLabel(root,'添加标签');
+  clickByLabel(root,'关闭标签选择');
   assert.equal(root.querySelector('.ex-capture-tags').hidden,true);
   chip.click();
   assert.equal(root.querySelector('.ex-capture-tags').hidden,false);
@@ -385,6 +386,48 @@ test('capture chip opens picker to edit instead of deleting, and returning to bo
   // Leave the session-scoped draft clean for following tests.
   clickByLabel(root,'添加标签');
   [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')].find(x=>x.textContent==='哲学').click();
+  await t.close();
+});
+
+test('quick capture tag toggle communicates closed, open, selected, Escape and body focus states',async()=>{
+  const t=await fixture();const root=t.pane.contentEl;
+  const toggle=root.querySelector('.ex-capture-tag-toggle');
+  const panel=root.querySelector('.ex-capture-tags');
+  const search=root.querySelector('.ex-tags-input');
+  const check=(expanded,label,text)=>{
+    assert.equal(panel.hidden,!expanded);
+    assert.equal(toggle.getAttribute('aria-expanded'),String(expanded));
+    assert.equal(toggle.getAttribute('aria-label'),label);
+    assert.equal(toggle.title,label);
+    assert.equal(toggle.textContent,text);
+    assert.equal(toggle.querySelector('.ex-capture-toggle-icon')?.getAttribute('data-icon'),expanded?'x':text?'hash':'plus');
+  };
+  check(false,'添加标签','标签');
+  toggle.click();
+  check(true,'关闭标签选择','关闭');
+  assert.equal(document.activeElement,search);
+  const choice=[...panel.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent==='哲学');
+  choice.click();
+  check(true,'关闭标签选择','关闭');
+  assert.equal(root.querySelector('.ex-capture-selected .ex-capture-chip').textContent,'#哲学');
+  toggle.click();
+  check(false,'添加标签','');
+  assert.equal(document.activeElement,toggle);
+  toggle.click();
+  check(true,'关闭标签选择','关闭');
+  search.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  check(false,'添加标签','');
+  assert.equal(document.activeElement,toggle);
+  toggle.click();
+  check(true,'关闭标签选择','关闭');
+  root.querySelector('.ex-compose-text').dispatchEvent(new dom.window.Event('focus'));
+  check(false,'添加标签','');
+  assert.equal(root.querySelectorAll('.ex-capture-selected .ex-capture-chip').length,1);
+  toggle.click();
+  choice.click();
+  check(true,'关闭标签选择','关闭');
+  toggle.click();
+  check(false,'添加标签','标签');
   await t.close();
 });
 
