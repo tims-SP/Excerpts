@@ -44,3 +44,14 @@ test("heatmap uses fixed absolute levels and ignores old or future dates", () =>
   assert.equal(data.total, 7);
   assert.equal(data.weeks.at(-1).at(-1).date >= data.end, true);
 });
+
+test("calendar aligns rows to Monday and spans New Year correctly", () => {
+  const data = buildHeatmap([
+    card(new Date(2026, 0, 1, 9)),
+    card(new Date(2025, 11, 31, 9))
+  ], new Date(2026, 0, 5, 12));
+  assert.equal(new Date(data.weeks[0][0].date + "T12:00:00").getDay(), 1);
+  assert.deepEqual(data.weeks.flat().filter(day => day.count).map(day => day.date),
+    ["2025-12-31", "2026-01-01"]);
+  assert.equal(data.weeks.at(-1).at(-1).date >= data.end, true);
+});

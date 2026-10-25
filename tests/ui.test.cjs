@@ -105,7 +105,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,metadataEvents,workspaceEvents,folderLeaves,
     getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
-    document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
+    document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal,.ex-calendar-modal').forEach(el=>el.remove());
   }};
 }
 
@@ -126,6 +126,28 @@ test('successful scans show immediate progress and dismiss only the visual statu
   assert.equal(status.hidden,false,'refresh restarts the two-second completion window');
   await t.close();
   assert.equal(renderer.scanCompletionTimer,null,'unloading clears the completion timer');
+});
+
+test('calendar reads a committed snapshot, displays staleness and blocks unscanned states',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(renderer.scanStatus,'stale');
+  clickByLabel(root,'页面选项');
+  const item=Menu.last.items.find(item=>item.title==='摘录日历');
+  assert.equal(item.disabled,false);
+  item.handler();
+  assert.ok(document.querySelector('.ex-calendar-warning').textContent.includes('可能不是最新'));
+  renderer.scanStatus='scanning';
+  renderer.renderScanStatus();
+  assert.ok(document.querySelector('.ex-calendar-warning').textContent.includes('可能不是最新'));
+  Modal.last.close();
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(entry=>entry.title==='摘录日历').disabled,true);
+  renderer.scanStatus='blocked';renderer.lastScanCount=null;
+  renderer.renderScanStatus();
+  clickByLabel(root,'页面选项');
+  assert.equal(Menu.last.items.find(entry=>entry.title==='摘录日历').disabled,true);
+  await t.close();
 });
 
 test('stale and error statuses remain visible beyond the success timeout',async()=>{
@@ -156,15 +178,18 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
   assert.equal(t.pane.getDisplayText(),'首页');
   assert.ok(root.querySelector('.ex-composer .ex-compose-text'));
-  assert.ok(root.querySelector('.ex-heatmap'));
-  assert.equal(root.querySelector('.ex-heatmap').hidden,false);
-  assert.equal(root.querySelectorAll('.ex-heatmap-week').length >= 52,true);
-  assert.equal(root.querySelectorAll('.ex-heatmap-cell').length >= 365,true);
-  const calendarToggle=root.querySelector('.ex-heatmap-toggle');
-  calendarToggle.click();
-  assert.equal(root.querySelector('.ex-heatmap-body').hidden,true);
-  calendarToggle.click();
-  assert.equal(root.querySelector('.ex-heatmap-body').hidden,false);
+  assert.equal(root.querySelector('.ex-heatmap'),null,'secondary calendar does not occupy the homepage');
+  clickByLabel(root,'页面选项');
+  const calendarItem=Menu.last.items.find(item=>item.title==='摘录日历');
+  assert.ok(calendarItem);
+  assert.equal(calendarItem.disabled,false);
+  calendarItem.handler();
+  assert.ok(document.querySelector('.ex-calendar-modal'));
+  assert.ok(document.querySelectorAll('.ex-calendar-week').length >= 52);
+  assert.equal(document.querySelectorAll('.ex-calendar-week .ex-calendar-cell').length >= 365,true);
+  assert.ok(document.querySelector('.ex-calendar-summary').textContent.includes('有记录的天数'));
+  Modal.last.close();
+  assert.equal(document.querySelector('.ex-calendar-modal'),null);
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);

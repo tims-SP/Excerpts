@@ -33,8 +33,8 @@ REQUIRED = {
     "composer-tag-picker": ".ex-capture-tags .ex-tag-picker",
     "composer-save": ".ex-compose-actions > .ex-btn-primary",
     "composer-edit-document": ".ex-open-editor",
-    "calendar-heatmap": ".ex-heatmap",
-    "calendar-grid": ".ex-heatmap-scroll",
+    "calendar-panel": ".ex-calendar-modal .modal-content",
+    "calendar-grid": ".ex-calendar-scroll",
     "list-toolbar": ".ex-toolbar:not(.ex-selection-toolbar)",
     "list-search": ".ex-search-wrap",
     "list-filter": ".ex-filter-tags",
@@ -67,7 +67,7 @@ REQUIRED = {
 # Names deliberately identify states as well as components. New features should
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
-    "home", "composer-picker", "composer-draft", "search-empty",
+    "home", "calendar", "composer-picker", "composer-draft", "search-empty",
     "filter", "page-menu", "section-open", "card-picker", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
@@ -181,13 +181,27 @@ with sync_playwright() as playwright:
             page.locator(".ex-scan-status").wait_for(state="hidden", timeout=5000)
             assert page.locator(".ex-scan-status").get_attribute("data-state") == "done"
             manifest["geometry"][key] = geometry(page, theme, width)
-            assert page.locator(".ex-heatmap-week").count() >= 52, ("missing calendar weeks", key)
+            assert page.locator(".ex-heatmap").count() == 0, ("calendar occupies home", key)
             screenshot(page, theme, width, "home", "page-header",
                        "composer", "composer-input", "composer-toolbar", "composer-save",
-                       "composer-edit-document", "calendar-heatmap", "calendar-grid",
-                       "list-toolbar", "date-rail",
+                       "composer-edit-document", "list-toolbar", "date-rail",
                        "card", "card-content", "card-sections", "card-tags",
                        "card-footer", "card-menu")
+            page.locator(".ex-page-options").click()
+            page.locator(".menu button", has_text="摘录日历").click()
+            assert page.locator(".ex-calendar-week").count() >= 52, ("missing calendar weeks", key)
+            calendar = page.locator(".ex-calendar-scroll")
+            if width <= 768:
+                assert calendar.evaluate("(el) => el.scrollWidth <= el.clientWidth + 2"), (
+                    "calendar horizontal overflow", key)
+                assert page.locator(".ex-calendar-week-row").first.evaluate(
+                    "(el) => getComputedStyle(el).display") == "grid", ("vertical layout", key)
+            else:
+                assert page.locator(".ex-calendar-week-row").first.evaluate(
+                    "(el) => getComputedStyle(el).display") == "flex", ("horizontal layout", key)
+            screenshot(page, theme, width, "calendar", "calendar-panel", "calendar-grid")
+            page.evaluate("() => window.__pane.renderer.calendarModal.close()")
+            assert page.locator(".ex-calendar-modal").count() == 0, ("dialog cleanup", key)
 
             page.locator(".ex-capture-tag-toggle").click()
             assert page.locator(".ex-capture-tags").is_visible()
