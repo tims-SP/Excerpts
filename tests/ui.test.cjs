@@ -664,7 +664,7 @@ test('unfinished tag edits block virtual-row recycling instead of losing the inp
   await waitFor(()=>root.scrollTop===start,'edited card stays anchored');
   assert.equal(card.isConnected,true);
   assert.equal(card.querySelector('.ex-tag-custom'),input);
-  card.querySelector('.ex-tag-cancel').click();
+  card.querySelector('.ex-add-tag').click();
   await t.close();
 });
 
@@ -730,10 +730,57 @@ test('card tag edit stays open and preserves the SAME input when selecting sever
   assert.equal(card.querySelector('.ex-tag-custom'),input);
   assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
   assert.equal(t.getTagWrites(),0,'selection must not write the file');
-  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2');
-  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2 · 未保存');
+  card.querySelector('.ex-add-tag').click();
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   assert.deepEqual(t.tagState.get(t.md.path),['哲学']);
+  await t.close();
+});
+
+test('staged tag preview replaces saved chips, preserves the search input and cancels without writing',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  const mount=card.querySelector('.ex-chips');
+  assert.ok(mount.querySelector('.ex-tag'));
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  const panel=card.querySelector('.ex-tag-editor');
+  assert.equal(card.lastElementChild,panel,'picker follows the original footer');
+  assert.equal(mount.querySelector('.ex-tag'),null,'saved chips are not duplicated');
+  assert.equal(mount.querySelector('.ex-add-tag').textContent,'取消');
+  const tags=()=>[...card.querySelectorAll('.ex-tag-selected-chip')].map(el=>el.textContent);
+  assert.deepEqual(tags(),['#哲学']);
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 1');
+  input.value='阅读';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  const create=[...card.querySelectorAll('.ex-tag-choice')].find(el=>el.textContent.includes('创建 #阅读'));
+  assert.ok(create);create.click();
+  assert.equal(card.querySelector('.ex-tag-custom'),input);
+  assert.deepEqual(tags(),['#哲学','#阅读']);
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2 · 未保存');
+  assert.equal(t.getTagWrites(),0);
+  card.querySelector('.ex-add-tag').click();
+  assert.equal(panel.hidden,true);
+  assert.ok(mount.textContent.includes('#哲学'));
+  assert.equal(mount.textContent.includes('#阅读'),false);
+  assert.equal(t.getTagWrites(),0);
+  await t.close();
+});
+
+test('inline tag preview shows readonly body tag and counts the complete union',async()=>{
+  const t=await fixture(false,'普通正文 #正文', ['哲学']);
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const preview=card.querySelector('.ex-tag-selected');
+  const tags=[...preview.querySelectorAll('.ex-tag-selected-chip')];
+  assert.equal(tags.length,2);
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2');
+  const readonly=tags.find(el=>el.textContent==='#正文');
+  assert.ok(readonly);
+  assert.equal(readonly.getAttribute('aria-label'),'#正文，正文标签，只读');
+  assert.ok(readonly.querySelector('.ex-tag-selected-lock'));
+  assert.equal(preview.querySelectorAll('button').length,0);
+  card.querySelector('.ex-tag-custom').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(t.getTagWrites(),0);
   await t.close();
 });
 
@@ -746,6 +793,9 @@ test('cards without tags use a single compact footer add action, then expand edi
   add.click();
   assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
   assert.equal(card.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
+  assert.equal(card.querySelector('.ex-add-tag').getAttribute('aria-label'),'取消标签编辑');
+  assert.equal(card.querySelector('.ex-add-tag').textContent,'取消');
+  assert.equal(card.querySelector('.ex-tag-cancel'),null);
   card.querySelector('.ex-tag-custom').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   assert.equal(card.querySelector('.ex-card-footer .ex-add-tag').textContent,'＋ 标签');
@@ -824,7 +874,7 @@ test('inline Markdown tags remain visible but cannot be removed from frontmatter
   assert.ok(card.querySelector('.ex-tag-inline-hint').textContent.includes('Markdown'));
   assert.match(card.querySelector('.ex-tag-inline-hint').textContent,/先结束标签编辑/);
   assert.equal(card.querySelector('.ex-tag-source'),null,'no unusable edit link inside staged tag editing');
-  card.querySelector('.ex-tag-cancel').click();
+  card.querySelector('.ex-add-tag').click();
   assert.equal(t.getTagWrites(),0);
   Menu.last=null;
   clickByLabel(t.pane.contentEl,'卡片选项');
@@ -937,8 +987,8 @@ test('card tags are the last content group and not duplicated above H2 sections'
   const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
   assert.equal(card.children[0].classList.contains('ex-quote'),true);
   assert.equal(card.children[1].classList.contains('ex-extras'),true);
-  assert.equal(card.children[2].classList.contains('ex-tag-editor'),true);
-  assert.equal(card.lastElementChild.classList.contains('ex-card-footer'),true);
+  assert.equal(card.children[2].classList.contains('ex-card-footer'),true);
+  assert.equal(card.lastElementChild.classList.contains('ex-tag-editor'),true);
   assert.equal(card.querySelectorAll('.ex-chips').length,1);
   assert.equal(card.querySelectorAll('.ex-card-options').length,1);
   await t.close();
@@ -988,7 +1038,7 @@ test('stale frontmatter refuses save and retains draft picker for retry or cance
   assert.equal(card.querySelector('.ex-tag-custom'),input);
   assert.deepEqual(t.tagState.get(t.md.path),['另一个编辑器']);
   assert.ok(card.querySelector('.ex-tag-choice'));
-  card.querySelector('.ex-tag-cancel').click();
+  card.querySelector('.ex-add-tag').click();
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   await t.close();
 });
@@ -2113,7 +2163,7 @@ test('only one card can edit its tags and a blocked refresh never replays',async
   t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   t.plugin.refreshViews(true);
   assert.equal(scans,0);
-  cards[0].querySelector('.ex-tag-cancel').click();
+  cards[0].querySelector('.ex-add-tag').click();
   assert.equal(cards[1].querySelector('.ex-add-tag').disabled,false);
   assert.equal(scans,0,'no delayed refresh after closing tag editor');
   assert.equal(renderer.scanStatus,'done');
