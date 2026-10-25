@@ -238,9 +238,23 @@ with sync_playwright() as playwright:
             clear.click()
             assert card.locator(".ex-tag-custom").input_value() == "", (theme,width,"clear did not restore placeholder")
             assert card.locator(".ex-tag-choice").count() > 0, (theme, width, "picker choices")
-            assert card.locator(".ex-tag-cancel").is_visible()
+            assert not card.locator(".ex-tag-cancel").count(), (theme,width,"redundant cancel")
+            cancel = card.locator(".ex-add-tag")
+            assert cancel.get_attribute("aria-label") == "取消标签编辑", (theme,width,"footer cancel label")
+            assert cancel.inner_text() == "取消", (theme,width,"footer cancel text")
             assert card.locator(".ex-tag-done").is_visible()
-            assert panel_box["y"] + panel_box["height"] <= footer_box["y"] + 1, (theme, width)
+            assert panel_box["y"] >= footer_box["y"] + footer_box["height"] - 1, (theme, width,"picker above footer")
+            assert card.locator(".ex-tag-selected-chip").count() >= 1, (theme,width,"missing preview")
+            assert not card.locator(".ex-chips .ex-tag").count(), (theme,width,"stale saved chips visible")
+            preview = card.locator(".ex-tag-selected").evaluate("""el => ({
+                wrap: getComputedStyle(el).flexWrap,
+                height: el.getBoundingClientRect().height,
+                maxHeight: getComputedStyle(el).maxHeight,
+                overflowY: getComputedStyle(el).overflowY
+            })""")
+            assert preview["wrap"] == "wrap" and preview["height"] >= 22 and preview["maxHeight"] == "none", (theme,width,preview)
+            assert preview["overflowY"] != "auto", (theme,width,preview)
+            assert cancel.bounding_box()["x"] + cancel.bounding_box()["width"] <= footer_box["x"]+footer_box["width"]+1, (theme,width,"footer overflow")
             page.screenshot(path=str(root / "artifacts" / f"interaction-{theme}-{width}.png"), full_page=True)
             assert not errors, (theme, width, errors)
             print("OK", theme, width, geometry["pillHeight"], "dateX", geometry["dateX"])
