@@ -61,6 +61,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private feedEl!: HTMLElement;
   private pageMenuButton!: HTMLButtonElement;
   private feedScrollTop = 0;
+  private feedRenderPending = false;
+  private feedPendingPolicy: ScrollPolicy = "keep";
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private searchInput!: HTMLInputElement;
@@ -160,6 +162,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
+        if (this.pageMode === "calendar") return; // Hidden feed geometry is not measurable.
         this.reflowVisibleTags();
         this.reflowCaptureTags();
         for (const update of this.previewUpdates.values()) update();
@@ -333,7 +336,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.renderScanStatus();
     if (this.pageMode === "calendar") this.calendarView?.update(this.items, this.calendarStatus());
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
-    this.drawCards(viewport && viewport.scrollTop > 48 ? "anchor" : "top");
+    this.drawCards((this.pageMode === "calendar" ? this.feedScrollTop : (viewport?.scrollTop ?? 0)) > 48 ? "anchor" : "keep");
   }
   /** Metadata follows a successful create asynchronously; update only that card. */
   private syncCreatedMetadata(file: TFile, tags: string[]): void {
@@ -949,6 +952,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
     if (!viewport) return;
     this.feedScrollTop = viewport.scrollTop;
+    // A hidden feed must not continue playback, even though its DOM stays mounted.
+    for (const media of Array.from(this.feedEl.querySelectorAll<HTMLMediaElement>("audio,video"))) {
+      try { media.pause(); } catch { /* Unavailable media controls are harmless. */ }
+    }
     if (!this.calendarView) this.calendarView = new ExcerptsCalendarView(this.items, this.calendarStatus(),
       () => this.showFeed());
     else this.calendarView.update(this.items, this.calendarStatus());
@@ -958,16 +965,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.feedEl.hidden = true;
     this.calendarView.element.hidden = false;
     this.containerEl.dataset.page = "calendar";
-    viewport.scrollTop = 0;
-    // The narrow layout is chronological top-to-bottom; show the latest week by default.
-    const showLatest = () => {
-      if (this.disposed || this.pageMode !== "calendar") return;
-      const vertical = this.calendarView!.element.ownerDocument.defaultView?.getComputedStyle(
-        this.calendarView!.element.querySelector(".ex-calendar-week-row")!).display === "grid";
-      if (vertical) viewport.scrollTop = viewport.scrollHeight;
-    };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(showLatest);
-    else showLatest();
+    viewport.scrollTop = 0; // Most recent month is rendered first on narrow views.
     this.calendarView.element.querySelector<HTMLButtonElement>(".ex-calendar-back")?.focus({ preventScroll: true });
   }
   private showFeed(restore = true): void {
@@ -977,9 +975,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.calendarView) this.calendarView.element.hidden = true;
     this.feedEl.hidden = false;
     delete this.containerEl.dataset.page;
-    this.timeline?.setSuspended(false);
+    // Layout is measurable only once the feed is visible again.
     if (viewport) viewport.scrollTop = restore ? this.feedScrollTop : 0;
-    this.timeline?.refresh();
+    this.timeline?.setSuspended(false);
+    this.timeline?.resize(); // Width may have changed while the feed was hidden.
+    this.reflowVisibleTags();
+    this.reflowCaptureTags();
+    for (const update of this.previewUpdates.values()) update();
+    for (const group of this.sectionHeightChecks.values()) for (const check of group.values()) check();
+    if (this.feedRenderPending) {
+      const policy = restore ? this.feedPendingPolicy : "top";
+      this.feedRenderPending = false;
+      this.feedPendingPolicy = "keep";
+      this.drawCards(policy);
+    } else {
+      this.timeline?.refresh();
+    }
     if (restore && !this.disposed) this.pageMenuButton?.focus({ preventScroll: true });
   }
   private openSavePageModal(): void {
@@ -1503,6 +1514,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.unmountMarkdown(row.path);
   }
   private drawCards(policy: ScrollPolicy): void {
+    if (this.pageMode === "calendar") {
+      // A hidden list has no reliable dimensions. Coalesce background changes rather
+      // than unmounting the Markdown renderers or measuring zero-height rows.
+      this.feedRenderPending = true;
+      if (policy === "top" || this.feedPendingPolicy === "top") this.feedPendingPolicy = "top";
+      else if (policy === "anchor" || this.feedPendingPolicy === "anchor") this.feedPendingPolicy = "anchor";
+      return;
+    }
     const token = ++this.renderToken;
     this.observer?.disconnect();
     this.mediaObserver?.disconnect();

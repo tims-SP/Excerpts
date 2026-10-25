@@ -55,6 +55,7 @@ export class VirtualTimeline {
     this.bottom.setAttribute("aria-hidden", "true");
     this.host.replaceChildren(this.top, this.window, this.bottom);
     this.observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(entries => {
+      if (this.suspended || this.disposed) return;
       let precedingDelta = 0;
       let changed = false;
       for (const entry of entries) {
@@ -67,7 +68,7 @@ export class VirtualTimeline {
         changed = true;
         if (index < this.firstVisible) precedingDelta += delta;
       }
-      if (!changed) return;
+      if (!changed || this.suspended) return;
       if (precedingDelta) this.viewport.scrollTop += precedingDelta;
       this.updateSpacers();
       this.schedule();
@@ -78,6 +79,7 @@ export class VirtualTimeline {
 
   setRows(rows: readonly TimelineRow[], policy: ScrollPolicy): void {
     if (this.disposed) return;
+    if (this.suspended) throw new Error("不能重绘隐藏的摘录列表");
     const anchor = policy === "anchor" ? this.captureAnchor() : null;
     const anchorTarget = anchor ? this.resolveAnchorTarget(anchor, this.rows, rows) : null;
     const priorScroll = this.viewport.scrollTop;
