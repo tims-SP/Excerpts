@@ -164,6 +164,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.tagResizeObserver = new ResizeObserver(() => {
         if (this.pageMode === "calendar") {
           this.syncCalendarScrollOwner();
+          this.calendarView?.onShown(); // Move date detail when a responsive breakpoint changes.
           return; // Hidden feed geometry is not measurable.
         }
         this.reflowVisibleTags();
