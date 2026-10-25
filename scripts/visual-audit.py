@@ -33,6 +33,8 @@ REQUIRED = {
     "composer-tag-picker": ".ex-capture-tags .ex-tag-picker",
     "composer-save": ".ex-compose-actions > .ex-btn-primary",
     "composer-edit-document": ".ex-open-editor",
+    "calendar-heatmap": ".ex-heatmap",
+    "calendar-grid": ".ex-heatmap-scroll",
     "list-toolbar": ".ex-toolbar:not(.ex-selection-toolbar)",
     "list-search": ".ex-search-wrap",
     "list-filter": ".ex-filter-tags",
@@ -179,9 +181,11 @@ with sync_playwright() as playwright:
             page.locator(".ex-scan-status").wait_for(state="hidden", timeout=5000)
             assert page.locator(".ex-scan-status").get_attribute("data-state") == "done"
             manifest["geometry"][key] = geometry(page, theme, width)
+            assert page.locator(".ex-heatmap-week").count() >= 52, ("missing calendar weeks", key)
             screenshot(page, theme, width, "home", "page-header",
                        "composer", "composer-input", "composer-toolbar", "composer-save",
-                       "composer-edit-document", "list-toolbar", "date-rail",
+                       "composer-edit-document", "calendar-heatmap", "calendar-grid",
+                       "list-toolbar", "date-rail",
                        "card", "card-content", "card-sections", "card-tags",
                        "card-footer", "card-menu")
 

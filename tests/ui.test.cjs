@@ -156,6 +156,15 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-scan-text').textContent,'已扫描 · 1 条');
   assert.equal(t.pane.getDisplayText(),'首页');
   assert.ok(root.querySelector('.ex-composer .ex-compose-text'));
+  assert.ok(root.querySelector('.ex-heatmap'));
+  assert.equal(root.querySelector('.ex-heatmap').hidden,false);
+  assert.equal(root.querySelectorAll('.ex-heatmap-week').length >= 52,true);
+  assert.equal(root.querySelectorAll('.ex-heatmap-cell').length >= 365,true);
+  const calendarToggle=root.querySelector('.ex-heatmap-toggle');
+  calendarToggle.click();
+  assert.equal(root.querySelector('.ex-heatmap-body').hidden,true);
+  calendarToggle.click();
+  assert.equal(root.querySelector('.ex-heatmap-body').hidden,false);
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);

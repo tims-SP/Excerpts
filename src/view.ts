@@ -9,6 +9,7 @@ import { PageFilter, isFiltered } from "./page-config";
 import { classifyPreview, previewAction, previewPolicy } from "./card-preview";
 import { ScrollPolicy, TimelineRow, VirtualTimeline } from "./virtual-list";
 import { SavePageModal } from "./page-modal";
+import { HeatmapPanel } from "./heatmap";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
   const result = document.createElement(tag);
@@ -55,6 +56,7 @@ const composerDrafts = new Map<string, { text: string; tags: string[] }>();
 /** Obsidian Markdown excerpt homepage. */
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: CardIndex[] = [];
+  private heatmap: HeatmapPanel | null = null;
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private searchInput!: HTMLInputElement;
@@ -174,6 +176,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.observer?.disconnect();
     this.mediaObserver?.disconnect();
     this.tagResizeObserver?.disconnect();
+    this.heatmap = null;
     this.timeline?.dispose();
     this.timeline = null;
     this.localCreates.clear();
@@ -324,6 +327,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.showSuggestions();
     this.renderTagsFilter();
     this.renderScanStatus();
+    this.heatmap?.update(this.items);
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
     this.drawCards(viewport && viewport.scrollTop > 48 ? "anchor" : "top");
   }
@@ -345,6 +349,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.rebuildAvailableTags();
     this.showSuggestions();
     this.renderTagsFilter();
+    this.heatmap?.update(this.items);
     this.drawCards("anchor");
   }
   /** Mark cached results obsolete without scheduling any scan. */
@@ -443,6 +448,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       invalid: "页面已失效 · 请重新打开"
     };
     this.scanStatusEl.dataset.state = status;
+    this.heatmap?.setStale(status !== "done");
     this.scanTextEl.textContent = labels[status];
     const hint = this.homeInvalid
       ? this.homeInvalidCause === "configuration"
@@ -654,6 +660,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     body.append(quote);
     form.append(body, tagsPane, composeActions);
     root.append(form);
+    this.heatmap = new HeatmapPanel();
+    root.append(this.heatmap.element);
     let saving = false;
     let resume = false;
     let retryOpenTarget: { path: string; file: TFile } | null = null;
@@ -1091,6 +1099,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           this.rebuildAvailableTags();
           this.showSuggestions();
           this.renderTagsFilter();
+          this.heatmap?.update(this.items);
           this.drawCards("anchor");
         }
         this.updateSelectionUI();
@@ -1150,6 +1159,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       this.items = this.items.filter(item => !removed.has(item.path));
       if (removed.size) this.rebuildAvailableTags();
+      if (removed.size) this.heatmap?.update(this.items);
       if (result.deleted.length) this.markStale();
       this.drawCards("anchor");
       this.updateSelectionUI();
@@ -1203,6 +1213,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
       this.itemByPath = new Map(cards.map(card => [card.path, card]));
+      this.heatmap?.update(cards);
       this.rebuildAvailableTags();
       this.lastScanCount = cards.length;
       this.scanStatus = this.scanDirty ? "stale" : "done";
