@@ -35,7 +35,10 @@ REQUIRED = {
     "composer-edit-document": ".ex-open-editor",
     "calendar-panel": ".excerpts-root .ex-calendar-shell",
     "calendar-back": ".excerpts-root .ex-calendar-back",
-    "calendar-grid": ".ex-calendar-layout",
+    "calendar-grid": ".ex-calendar-shell",
+    "calendar-months": ".ex-calendar-mobile",
+    "calendar-desktop": ".ex-calendar-layout",
+    "calendar-selected": ".ex-calendar-selected",
     "list-toolbar": ".ex-toolbar:not(.ex-selection-toolbar)",
     "list-search": ".ex-search-wrap",
     "list-filter": ".ex-filter-tags",
@@ -68,7 +71,7 @@ REQUIRED = {
 # Names deliberately identify states as well as components. New features should
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
-    "home", "calendar", "composer-picker", "composer-draft", "search-empty",
+    "home", "calendar", "calendar-date", "composer-picker", "composer-draft", "search-empty",
     "filter", "page-menu", "section-open", "card-picker", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
@@ -199,22 +202,31 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-feed-view").is_hidden(), ("feed not hidden", key)
             assert page.locator(".ex-calendar-modal").count() == 0, ("legacy modal present", key)
             assert page.locator(".ex-calendar-week").count() >= 52, ("missing calendar weeks", key)
-            assert page.locator(".ex-calendar-layout").evaluate(
-                "el => el.scrollWidth <= el.clientWidth + 2"), ("calendar horizontal overflow", key)
+            assert page.locator(".ex-calendar-summary").is_visible(), ("summary hidden", key)
+            assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") <= 2, (
+                "calendar starts scrolled away from summary", key)
             if width <= 768:
-                assert page.locator(".ex-calendar-week-row").first.evaluate(
-                    "(el) => getComputedStyle(el).display") == "grid", ("vertical layout", key)
-                page.wait_for_function("""() => {
-                    const el = document.querySelector('.excerpts-native-host');
-                    return el.scrollHeight <= el.clientHeight + 2 ||
-                        el.scrollTop >= el.scrollHeight - el.clientHeight - 3;
-                }""", timeout=3000)
+                assert page.locator(".ex-calendar-mobile").is_visible(), ("mobile calendar missing", key)
+                assert page.locator(".ex-calendar-layout").is_hidden(), ("desktop calendar visible on mobile", key)
+                months = page.locator(".ex-calendar-month-heading").all_text_contents()
+                assert months == sorted(months, key=lambda x: tuple(map(int, x.replace("月", "").split("年"))), reverse=True), ("months are not newest first", key, months)
+                assert page.locator(".ex-calendar-month-grid").first.evaluate(
+                    "el => el.scrollWidth <= el.clientWidth + 2"), ("mobile grid overflow", key)
+                targets = ("calendar-panel", "calendar-grid", "calendar-back", "calendar-months")
             else:
-                assert page.locator(".ex-calendar-week-row").first.evaluate(
-                    "(el) => getComputedStyle(el).display") == "flex", ("horizontal layout", key)
+                assert page.locator(".ex-calendar-layout").is_visible(), ("desktop calendar missing", key)
+                assert page.locator(".ex-calendar-mobile").is_hidden(), ("mobile calendar visible on desktop", key)
+                targets = ("calendar-panel", "calendar-grid", "calendar-back", "calendar-desktop")
             assert page.locator(".excerpts-native-host").evaluate(
                 "el => el.scrollWidth <= el.clientWidth + 2"), ("page horizontal overflow", key)
-            screenshot(page, theme, width, "calendar", "calendar-panel", "calendar-grid", "calendar-back")
+            screenshot(page, theme, width, "calendar", *targets)
+            active = ".ex-calendar-mobile" if width <= 768 else ".ex-calendar-layout"
+            today = page.locator(active + " button.ex-calendar-day").last
+            today.click()
+            assert page.locator(".ex-calendar-selected").is_visible(), ("date detail not shown", key)
+            assert "条摘录" in page.locator(".ex-calendar-selected").inner_text(), ("date count missing", key)
+            assert today.get_attribute("aria-pressed") == "true", ("date not selected", key)
+            screenshot(page, theme, width, "calendar-date", "calendar-selected")
             page.locator(".ex-calendar-back").click()
             assert page.locator(".ex-calendar-shell").is_hidden(), ("calendar not hidden", key)
             assert page.locator(".ex-feed-view").is_visible(), ("feed not restored", key)
@@ -387,7 +399,9 @@ with sync_playwright() as playwright:
 for theme in THEMES:
     for width in WIDTHS:
         key = f"{theme}-{width}"
+        visible_layout = "calendar-months" if width <= 768 else "calendar-desktop"
         missing = set(REQUIRED).difference(manifest["coverage"].get(key, {}))
+        missing.difference_update({"calendar-months", "calendar-desktop"} - {visible_layout})
         assert not missing, ("visual inventory is incomplete", key, sorted(missing))
 manifest["screenshots"].sort()
 # Re-open and verify every written PNG rather than trusting a screenshot call

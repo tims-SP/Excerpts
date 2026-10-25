@@ -299,3 +299,35 @@ test('suspended feed ignores hidden scroll and preserves Markdown mounts until r
   assert.equal(host.querySelectorAll('article').length,before);
   timeline.dispose();dom.window.close();
 });
+
+test('suspension blocks hidden row replacement and width cache catches up after resume',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  let width=374;
+  Object.defineProperty(host,'clientWidth',{configurable:true,get(){return width;}});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,width,height:0});
+  let mounts=0,unmounts=0;
+  const options={batchSize:()=>16,mount:()=>{
+    mounts++;const el=document.createElement('article');
+    el.getBoundingClientRect=()=>({height:100,width});return el;
+  },unmount:()=>{unmounts++;}};
+  const timeline=new VirtualTimeline(host,viewport,options);
+  const rows=Array.from({length:80},(_,i)=>({path:String(i),firstOfDay:false,
+    dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey:'x'}));
+  timeline.setRows(rows,'keep');
+  timeline.setSuspended(true);
+  width=856;
+  timeline.resize();
+  assert.equal(timeline.lastWidth,374);
+  assert.throws(()=>timeline.setRows(rows,'anchor'),/不能重绘隐藏的摘录列表/);
+  assert.equal(unmounts,0);
+  const priorMounts=mounts;
+  timeline.setSuspended(false);
+  timeline.resize();
+  assert.equal(timeline.lastWidth,856,'resumed layout must use the new width');
+  assert.equal(unmounts,0);
+  assert.equal(mounts,priorMounts);
+  timeline.dispose();dom.window.close();
+});

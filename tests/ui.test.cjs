@@ -200,6 +200,44 @@ test('calendar navigation preserves the original feed DOM, draft, filters and sc
   await t.close();
 });
 
+test('hidden list updates are deferred; changes render once on return without losing draft',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const input=root.querySelector('.ex-compose-text');
+  input.value='保留草稿';input.dispatchEvent(new window.Event('input',{bubbles:true}));
+  const originalCard=root.querySelector('.ex-card');
+  clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();
+  const oldToken=renderer.renderToken;
+  renderer.drawCards('anchor');renderer.drawCards('keep');
+  assert.equal(renderer.feedRenderPending,true);
+  assert.equal(renderer.feedPendingPolicy,'anchor');
+  assert.equal(renderer.renderToken,oldToken,'hidden redraw cannot invalidate Markdown content');
+  assert.equal(root.querySelector('.ex-card'),originalCard,'hidden redraw keeps card mounted');
+  root.querySelector('.ex-calendar-back').click();
+  assert.equal(renderer.feedRenderPending,false);
+  assert.equal(renderer.renderToken,oldToken+1,'one redraw after returning');
+  assert.equal(input.value,'保留草稿');
+  await t.close();
+});
+
+test('calendar dates expose exact counts and selection via keyboard',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();
+  const months=[...root.querySelectorAll('.ex-calendar-month-heading')].map(x=>x.textContent);
+  assert.ok(months.length>=12);
+  assert.deepEqual(months,[...months].sort((a,b)=>{const m=x=>x.match(/(\d+)年(\d+)月/).slice(1).map(Number); const [ay,am]=m(a),[by,bm]=m(b);return by-ay || bm-am;}),'mobile DOM is newest-first');
+  const first=root.querySelector('.ex-calendar-mobile button.ex-calendar-day');
+  assert.ok(first.getAttribute('aria-label').includes('条摘录'));
+  first.click();
+  const selected=root.querySelector('.ex-calendar-selected');
+  assert.equal(selected.hidden,false);
+  assert.ok(selected.textContent.includes('条摘录'));
+  assert.equal(first.getAttribute('aria-pressed'),'true');
+  first.dispatchEvent(new window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));
+  assert.ok(root.querySelector('.ex-calendar-mobile button[aria-pressed="true"]'));
+  root.querySelector('.ex-calendar-back').click();
+  await t.close();
+});
+
 test('stale and error statuses remain visible beyond the success timeout',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const status=root.querySelector('.ex-scan-status');
