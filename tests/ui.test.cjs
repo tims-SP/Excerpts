@@ -766,6 +766,28 @@ test('staged tag preview replaces saved chips, preserves the search input and ca
   await t.close();
 });
 
+test('card tag preview supports twenty staged tags without saving or rebuilding the input',async()=>{
+  const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  for(let i=0;i<19;i++){
+    const name='密集标签'+String(i+1);
+    input.value=name;input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+    const option=[...card.querySelectorAll('.ex-tag-choice')].find(el=>el.textContent.includes('创建 #'+name));
+    assert.ok(option,'new tag option '+name);
+    option.click();
+    assert.equal(card.querySelector('.ex-tag-custom'),input,'search input must retain identity');
+  }
+  const preview=card.querySelector('.ex-tag-selected');
+  assert.equal(preview.querySelectorAll('.ex-tag-selected-chip').length,20);
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 20 · 未保存');
+  assert.equal(preview.querySelectorAll('[hidden]').length,0);
+  assert.equal(t.getTagWrites(),0);
+  card.querySelector('.ex-add-tag').click();
+  assert.equal(t.getTagWrites(),0);
+  await t.close();
+});
+
 test('inline tag preview shows readonly body tag and counts the complete union',async()=>{
   const t=await fixture(false,'普通正文 #正文', ['正文']);
   const card=t.pane.contentEl.querySelector('.ex-card');
