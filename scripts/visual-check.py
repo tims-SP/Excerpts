@@ -210,7 +210,28 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-search-wrap").is_visible(), (theme,width,"clear closed search box")
             assert not clear.is_visible(), (theme,width,"clear should hide after reset")
             search.press("Escape")
+            # The last source tag must remain visible and highlighted even on
+            # narrow cards that would otherwise hide it behind +N.
             card = page.locator(".ex-card").first
+            if card.locator(".ex-tag-overflow").is_visible():
+                card.locator(".ex-tag-overflow").click()
+            card.locator('.ex-tag[aria-label="筛选标签：读书笔记"]').click()
+            card = page.locator(".ex-card").first
+            selected = card.locator(".ex-tag.ex-selected")
+            assert selected.count() == 1 and selected.is_visible(), (theme,width,"filtered tag was hidden")
+            assert selected.inner_text() == "#读书笔记", (theme,width,"wrong highlighted tag")
+            assert card.locator(".ex-chips .ex-tag").first.get_attribute("aria-pressed") == "true", (theme,width,"priority order")
+            tag_rect = selected.bounding_box()
+            add_rect = card.locator(".ex-add-tag").bounding_box()
+            assert tag_rect["x"] + tag_rect["width"] <= add_rect["x"] + 1, (theme,width,"filtered tag overlaps add")
+            more = card.locator(".ex-tag-overflow")
+            if more.is_visible():
+                hidden = card.locator(".ex-tag[hidden]").count()
+                assert hidden > 0 and more.inner_text() == "+"+str(hidden), (theme,width,"wrong +N")
+            selected.click()
+            card = page.locator(".ex-card").first
+            assert card.locator(".ex-tag").first.inner_text() == "#生活", (theme,width,"source order not restored")
+            source = card.locator(".ex-group-trigger").first
             source = card.locator(".ex-group-trigger").first
             source.click()
             assert source.get_attribute("aria-expanded") == "true"
