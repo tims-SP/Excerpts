@@ -225,6 +225,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "9c16a30aeca6ba3ca15800bea048ffd784a55a10",
-  "stylesheet_review": "Reviewed real Chromium 320/375/390/430/768/1024/1280 light/dark calendar screenshots, newest-month-first navigation, sticky selected date detail and overflow; responsive calendar approval. Full CI screenshot suite remains mandatory."
+  "stylesheet_git_blob_sha": "a9e1968a48d00bc1174729bf13d9523f6eb6348d",
+  "stylesheet_review": "Reviewed deep-scroll native-header Chromium images for own and outer scrollports (320/390/430/768px, light/dark), plus 320/390/768/1280px initial calendar and selected-date screenshots. Verified a single sticky nav, nonsticky month-local date detail, and no calendar cells appearing between host top and navigation. Android native acceptance still required."
 }

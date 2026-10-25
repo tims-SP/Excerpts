@@ -51,6 +51,7 @@ test('screenshot suite covers runtime states and records component crops for rev
   assert.match(suite, /page\.screenshot\(/);
   assert.match(suite, /set\(REQUIRED\)\.difference/);
   assert.match(workflow, /python scripts\/visual-audit\.py/);
+  assert.match(workflow, /python scripts\/calendar-scroll-regression\.py/);
   assert.match(workflow, /artifacts\/\*\*\/\*\.png/);
   assert.match(fixture, /class Modal/);
   assert.match(fixture, /class Setting/);

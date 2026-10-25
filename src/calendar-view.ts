@@ -145,6 +145,28 @@ export class ExcerptsCalendarView {
     const [year, month, day] = key.split("-").map(Number);
     this.selectedEl.textContent = `${year}年${month}月${day}日 · ${this.counts.get(key)} 条摘录`;
     this.selectedEl.hidden = false;
+    this.placeSelectedDetail();
+  }
+
+  /** Keep one detail node inside the selected month (or below the desktop grid). */
+  private placeSelectedDetail(): void {
+    if (!this.selectedDate || this.selectedEl.hidden) return;
+    const win = this.element.ownerDocument.defaultView;
+    const mobileVisible = win?.getComputedStyle(this.mobileMonthsEl).display !== "none";
+    if (mobileVisible) {
+      const selectedDay = Array.from(this.mobileMonthsEl.querySelectorAll<HTMLButtonElement>(
+        ".ex-calendar-day"
+      )).find(button => button.dataset.date === this.selectedDate);
+      const month = selectedDay?.closest<HTMLElement>(".ex-calendar-month-section");
+      month?.append(this.selectedEl);
+    } else {
+      this.desktopRowsEl.parentElement?.after(this.selectedEl);
+    }
+  }
+
+  /** Called after the page becomes visible and responsive layout can be measured. */
+  onShown(): void {
+    this.placeSelectedDetail();
   }
 
   update(cards: readonly CardIndex[], status: "done" | "stale" | "error", now = new Date()): void {
