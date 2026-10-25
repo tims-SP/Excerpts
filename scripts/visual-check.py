@@ -217,6 +217,13 @@ with sync_playwright() as playwright:
                 card.locator(".ex-tag-overflow").click()
             card.locator('.ex-tag[aria-label="筛选标签：读书笔记"]').click()
             card = page.locator(".ex-card").first
+            # Selecting from +N leaves this row expanded. Explicitly fold it
+            # before checking the bug the user reported.
+            collapse = card.locator(".ex-tag-collapse")
+            if collapse.count() and collapse.is_visible():
+                collapse.click()
+            assert not card.locator(".ex-chips").evaluate("el => el.classList.contains('ex-tags-expanded')"), (
+                theme,width,"filtered row must be folded")
             selected = card.locator(".ex-tag.ex-selected")
             assert selected.count() == 1 and selected.is_visible(), (theme,width,"filtered tag was hidden")
             assert selected.inner_text() == "#读书笔记", (theme,width,"wrong highlighted tag")
@@ -225,6 +232,8 @@ with sync_playwright() as playwright:
             add_rect = card.locator(".ex-add-tag").bounding_box()
             assert tag_rect["x"] + tag_rect["width"] <= add_rect["x"] + 1, (theme,width,"filtered tag overlaps add")
             more = card.locator(".ex-tag-overflow")
+            if width <= 390:
+                assert more.is_visible(), (theme,width,"narrow filtered card should be folded")
             if more.is_visible():
                 hidden = card.locator(".ex-tag[hidden]").count()
                 assert hidden > 0 and more.inner_text() == "+"+str(hidden), (theme,width,"wrong +N")
