@@ -567,6 +567,7 @@ test('list prefetch settings switch between viewport auto and fixed batches',asy
   const tab=t.plugin.settingsTab;
   const before=Setting.instances.length;
   tab.display();
+  assert.equal(tab.containerEl.classList.contains('ex-settings-root'),true,'field styles are limited to the plugin settings tab');
   const settings=Setting.instances.slice(before);
   const mode=settings.find(setting=>setting.name==='预取批次');
   const fixed=settings.find(setting=>setting.name==='固定批次大小');
