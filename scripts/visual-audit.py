@@ -72,7 +72,7 @@ REQUIRED = {
 # Names deliberately identify states as well as components. New features should
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
-    "home", "calendar", "calendar-date", "composer-picker", "composer-draft", "search-idle", "search-empty",
+    "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
     "filter", "page-menu", "section-open", "card-picker", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
@@ -239,8 +239,12 @@ with sync_playwright() as playwright:
             page.evaluate("""() => {const el=document.querySelector('.excerpts-native-host');
                 el.style.removeProperty('height'); el.scrollTop=0;}""")
 
-            page.locator(".ex-capture-tag-toggle").click()
+            toggle = page.locator(".ex-capture-tag-toggle")
+            assert toggle.get_attribute("aria-label") == "添加标签", (key,"closed tag label")
+            toggle.click()
             assert page.locator(".ex-capture-tags").is_visible()
+            assert toggle.get_attribute("aria-label") == "关闭标签选择", (key,"open tag label")
+            assert toggle.inner_text() == "关闭", (key,"close text")
             # Both TagPicker instances must share the same placeholder and shell.
             picker_field = page.locator(".ex-capture-tags .ex-tags-input")
             picker_geometry = picker_field.evaluate("""el => ({
@@ -251,7 +255,18 @@ with sync_playwright() as playwright:
             assert picker_geometry == {"opacity":"0.5","radius":"10px","height":44 if width <= 480 else 40}, (key,"capture picker",picker_geometry)
             screenshot(page, theme, width, "composer-picker",
                        "composer-tags", "composer-tag-picker")
-            page.locator(".ex-capture-tag-toggle").click()
+            picker_option = page.locator(".ex-capture-tags .ex-tag-choice:not([disabled])").first
+            picker_option.click()
+            assert toggle.get_attribute("aria-label") == "关闭标签选择", (key,"selected tag keeps exit")
+            screenshot(page, theme, width, "composer-picker-selected",
+                       "composer-tags", "composer-tag-picker")
+            picker_option = page.locator(".ex-capture-tags .ex-tag-choice.ex-is-active:not([disabled])").first
+            # Explicitly undo the test selection so the remainder of the screenshot
+            # suite continues with its original draft/tag state.
+            if picker_option.count():
+                picker_option.click()
+            toggle.click()
+            assert toggle.get_attribute("aria-label") == "添加标签", (key,"closed tag label restored")
             page.locator(".ex-compose-text").fill("一段用来检查输入换行、边距和工具栏遮挡的文字。\n第二段也保持独立。")
             assert page.locator(".ex-compose-actions > .ex-btn-primary").is_enabled()
             geometry(page, theme, width)
