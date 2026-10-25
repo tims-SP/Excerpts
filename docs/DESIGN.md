@@ -55,6 +55,15 @@
 | 交互 | `--interactive-accent`，`--background-modifier-hover` |
 | 边界 | `--background-modifier-border`；结构性容器从 `--radius-l` 等 Obsidian 主题变量取值 |
 
+## 其他输入字段（快速摘录正文除外）
+
+- **统一文字层级**：仅设置 `::placeholder` 的 `color: var(--text-normal)` 和 `opacity: .5`，真实输入值保持 100% 不透明。Placeholder 的字号与行高继承各自字段，避免光标/文字跳动。
+- **列表搜索**：40px（粗指针 44px）单层弱背景 `--background-secondary`、10px 圆角、左右 12px 内边距。与列表内容列对齐，不重复放大镜；聚焦时仅使用一个主题焦点环，不同时显示第二层边框。
+- **标签搜索**：顶部选择和卡片编辑复用 `TagPicker`；搜索容器 40px（粗指针 44px）、10px 圆角、左右 10px 内边距、16px 图标、图文间距 8px；清空按钮点击区桌面 32px、粗指针 44px，按钮在正常 flex 行内不可遮挡文字。选项继续为 36/44px，间隔 2px，无新增浮层。
+- **筛选页名称**：保留独立可见标签、示例提示和校验信息；字段 40/44px、10px 圆角、左右 12px 内边距，标签到输入、输入到校验说明各 8px；弱边框加单层焦点环。值为建议名称时 Placeholder 本来就不可见。
+- **设置页文件夹路径**：继续使用 Obsidian 原生 `Setting.addText`；仅在 `.ex-settings-root` 内控制占位层级、输入框伸缩和粗指针下至少 44px 高度与 16px 字号。狭窄时允许同一设置行内部控件折行，不覆盖其他插件设置。
+- **焦点与可访问性**：搜索/标签输入的焦点环只绘制在最外层输入表面；不得因焦点改变字段几何尺寸。保留 Escape、清空、拼音 IME 与原有禁用/错误提示语义。
+
 ## 圆角、状态与主题边界
 
 - 使用 `--ex-radius-surface`、`--ex-radius-composer`、`--ex-radius-input`、`--ex-radius-option`、`--ex-radius-pill` 分别承载阅读表面、快速摘录画布、输入、列表与胶囊形态；不要分散写死相同数值。
