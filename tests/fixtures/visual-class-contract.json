@@ -225,6 +225,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "33ca978371d6d5aa2bc74445fa10400131a056ad",
-  "stylesheet_review": "Reviewed real Chromium 320/375/390/430/768/1024/1280 light/dark calendar screenshots, newest-month-first navigation, date selection and overflow; responsive calendar approval. Full CI screenshot suite remains mandatory."
+  "stylesheet_git_blob_sha": "9c16a30aeca6ba3ca15800bea048ffd784a55a10",
+  "stylesheet_review": "Reviewed real Chromium 320/375/390/430/768/1024/1280 light/dark calendar screenshots, newest-month-first navigation, sticky selected date detail and overflow; responsive calendar approval. Full CI screenshot suite remains mandatory."
 }

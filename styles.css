@@ -818,6 +818,7 @@
 .excerpts-root .ex-calendar-warning { margin: 0 0 12px; color: var(--text-warning, var(--text-muted)); }
 .excerpts-root .ex-calendar-warning[hidden], .excerpts-root .ex-calendar-selected[hidden] { display: none !important; }
 .excerpts-root .ex-calendar-selected {
+  position: sticky; top: 48px; z-index: 4; background: var(--background-primary);
   padding: 10px 0; margin-bottom: 14px; border-bottom: 1px solid var(--background-modifier-border);
   color: var(--text-normal); font-size: 13px; font-variant-numeric: tabular-nums;
 }

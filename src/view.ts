@@ -162,6 +162,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
+        if (this.pageMode === "calendar") return; // Hidden feed geometry is not measurable.
         this.reflowVisibleTags();
         this.reflowCaptureTags();
         for (const update of this.previewUpdates.values()) update();
@@ -978,6 +979,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (viewport) viewport.scrollTop = restore ? this.feedScrollTop : 0;
     this.timeline?.setSuspended(false);
     this.timeline?.resize(); // Width may have changed while the feed was hidden.
+    this.reflowVisibleTags();
+    this.reflowCaptureTags();
+    for (const update of this.previewUpdates.values()) update();
+    for (const group of this.sectionHeightChecks.values()) for (const check of group.values()) check();
     if (this.feedRenderPending) {
       const policy = restore ? this.feedPendingPolicy : "top";
       this.feedRenderPending = false;
