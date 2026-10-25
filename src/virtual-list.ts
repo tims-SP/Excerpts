@@ -43,6 +43,7 @@ export class VirtualTimeline {
   private lastAllowedScroll = 0;
   private blockedNotice = false;
   private disposed = false;
+  private suspended = false;
   private lastWidth = 0;
 
   constructor(private readonly host: HTMLElement, private readonly viewport: HTMLElement,
@@ -107,11 +108,17 @@ export class VirtualTimeline {
     this.schedule();
   }
 
+  /** Hide the feed without unmounting its Markdown renderers or measuring zero-height rows. */
+  setSuspended(value: boolean): void {
+    if (this.disposed) return;
+    this.suspended = value;
+    if (!value) this.schedule();
+  }
   refresh(): void { this.schedule(); }
 
   /** Resize is driven by the scroll container; never replace heights on height-only changes. */
   resize(): void {
-    if (this.disposed) return;
+    if (this.disposed || this.suspended) return;
     const width = this.host.clientWidth;
     if (!width) return; // Hidden panes cannot provide trustworthy measurements.
     if (Math.abs(width - this.lastWidth) < 1) { this.schedule(); return; }
@@ -222,7 +229,7 @@ export class VirtualTimeline {
   }
 
   private schedule(): void {
-    if (this.disposed || this.frame !== null || this.timer !== null) return;
+    if (this.disposed || this.suspended || this.frame !== null || this.timer !== null) return;
     if (typeof requestAnimationFrame === "function") {
       this.frame = requestAnimationFrame(() => { this.frame = null; this.render(); });
     } else {
@@ -231,7 +238,7 @@ export class VirtualTimeline {
   }
 
   private render(): void {
-    if (this.disposed) return;
+    if (this.disposed || this.suspended) return;
     const count = this.rows.length;
     if (!count) { this.clearMounted(); this.updateSpacers(); return; }
     const vh = Math.max(1, this.viewport.clientHeight || 800);

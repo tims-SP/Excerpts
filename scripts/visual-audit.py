@@ -33,8 +33,9 @@ REQUIRED = {
     "composer-tag-picker": ".ex-capture-tags .ex-tag-picker",
     "composer-save": ".ex-compose-actions > .ex-btn-primary",
     "composer-edit-document": ".ex-open-editor",
-    "calendar-panel": ".ex-calendar-modal .modal-content",
-    "calendar-grid": ".ex-calendar-scroll",
+    "calendar-panel": ".excerpts-root .ex-calendar-shell",
+    "calendar-back": ".excerpts-root .ex-calendar-back",
+    "calendar-grid": ".ex-calendar-layout",
     "list-toolbar": ".ex-toolbar:not(.ex-selection-toolbar)",
     "list-search": ".ex-search-wrap",
     "list-filter": ".ex-filter-tags",
@@ -187,21 +188,40 @@ with sync_playwright() as playwright:
                        "composer-edit-document", "list-toolbar", "date-rail",
                        "card", "card-content", "card-sections", "card-tags",
                        "card-footer", "card-menu")
+            # Exercise navigation with a nonzero feed position to catch lost anchors.
+            # The preview fixture does not constrain its FileView height; model Obsidian's
+            # 900px scroll viewport for this navigation state instead of testing a zero scroll.
+            page.evaluate("""() => { const el = document.querySelector('.excerpts-native-host');
+                el.style.height = '900px'; el.scrollTop = 120; }""")
+            feed_scroll = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
             page.locator(".ex-page-options").click()
             page.locator(".menu button", has_text="摘录日历").click()
+            assert page.locator(".ex-feed-view").is_hidden(), ("feed not hidden", key)
+            assert page.locator(".ex-calendar-modal").count() == 0, ("legacy modal present", key)
             assert page.locator(".ex-calendar-week").count() >= 52, ("missing calendar weeks", key)
-            calendar = page.locator(".ex-calendar-scroll")
+            assert page.locator(".ex-calendar-layout").evaluate(
+                "el => el.scrollWidth <= el.clientWidth + 2"), ("calendar horizontal overflow", key)
             if width <= 768:
-                assert calendar.evaluate("(el) => el.scrollWidth <= el.clientWidth + 2"), (
-                    "calendar horizontal overflow", key)
                 assert page.locator(".ex-calendar-week-row").first.evaluate(
                     "(el) => getComputedStyle(el).display") == "grid", ("vertical layout", key)
+                page.wait_for_function("""() => {
+                    const el = document.querySelector('.excerpts-native-host');
+                    return el.scrollHeight <= el.clientHeight + 2 ||
+                        el.scrollTop >= el.scrollHeight - el.clientHeight - 3;
+                }""", timeout=3000)
             else:
                 assert page.locator(".ex-calendar-week-row").first.evaluate(
                     "(el) => getComputedStyle(el).display") == "flex", ("horizontal layout", key)
-            screenshot(page, theme, width, "calendar", "calendar-panel", "calendar-grid")
-            page.evaluate("() => window.__pane.renderer.calendarModal.close()")
-            assert page.locator(".ex-calendar-modal").count() == 0, ("dialog cleanup", key)
+            assert page.locator(".excerpts-native-host").evaluate(
+                "el => el.scrollWidth <= el.clientWidth + 2"), ("page horizontal overflow", key)
+            screenshot(page, theme, width, "calendar", "calendar-panel", "calendar-grid", "calendar-back")
+            page.locator(".ex-calendar-back").click()
+            assert page.locator(".ex-calendar-shell").is_hidden(), ("calendar not hidden", key)
+            assert page.locator(".ex-feed-view").is_visible(), ("feed not restored", key)
+            assert abs(page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") - feed_scroll) <= 2, (
+                "feed scroll was not restored", key)
+            page.evaluate("""() => {const el=document.querySelector('.excerpts-native-host');
+                el.style.removeProperty('height'); el.scrollTop=0;}""")
 
             page.locator(".ex-capture-tag-toggle").click()
             assert page.locator(".ex-capture-tags").is_visible()

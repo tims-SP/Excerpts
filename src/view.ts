@@ -9,7 +9,7 @@ import { PageFilter, isFiltered } from "./page-config";
 import { classifyPreview, previewAction, previewPolicy } from "./card-preview";
 import { ScrollPolicy, TimelineRow, VirtualTimeline } from "./virtual-list";
 import { SavePageModal } from "./page-modal";
-import { ExcerptsCalendarModal } from "./calendar-modal";
+import { ExcerptsCalendarView } from "./calendar-view";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
   const result = document.createElement(tag);
@@ -56,7 +56,11 @@ const composerDrafts = new Map<string, { text: string; tags: string[] }>();
 /** Obsidian Markdown excerpt homepage. */
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: CardIndex[] = [];
-  private calendarModal: ExcerptsCalendarModal | null = null;
+  private pageMode: "feed" | "calendar" = "feed";
+  private calendarView: ExcerptsCalendarView | null = null;
+  private feedEl!: HTMLElement;
+  private pageMenuButton!: HTMLButtonElement;
+  private feedScrollTop = 0;
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private searchInput!: HTMLInputElement;
@@ -176,8 +180,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.observer?.disconnect();
     this.mediaObserver?.disconnect();
     this.tagResizeObserver?.disconnect();
-    this.calendarModal?.close();
-    this.calendarModal = null;
+    this.calendarView = null;
     this.timeline?.dispose();
     this.timeline = null;
     this.localCreates.clear();
@@ -328,7 +331,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.showSuggestions();
     this.renderTagsFilter();
     this.renderScanStatus();
-    this.calendarModal?.update(this.items, this.scanStatus !== "done");
+    if (this.pageMode === "calendar") this.calendarView?.update(this.items, this.calendarStatus());
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
     this.drawCards(viewport && viewport.scrollTop > 48 ? "anchor" : "top");
   }
@@ -350,7 +353,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.rebuildAvailableTags();
     this.showSuggestions();
     this.renderTagsFilter();
-    this.calendarModal?.update(this.items, this.scanStatus !== "done");
+    if (this.pageMode === "calendar") this.calendarView?.update(this.items, this.calendarStatus());
     this.drawCards("anchor");
   }
   /** Mark cached results obsolete without scheduling any scan. */
@@ -394,6 +397,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (staleSelection) new Notice("摘录内容已变化，请退出批量选择后刷新");
   }
   requestRefresh(force = false): void {
+    if (this.pageMode === "calendar") { new Notice("请返回摘录列表后刷新"); return; }
     if (!this.guard("refresh")) return;
     this.workspace.recursive = this.plugin.settings.recursive;
     void this.reload(force);
@@ -403,7 +407,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed || this.homeInvalid) return;
     this.homeInvalid = true;
     this.homeInvalidCause = cause;
-    this.calendarModal?.close();
+    if (this.pageMode === "calendar") this.showFeed(false);
     this.refreshToken++; this.searchToken++;
     this.clearScanCompletion();
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -450,7 +454,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       invalid: "页面已失效 · 请重新打开"
     };
     this.scanStatusEl.dataset.state = status;
-    this.calendarModal?.setStale(status !== "done");
+    this.calendarView?.setStatus(this.calendarStatus());
     this.scanTextEl.textContent = labels[status];
     const hint = this.homeInvalid
       ? this.homeInvalidCause === "configuration"
@@ -822,6 +826,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const pageMenuButton = iconButton("ellipsis", "页面选项", () => this.showPageMenu(pageMenuButton),
       "ex-page-options");
     pageMenuButton.setAttribute("aria-haspopup", "menu");
+    this.pageMenuButton = pageMenuButton;
     actions.append(pageMenuButton);
     toolbar.append(actions);
     this.selectionToolbarEl = node("div", "ex-toolbar ex-selection-toolbar");
@@ -837,6 +842,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.selectionToolbarEl.append(selectionTitle, selectionActions);
     root.append(toolbar, this.selectionToolbarEl, this.searchWrap);
     this.containerEl.addEventListener("keydown", event => {
+      if (event.key === "Escape" && this.pageMode === "calendar") {
+        event.preventDefault();
+        this.showFeed();
+        return;
+      }
       if (event.key === "Escape" && this.selectionMode === "selecting") {
         event.preventDefault();
         this.exitSelectionMode();
@@ -855,6 +865,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     footerActions.append(this.deleteSelectedButton);
     this.selectionFooterEl.append(this.selectedFooterCountEl, footerActions);
     root.append(this.selectionFooterEl);
+    // Preserve the entire list DOM and Markdown renderer children during calendar navigation.
+    this.feedEl = node("div", "ex-feed-view");
+    this.feedEl.append(...Array.from(root.childNodes));
+    root.append(this.feedEl);
     this.updateAvailability();
   }
   private currentFilter(): PageFilter {
@@ -890,8 +904,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       .setDisabled(Boolean(this.reason("refresh")))
       .onClick(() => this.requestRefresh(true)));
     menu.addItem(item => item.setTitle("摘录日历").setIcon("calendar-days")
-      .setDisabled(this.homeInvalid || this.disposed || this.scanStatus === "scanning" ||
-        this.lastScanCount === null || !["done", "stale", "error"].includes(this.scanStatus))
+      .setDisabled(!this.canOpenCalendar())
       .onClick(() => this.openCalendar()));
     menu.addSeparator();
     menu.addItem(item => item.setTitle("批量选择").setIcon("check-square")
@@ -919,19 +932,55 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const rect = buttonEl.getBoundingClientRect();
     menu.showAtPosition({ x: rect.right, y: rect.bottom }, buttonEl.ownerDocument);
   }
+  private calendarStatus(): "done" | "stale" | "error" {
+    return this.scanStatus === "error" ? "error" :
+      this.scanStatus === "done" ? "done" : "stale";
+  }
+  private canOpenCalendar(): boolean {
+    return !this.disposed && !this.homeInvalid && this.lastScanCount !== null &&
+      ["done", "stale", "error"].includes(this.scanStatus) && !this.reason("page");
+  }
   private openCalendar(): void {
-    if (this.disposed || this.homeInvalid || this.scanStatus === "scanning" ||
-        this.lastScanCount === null || !["done", "stale", "error"].includes(this.scanStatus)) {
-      new Notice("摘录索引尚未准备好，请完成扫描后再打开日历");
+    if (!this.canOpenCalendar()) {
+      new Notice(this.reason("page") ?? "摘录索引尚未准备好，请完成扫描后再打开日历");
       return;
     }
-    if (this.calendarModal) return;
-    const modal = new ExcerptsCalendarModal(this.plugin.app, this.items,
-      this.scanStatus !== "done", () => {
-        if (this.calendarModal === modal) this.calendarModal = null;
-      });
-    this.calendarModal = modal;
-    modal.open();
+    if (this.pageMode === "calendar") return;
+    const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
+    if (!viewport) return;
+    this.feedScrollTop = viewport.scrollTop;
+    if (!this.calendarView) this.calendarView = new ExcerptsCalendarView(this.items, this.calendarStatus(),
+      () => this.showFeed());
+    else this.calendarView.update(this.items, this.calendarStatus());
+    if (!this.calendarView.element.isConnected) this.containerEl.append(this.calendarView.element);
+    this.pageMode = "calendar";
+    this.timeline?.setSuspended(true);
+    this.feedEl.hidden = true;
+    this.calendarView.element.hidden = false;
+    this.containerEl.dataset.page = "calendar";
+    viewport.scrollTop = 0;
+    // The narrow layout is chronological top-to-bottom; show the latest week by default.
+    const showLatest = () => {
+      if (this.disposed || this.pageMode !== "calendar") return;
+      const vertical = this.calendarView!.element.ownerDocument.defaultView?.getComputedStyle(
+        this.calendarView!.element.querySelector(".ex-calendar-week-row")!).display === "grid";
+      if (vertical) viewport.scrollTop = viewport.scrollHeight;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(showLatest);
+    else showLatest();
+    this.calendarView.element.querySelector<HTMLButtonElement>(".ex-calendar-back")?.focus({ preventScroll: true });
+  }
+  private showFeed(restore = true): void {
+    if (this.pageMode !== "calendar") return;
+    const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
+    this.pageMode = "feed";
+    if (this.calendarView) this.calendarView.element.hidden = true;
+    this.feedEl.hidden = false;
+    delete this.containerEl.dataset.page;
+    this.timeline?.setSuspended(false);
+    if (viewport) viewport.scrollTop = restore ? this.feedScrollTop : 0;
+    this.timeline?.refresh();
+    if (restore && !this.disposed) this.pageMenuButton?.focus({ preventScroll: true });
   }
   private openSavePageModal(): void {
     if (!this.guard("page")) return;
@@ -1117,7 +1166,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           this.rebuildAvailableTags();
           this.showSuggestions();
           this.renderTagsFilter();
-          this.calendarModal?.update(this.items, this.scanStatus !== "done");
+          if (this.pageMode === "calendar") this.calendarView?.update(this.items, this.calendarStatus());
           this.drawCards("anchor");
         }
         this.updateSelectionUI();
@@ -1177,7 +1226,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       this.items = this.items.filter(item => !removed.has(item.path));
       if (removed.size) this.rebuildAvailableTags();
-      if (removed.size) this.calendarModal?.update(this.items, this.scanStatus !== "done");
+      if (removed.size && this.pageMode === "calendar") this.calendarView?.update(this.items, this.calendarStatus());
       if (result.deleted.length) this.markStale();
       this.drawCards("anchor");
       this.updateSelectionUI();
@@ -1231,7 +1280,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
       this.itemByPath = new Map(cards.map(card => [card.path, card]));
-      this.calendarModal?.update(cards, true);
+      if (this.pageMode === "calendar") this.calendarView?.update(cards, "stale");
       this.rebuildAvailableTags();
       this.lastScanCount = cards.length;
       this.scanStatus = this.scanDirty ? "stale" : "done";

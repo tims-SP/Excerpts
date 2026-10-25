@@ -267,3 +267,35 @@ test('measured heights survive unchanged list rebuilds but invalidate on layout 
   timeline.dispose();dom.window.close();
 });
 
+
+test('suspended feed ignores hidden scroll and preserves Markdown mounts until resume',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  Object.defineProperty(host,'clientWidth',{configurable:true,value:700});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,height:0,width:700});
+  let mounts=0,unmounts=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:()=>{mounts++;const el=document.createElement('article');
+      el.getBoundingClientRect=()=>({height:100,width:700});return el;},
+    unmount:()=>{unmounts++;}
+  });
+  timeline.setRows(Array.from({length:500},(_,i)=>({path:String(i),estimatedHeight:100})),'keep');
+  const before=host.querySelectorAll('article').length;
+  const oldMounts=mounts;
+  timeline.setSuspended(true);
+  viewport.scrollTop=9000;
+  viewport.dispatchEvent(new dom.window.Event('scroll'));
+  await new Promise(resolve=>setTimeout(resolve,35));
+  assert.equal(mounts,oldMounts);
+  assert.equal(unmounts,0);
+  assert.equal(host.querySelectorAll('article').length,before);
+  viewport.scrollTop=0;
+  timeline.setSuspended(false);
+  await new Promise(resolve=>setTimeout(resolve,35));
+  assert.equal(unmounts,0);
+  assert.equal(host.querySelectorAll('article').length,before);
+  timeline.dispose();dom.window.close();
+});
