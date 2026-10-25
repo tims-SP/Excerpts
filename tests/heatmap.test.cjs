@@ -18,7 +18,7 @@ test("heatmap counts same-day files once each without reading Markdown", () => {
   assert.equal(data.activeDays, 2);
   assert.equal(pick(data, "2026-10-25").count, 2);
   assert.equal(pick(data, "2026-10-25").level, 2);
-  assert.equal(pick(data, "2026-10-26").inRange, false);
+  assert.equal(pick(data, "2026-10-26"), undefined, "calendar stops at the final Sunday");
   assert.ok(data.weeks.every(week => week.length === 7));
   assert.equal(data.weeks[0][0].date <= data.start, true);
 });
@@ -42,5 +42,16 @@ test("heatmap uses fixed absolute levels and ignores old or future dates", () =>
   assert.equal(pick(data, "2026-10-20").level, 4);
   assert.equal(pick(data, "2026-10-19").level, 0);
   assert.equal(data.total, 7);
+  assert.equal(data.weeks.at(-1).at(-1).date >= data.end, true);
+});
+
+test("calendar aligns rows to Monday and spans New Year correctly", () => {
+  const data = buildHeatmap([
+    card(new Date(2026, 0, 1, 9)),
+    card(new Date(2025, 11, 31, 9))
+  ], new Date(2026, 0, 5, 12));
+  assert.equal(new Date(data.weeks[0][0].date + "T12:00:00").getDay(), 1);
+  assert.deepEqual(data.weeks.flat().filter(day => day.count).map(day => day.date),
+    ["2025-12-31", "2026-01-01"]);
   assert.equal(data.weeks.at(-1).at(-1).date >= data.end, true);
 });

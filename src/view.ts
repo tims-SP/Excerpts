@@ -9,7 +9,7 @@ import { PageFilter, isFiltered } from "./page-config";
 import { classifyPreview, previewAction, previewPolicy } from "./card-preview";
 import { ScrollPolicy, TimelineRow, VirtualTimeline } from "./virtual-list";
 import { SavePageModal } from "./page-modal";
-import { HeatmapPanel } from "./heatmap";
+import { ExcerptsCalendarModal } from "./calendar-modal";
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", value = ""): HTMLElementTagNameMap[K] {
   const result = document.createElement(tag);
@@ -56,7 +56,7 @@ const composerDrafts = new Map<string, { text: string; tags: string[] }>();
 /** Obsidian Markdown excerpt homepage. */
 export class ExcerptsRenderChild extends MarkdownRenderChild {
   private items: CardIndex[] = [];
-  private heatmap: HeatmapPanel | null = null;
+  private calendarModal: ExcerptsCalendarModal | null = null;
   private listEl!: HTMLElement;
   private countEl!: HTMLElement;
   private searchInput!: HTMLInputElement;
@@ -176,7 +176,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.observer?.disconnect();
     this.mediaObserver?.disconnect();
     this.tagResizeObserver?.disconnect();
-    this.heatmap = null;
+    this.calendarModal?.close();
+    this.calendarModal = null;
     this.timeline?.dispose();
     this.timeline = null;
     this.localCreates.clear();
@@ -327,7 +328,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.showSuggestions();
     this.renderTagsFilter();
     this.renderScanStatus();
-    this.heatmap?.update(this.items);
+    this.calendarModal?.update(this.items, this.scanStatus !== "done");
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
     this.drawCards(viewport && viewport.scrollTop > 48 ? "anchor" : "top");
   }
@@ -349,7 +350,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.rebuildAvailableTags();
     this.showSuggestions();
     this.renderTagsFilter();
-    this.heatmap?.update(this.items);
+    this.calendarModal?.update(this.items, this.scanStatus !== "done");
     this.drawCards("anchor");
   }
   /** Mark cached results obsolete without scheduling any scan. */
@@ -402,6 +403,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed || this.homeInvalid) return;
     this.homeInvalid = true;
     this.homeInvalidCause = cause;
+    this.calendarModal?.close();
     this.refreshToken++; this.searchToken++;
     this.clearScanCompletion();
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -448,7 +450,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       invalid: "页面已失效 · 请重新打开"
     };
     this.scanStatusEl.dataset.state = status;
-    this.heatmap?.setStale(status !== "done");
+    this.calendarModal?.setStale(status !== "done");
     this.scanTextEl.textContent = labels[status];
     const hint = this.homeInvalid
       ? this.homeInvalidCause === "configuration"
@@ -660,8 +662,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     body.append(quote);
     form.append(body, tagsPane, composeActions);
     root.append(form);
-    this.heatmap = new HeatmapPanel();
-    root.append(this.heatmap.element);
     let saving = false;
     let resume = false;
     let retryOpenTarget: { path: string; file: TFile } | null = null;
@@ -889,6 +889,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     menu.addItem(item => item.setTitle("刷新摘录").setIcon("refresh-cw")
       .setDisabled(Boolean(this.reason("refresh")))
       .onClick(() => this.requestRefresh(true)));
+    menu.addItem(item => item.setTitle("摘录日历").setIcon("calendar-days")
+      .setDisabled(this.homeInvalid || this.disposed || this.scanStatus === "scanning" ||
+        this.lastScanCount === null || !["done", "stale", "error"].includes(this.scanStatus))
+      .onClick(() => this.openCalendar()));
     menu.addSeparator();
     menu.addItem(item => item.setTitle("批量选择").setIcon("check-square")
       .setDisabled(Boolean(this.reason("select")) || !this.visibleItems().length)
@@ -914,6 +918,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       .onClick(() => this.applyPageFilter({ tag: "", query: "" })));
     const rect = buttonEl.getBoundingClientRect();
     menu.showAtPosition({ x: rect.right, y: rect.bottom }, buttonEl.ownerDocument);
+  }
+  private openCalendar(): void {
+    if (this.disposed || this.homeInvalid || this.scanStatus === "scanning" ||
+        this.lastScanCount === null || !["done", "stale", "error"].includes(this.scanStatus)) {
+      new Notice("摘录索引尚未准备好，请完成扫描后再打开日历");
+      return;
+    }
+    if (this.calendarModal) return;
+    const modal = new ExcerptsCalendarModal(this.plugin.app, this.items,
+      this.scanStatus !== "done", () => {
+        if (this.calendarModal === modal) this.calendarModal = null;
+      });
+    this.calendarModal = modal;
+    modal.open();
   }
   private openSavePageModal(): void {
     if (!this.guard("page")) return;
@@ -1099,7 +1117,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           this.rebuildAvailableTags();
           this.showSuggestions();
           this.renderTagsFilter();
-          this.heatmap?.update(this.items);
+          this.calendarModal?.update(this.items, this.scanStatus !== "done");
           this.drawCards("anchor");
         }
         this.updateSelectionUI();
@@ -1159,7 +1177,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       this.items = this.items.filter(item => !removed.has(item.path));
       if (removed.size) this.rebuildAvailableTags();
-      if (removed.size) this.heatmap?.update(this.items);
+      if (removed.size) this.calendarModal?.update(this.items, this.scanStatus !== "done");
       if (result.deleted.length) this.markStale();
       this.drawCards("anchor");
       this.updateSelectionUI();
@@ -1213,7 +1231,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
       this.itemByPath = new Map(cards.map(card => [card.path, card]));
-      this.heatmap?.update(cards);
+      this.calendarModal?.update(cards, true);
       this.rebuildAvailableTags();
       this.lastScanCount = cards.length;
       this.scanStatus = this.scanDirty ? "stale" : "done";
