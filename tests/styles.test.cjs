@@ -33,6 +33,20 @@ test('composer remains a single-surface textarea with theme-native focus and res
   assert.match(css,/--interactive-accent/);
 });
 
+test('secondary fields share restrained geometry without changing the composer or global host styles',()=>{
+  assert.match(css,/--ex-radius-field:\s*10px/);
+  assert.match(css,/input\.ex-search::placeholder\s*\{\s*color: var\(--text-normal\); opacity: 0\.5;/);
+  assert.match(css,/\.ex-tag-search :is\(input\.ex-tags-input,input\.ex-tag-custom\)::placeholder\s*\{\s*color: var\(--text-normal\); opacity: 0\.5;/);
+  assert.match(css,/\.ex-save-page-modal input\.ex-save-page-input::placeholder\s*\{\s*color: var\(--text-normal\); opacity: 0\.5;/);
+  assert.match(css,/\.ex-settings-root \.setting-item-control input\[type="text"\]::placeholder\s*\{\s*color: var\(--text-normal\); opacity: 0\.5;/);
+  assert.match(css,/\.excerpts-root input\.ex-search:focus,[\s\S]*?border-color: transparent;[\s\S]*?outline: 2px solid var\(--interactive-accent\)/);
+  assert.match(css,/\.excerpts-root \.ex-tag-search:focus-within\s*\{[^}]*outline: 2px solid var\(--interactive-accent\)/);
+  assert.match(css,/\.excerpts-root \.ex-tag-search :is\(input\.ex-tags-input,input\.ex-tag-custom\):focus-visible\s*\{\s*outline: none !important/);
+  assert.match(css,/\.excerpts-root input\.ex-search:is\(:hover,:focus\) \{ min-height: 44px; height: 44px;/);
+  assert.match(css,/\.excerpts-root \.ex-tag-search-clear \{ width: 44px; height: 44px;/);
+  assert.doesNotMatch(css,/(?:^|\n)\s*(?:input|textarea)(?:::[a-z-]+)?\s*\{/);
+});
+
 test('card actions and micro-pill labels belong to a non-overlay footer',()=>{
   for(const cls of ['.ex-card-footer','.ex-chips','.ex-tag','.ex-tag-label','.ex-tag-overflow','.ex-add-tag','.ex-card-options','.ex-tag-editor','.ex-tag-custom'])
     assert.ok(css.includes(cls),cls);

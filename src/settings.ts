@@ -24,6 +24,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
   display(): void {
     const root = this.containerEl;
     root.empty();
+    root.classList.add("ex-settings-root");
     this.scopeToggle = null;
     this.batchDropdown = null;
     this.listModeDropdown = null;

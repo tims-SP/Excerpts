@@ -157,6 +157,26 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-capture-selected").is_visible()
             page.screenshot(path=str(root / "artifacts" / f"feed-{theme}-{width}.png"), full_page=True)
 
+            # List search uses a single focus ring and never collapses in compact view.
+            page.locator('.ex-toolbar button[aria-label="搜索"]').click()
+            search = page.locator(".ex-search")
+            search_geo = search.evaluate("""el => ({
+                height: el.getBoundingClientRect().height,
+                radius: getComputedStyle(el).borderTopLeftRadius,
+                placeholderOpacity: getComputedStyle(el, '::placeholder').opacity
+            })""")
+            assert search_geo["height"] == (44 if width <= 480 else 40), (theme,width,search_geo)
+            assert search_geo["radius"] == "10px", (theme,width,search_geo)
+            assert search_geo["placeholderOpacity"] == "0.5", (theme,width,search_geo)
+            search.focus()
+            focused_geo = search.evaluate("""el => ({
+                height: el.getBoundingClientRect().height,
+                border: getComputedStyle(el).borderTopWidth,
+                outline: getComputedStyle(el).outlineWidth
+            })""")
+            assert focused_geo["height"] == search_geo["height"], (theme,width,focused_geo)
+            assert focused_geo["border"] == "1px" and focused_geo["outline"] == "2px", (theme,width,focused_geo)
+            search.press("Escape")
             card = page.locator(".ex-card").first
             source = card.locator(".ex-group-trigger").first
             source.click()
@@ -170,6 +190,20 @@ with sync_playwright() as playwright:
             expected_height = 44 if width <= 480 else 40
             assert abs(search_surface["height"] - expected_height) <= 1, (theme, width, search_surface)
             assert input_box["height"] >= expected_height - 4, (theme, width, input_box)
+            field_visual = card.locator(".ex-tag-custom").evaluate("""el => ({
+                radius: getComputedStyle(el.closest('.ex-tag-search')).borderTopLeftRadius,
+                placeholderOpacity: getComputedStyle(el, '::placeholder').opacity
+            })""")
+            assert field_visual == {"radius":"10px","placeholderOpacity":"0.5"}, (theme,width,field_visual)
+            card.locator(".ex-tag-custom").fill("查找")
+            clear = card.locator(".ex-tag-search-clear")
+            assert clear.is_visible(), (theme,width,"clear missing")
+            assert clear.bounding_box()["width"] >= (44 if width <= 480 else 32), (theme,width,"clear hit target")
+            input_right = card.locator(".ex-tag-custom").bounding_box()
+            clear_left = clear.bounding_box()
+            assert input_right["x"] + input_right["width"] <= clear_left["x"] + 1, (theme,width,"clear overlaps input")
+            clear.click()
+            assert card.locator(".ex-tag-custom").input_value() == "", (theme,width,"clear did not restore placeholder")
             assert card.locator(".ex-tag-choice").count() > 0, (theme, width, "picker choices")
             assert card.locator(".ex-tag-cancel").is_visible()
             assert card.locator(".ex-tag-done").is_visible()

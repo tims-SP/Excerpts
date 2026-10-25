@@ -241,6 +241,14 @@ with sync_playwright() as playwright:
 
             page.locator(".ex-capture-tag-toggle").click()
             assert page.locator(".ex-capture-tags").is_visible()
+            # Both TagPicker instances must share the same placeholder and shell.
+            picker_field = page.locator(".ex-capture-tags .ex-tags-input")
+            picker_geometry = picker_field.evaluate("""el => ({
+              opacity: getComputedStyle(el,'::placeholder').opacity,
+              radius: getComputedStyle(el.closest('.ex-tag-search')).borderTopLeftRadius,
+              height: el.closest('.ex-tag-search').getBoundingClientRect().height
+            })""")
+            assert picker_geometry == {"opacity":"0.5","radius":"10px","height":44 if width <= 480 else 40}, (key,"capture picker",picker_geometry)
             screenshot(page, theme, width, "composer-picker",
                        "composer-tags", "composer-tag-picker")
             page.locator(".ex-capture-tag-toggle").click()
@@ -306,6 +314,12 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-save-page-modal").is_visible()
             screenshot(page, theme, width, "saved-filter", "saved-filter-dialog")
             page.locator(".ex-save-page-input").fill("")
+            modal_field = page.locator(".ex-save-page-input")
+            assert modal_field.evaluate("""el => ({
+              opacity: getComputedStyle(el,'::placeholder').opacity,
+              radius: getComputedStyle(el).borderTopLeftRadius,
+              outline: getComputedStyle(el).outlineWidth
+            })""") == {"opacity":"0.5","radius":"10px","outline":"2px"}, (key,"modal field")
             assert page.locator(".ex-save-page-submit").is_disabled()
             screenshot(page, theme, width, "saved-filter-error", "saved-filter-error")
             page.locator(".ex-save-page-cancel").click()
@@ -320,6 +334,18 @@ with sync_playwright() as playwright:
               document.getElementById('mount').hidden = true;
             }""")
             assert page.locator(".ex-settings-fixture .setting-item").count() >= 4, (key, "settings")
+            path_field = page.locator(".ex-settings-root .setting-item-control input[type='text']").first
+            assert path_field.is_visible(), (key,"path input missing")
+            path_geometry = path_field.evaluate("""el => ({
+              opacity: getComputedStyle(el,'::placeholder').opacity,
+              height: el.getBoundingClientRect().height,
+              width: el.getBoundingClientRect().width,
+              right: el.getBoundingClientRect().right
+            })""")
+            assert path_geometry["opacity"] == "0.5" and path_geometry["width"] > 0, (key,"path field",path_geometry)
+            assert path_geometry["right"] <= width + 1, (key,"path input overflow",path_geometry)
+            if width <= 480:
+                assert path_geometry["height"] >= 44, (key,"path touch target",path_geometry)
             screenshot(page, theme, width, "settings", "settings")
             page.evaluate("""() => {
               document.querySelector('.ex-settings-fixture').remove();
