@@ -331,7 +331,8 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelectorAll('.ex-day-rail .ex-day-title').length,1);
   assert.ok(root.querySelector('.ex-day-rail .ex-day-title'));
   assert.ok(root.querySelector('.ex-card-footer .ex-chips'));
-  assert.equal(root.querySelector('.ex-card').lastElementChild.classList.contains('ex-card-footer'),true);
+  assert.equal(root.querySelector('.ex-card').lastElementChild.classList.contains('ex-tag-editor'),true);
+  assert.equal(root.querySelector('.ex-card-footer').nextElementSibling.classList.contains('ex-tag-editor'),true);
   assert.ok(root.querySelector('.ex-note-heading').textContent.includes('测试标题'));
   assert.ok(renders.some(r=>r.content.includes('![[图片.png]]') && r.path===t.md.path));
   assert.ok(!root.textContent.includes('我的摘录'));
@@ -766,7 +767,7 @@ test('staged tag preview replaces saved chips, preserves the search input and ca
 });
 
 test('inline tag preview shows readonly body tag and counts the complete union',async()=>{
-  const t=await fixture(false,'普通正文 #正文', ['哲学']);
+  const t=await fixture(false,'普通正文 #正文', ['正文']);
   const card=t.pane.contentEl.querySelector('.ex-card');
   card.querySelector('.ex-add-tag').click();
   const preview=card.querySelector('.ex-tag-selected');
