@@ -780,11 +780,13 @@
 }
 
 /* Read-only activity calendar: separate from the capture/feed surfaces. */
-.ex-calendar-modal { width: min(960px, calc(100vw - 32px)); max-width: 960px; }
+.ex-calendar-modal .modal-content { width: min(960px, calc(100vw - 32px)); max-width: 960px; }
 .ex-calendar-modal .modal-content {
-  box-sizing: border-box; width: 100%; max-width: none;
+  box-sizing: border-box;
   max-height: min(90dvh, 880px); overflow: hidden; padding: 24px;
 }
+.ex-calendar-modal .ex-calendar-shell,
+.ex-calendar-modal .ex-calendar-shell * { box-sizing: border-box; }
 .ex-calendar-modal .ex-calendar-shell {
   container: ex-calendar / inline-size; display: flex; flex-direction: column;
   min-width: 0; max-height: calc(90dvh - 48px); color: var(--text-normal);
@@ -865,16 +867,17 @@
   }
   .ex-calendar-modal .ex-calendar-axis {
     display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
-    grid-template-rows: auto; gap: 4px; padding: 0 0 0 44px; flex: none;
+    grid-template-rows: auto; gap: 4px; padding: 6px 0 8px 64px; flex: none;
+    position: sticky; top: 0; z-index: 1; background: var(--background-primary);
     width: 100%; font-size: 11px; line-height: 16px;
   }
   .ex-calendar-modal .ex-calendar-rows { display: flex; flex-direction: column; gap: 5px; width: 100%; }
   .ex-calendar-modal .ex-calendar-week-row {
-    display: grid; grid-template-columns: 36px minmax(0,1fr); gap: 8px;
+    display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 6px;
     align-items: center; width: 100%;
   }
   .ex-calendar-modal .ex-calendar-month {
-    width: 36px; height: auto; overflow: visible; line-height: 16px; font-size: 11px;
+    width: 58px; height: auto; overflow: visible; line-height: 16px; font-size: 11px;
   }
   .ex-calendar-modal .ex-calendar-week {
     display: grid; grid-template-columns: repeat(7, minmax(0,1fr));
@@ -885,10 +888,10 @@
   }
 }
 @media (max-width: 500px) {
-  .ex-calendar-modal { width: calc(100vw - 16px); max-width: none; }
-  .ex-calendar-modal .modal-content { padding: 16px 14px; }
+  .ex-calendar-modal .modal-content { width: calc(100vw - 16px); max-width: none; padding: 16px 14px; }
   .ex-calendar-modal .ex-calendar-shell { max-height: calc(90dvh - 32px); }
   .ex-calendar-modal .ex-calendar-title { margin-bottom: 16px; }
   .ex-calendar-modal .ex-calendar-summary { gap: 28px; padding-bottom: 16px; }
-  .ex-calendar-modal .ex-calendar-footer { margin-top: 12px; }
+  .ex-calendar-modal .ex-calendar-footer { margin-top: 12px; flex-direction: column; align-items: stretch; }
+  .ex-calendar-modal .ex-calendar-legend { justify-content: flex-end; }
 }
