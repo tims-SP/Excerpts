@@ -403,6 +403,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed || this.homeInvalid) return;
     this.homeInvalid = true;
     this.homeInvalidCause = cause;
+    this.calendarModal?.close();
     this.refreshToken++; this.searchToken++;
     this.clearScanCompletion();
     if (this.searchTimer) clearTimeout(this.searchTimer);

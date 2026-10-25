@@ -150,6 +150,18 @@ test('calendar reads a committed snapshot, displays staleness and blocks unscann
   await t.close();
 });
 
+test('invalidating a workspace closes an open read-only calendar without changing the feed',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='摘录日历').handler();
+  assert.ok(document.querySelector('.ex-calendar-modal'));
+  t.pane.renderer.invalidateHome('path');
+  assert.equal(document.querySelector('.ex-calendar-modal'),null);
+  assert.equal(t.pane.renderer.calendarModal,null);
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  await t.close();
+});
+
 test('stale and error statuses remain visible beyond the success timeout',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const status=root.querySelector('.ex-scan-status');
