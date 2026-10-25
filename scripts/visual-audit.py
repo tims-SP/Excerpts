@@ -73,7 +73,7 @@ REQUIRED = {
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
-    "filter", "page-menu", "section-open", "card-picker", "card-menu",
+    "filter", "page-menu", "section-open", "card-picker", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
@@ -301,12 +301,22 @@ with sync_playwright() as playwright:
             assert card.locator(".ex-tag-editor").is_visible()
             tag_box = card.locator(".ex-tag-editor").bounding_box()
             footer_box = card.locator(".ex-card-footer").bounding_box()
-            assert tag_box["y"] + tag_box["height"] <= footer_box["y"] + 2, (
-                key, "card picker covers footer")
+            assert tag_box["y"] >= footer_box["y"] + footer_box["height"] - 1, (
+                key, "card picker must follow footer")
+            assert card.locator(".ex-add-tag").get_attribute("aria-label") == "取消标签编辑", (key,"cancel entry")
+            assert card.locator(".ex-tag-selected").is_visible(), (key,"selected preview")
+            assert card.locator(".ex-tag-selected-chip").count() >= 1, (key,"preview content")
+            assert card.locator(".ex-chips .ex-tag").count() == 0, (key,"old tags remain visible")
             screenshot(page, theme, width, "card-picker",
                        "card-tag-editor", "card-tag-search",
                        "card-tag-options", "card-tag-actions")
-            card.locator(".ex-tag-cancel").click()
+            choice = card.locator(".ex-tag-choice:not([disabled])").first
+            choice.click()
+            assert "未保存" in card.locator(".ex-tag-editor-count").inner_text(), (key,"staged edit cue")
+            screenshot(page, theme, width, "card-picker-changed",
+                       "card-tag-editor", "card-tag-search", "card-tag-options")
+            card.locator(".ex-add-tag").click()
+            assert card.locator(".ex-tag-editor").is_hidden(), (key,"cancel closes editor")
             card.locator(".ex-card-options").click()
             page.wait_for_selector(".menu button", timeout=8000)
             screenshot(page, theme, width, "card-menu", "list-menu")
