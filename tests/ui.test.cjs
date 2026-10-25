@@ -105,7 +105,7 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
   return {files,plugin,pane,leaf,md,home,tagState,vaultEvents,metadataEvents,workspaceEvents,folderLeaves,
     getTagWrites:()=>tagWrites,async close(){
     await pane.onUnloadFile(home);pane.contentEl.remove();
-    document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal,.ex-calendar-modal').forEach(el=>el.remove());
+    document.querySelectorAll('.ex-delete-modal,.ex-save-page-modal').forEach(el=>el.remove());
   }};
 }
 
@@ -128,7 +128,7 @@ test('successful scans show immediate progress and dismiss only the visual statu
   assert.equal(renderer.scanCompletionTimer,null,'unloading clears the completion timer');
 });
 
-test('calendar reads a committed snapshot, displays staleness and blocks unscanned states',async()=>{
+test('calendar reads a committed snapshot, shows state and restricts unsafe navigation',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
   t.plugin.onFileChange(t.md.path);
   assert.equal(renderer.scanStatus,'stale');
@@ -136,29 +136,67 @@ test('calendar reads a committed snapshot, displays staleness and blocks unscann
   const item=Menu.last.items.find(item=>item.title==='摘录日历');
   assert.equal(item.disabled,false);
   item.handler();
-  assert.ok(document.querySelector('.ex-calendar-warning').textContent.includes('可能不是最新'));
-  renderer.scanStatus='scanning';
-  renderer.renderScanStatus();
-  assert.ok(document.querySelector('.ex-calendar-warning').textContent.includes('可能不是最新'));
-  Modal.last.close();
+  assert.equal(renderer.pageMode,'calendar');
+  assert.ok(root.querySelector('.ex-calendar-warning').textContent.includes('可能不是最新'));
+  assert.equal(root.querySelector('.ex-feed-view').hidden,true);
+  renderer.requestRefresh(true);
+  assert.equal(renderer.scanStatus,'stale','refresh is refused while browsing the calendar');
+  renderer.scanStatus='error'; renderer.renderScanStatus();
+  assert.ok(root.querySelector('.ex-calendar-warning').textContent.includes('扫描失败'));
+  root.querySelector('.ex-calendar-back').click();
+  assert.equal(renderer.pageMode,'feed');
+  renderer.scanStatus='scanning';renderer.renderScanStatus();
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items.find(entry=>entry.title==='摘录日历').disabled,true);
-  renderer.scanStatus='blocked';renderer.lastScanCount=null;
-  renderer.renderScanStatus();
+  renderer.scanStatus='blocked';renderer.lastScanCount=null; renderer.renderScanStatus();
   clickByLabel(root,'页面选项');
   assert.equal(Menu.last.items.find(entry=>entry.title==='摘录日历').disabled,true);
   await t.close();
 });
 
-test('invalidating a workspace closes an open read-only calendar without changing the feed',async()=>{
+test('invalidating a workspace returns to the feed without clearing the draft',async()=>{
   const t=await fixture(),root=t.pane.contentEl;
+  const input=root.querySelector('.ex-compose-text');
+  input.value='未保存的测试草稿';
+  input.dispatchEvent(new window.Event('input',{bubbles:true}));
   clickByLabel(root,'页面选项');
   Menu.last.items.find(item=>item.title==='摘录日历').handler();
-  assert.ok(document.querySelector('.ex-calendar-modal'));
+  assert.equal(t.pane.renderer.pageMode,'calendar');
   t.pane.renderer.invalidateHome('path');
-  assert.equal(document.querySelector('.ex-calendar-modal'),null);
-  assert.equal(t.pane.renderer.calendarModal,null);
+  assert.equal(t.pane.renderer.pageMode,'feed');
+  assert.equal(root.querySelector('.ex-calendar-shell').hidden,true);
+  assert.equal(input.value,'未保存的测试草稿');
   assert.equal(root.querySelectorAll('.ex-card').length,1);
+  await t.close();
+});
+
+test('calendar navigation preserves the original feed DOM, draft, filters and scroll through 20 cycles',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const feed=root.querySelector('.ex-feed-view'),input=root.querySelector('.ex-compose-text');
+  const card=root.querySelector('.ex-card'),row=root.querySelector('.ex-virtual-row');
+  input.value='继续记录的草稿';input.dispatchEvent(new window.Event('input',{bubbles:true}));
+  const search=clickByLabel(root,'搜索');
+  assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
+  t.pane.contentEl.scrollTop=350;
+  for(let i=0;i<20;i++){
+    clickByLabel(root,'页面选项');
+    const item=Menu.last.items.find(x=>x.title==='摘录日历');
+    assert.equal(item.disabled,false);
+    item.handler();
+    assert.equal(renderer.pageMode,'calendar');
+    assert.equal(feed.hidden,true);
+    assert.equal(root.querySelector('.ex-calendar-shell').hidden,false);
+    assert.equal(root.querySelectorAll('.ex-calendar-shell').length,1);
+    root.querySelector('.ex-calendar-back').click();
+    assert.equal(renderer.pageMode,'feed');
+    assert.equal(feed.hidden,false);
+    assert.equal(t.pane.contentEl.scrollTop,350);
+    assert.equal(input.value,'继续记录的草稿');
+    assert.equal(root.querySelector('.ex-search-wrap').hidden,false);
+    assert.equal(root.querySelector('.ex-card'),card);
+    assert.equal(root.querySelector('.ex-virtual-row'),row);
+  }
+  assert.equal(renderer.timeline.suspended,false);
   await t.close();
 });
 
@@ -196,12 +234,14 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.ok(calendarItem);
   assert.equal(calendarItem.disabled,false);
   calendarItem.handler();
-  assert.ok(document.querySelector('.ex-calendar-modal'));
-  assert.ok(document.querySelectorAll('.ex-calendar-week').length >= 52);
-  assert.equal(document.querySelectorAll('.ex-calendar-week .ex-calendar-cell').length >= 365,true);
-  assert.ok(document.querySelector('.ex-calendar-summary').textContent.includes('有记录的天数'));
-  Modal.last.close();
-  assert.equal(document.querySelector('.ex-calendar-modal'),null);
+  assert.equal(root.querySelector('.ex-feed-view').hidden,true);
+  assert.equal(root.querySelector('.ex-calendar-shell').hidden,false);
+  assert.ok(root.querySelectorAll('.ex-calendar-week').length >= 52);
+  assert.equal(root.querySelectorAll('.ex-calendar-week .ex-calendar-cell').length >= 365,true);
+  assert.ok(root.querySelector('.ex-calendar-summary').textContent.includes('有记录的天数'));
+  clickByLabel(root,'返回摘录列表');
+  assert.equal(root.querySelector('.ex-calendar-shell').hidden,true);
+  assert.equal(root.querySelector('.ex-feed-view').hidden,false);
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);

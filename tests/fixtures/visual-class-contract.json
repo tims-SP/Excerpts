@@ -3,7 +3,7 @@
   "files": [
     "src/view.ts",
     "src/heatmap.ts",
-    "src/calendar-modal.ts",
+    "src/calendar-view.ts",
     "src/tag-picker.ts",
     "src/page-modal.ts",
     "src/delete-modal.ts",
@@ -21,13 +21,14 @@
     "ex-btn-quiet",
     "ex-calendar",
     "ex-calendar-axis",
+    "ex-calendar-back",
     "ex-calendar-cell",
     "ex-calendar-footer",
     "ex-calendar-layout",
     "ex-calendar-legend",
     "ex-calendar-metric",
-    "ex-calendar-modal",
     "ex-calendar-month",
+    "ex-calendar-nav",
     "ex-calendar-outside",
     "ex-calendar-rows",
     "ex-calendar-scroll",
@@ -95,6 +96,7 @@
     "ex-empty-title",
     "ex-expand-body",
     "ex-extras",
+    "ex-feed-view",
     "ex-filter-tags",
     "ex-group-body",
     "ex-group-chevron",
@@ -216,6 +218,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "13d2251d3c3352038d98a165a7c7974481bd6736",
-  "stylesheet_review": "Reviewed Screenshot QA for mobile 320/390px and narrow 768px vertical calendar, desktop 1280px horizontal calendar, light/dark, and browser layout geometry; explicit approval of styles.css git blob SHA."
+  "stylesheet_git_blob_sha": "52b036f988158af6ec0f2289b25d0e8f715085f2",
+  "stylesheet_review": "Reviewed 320/375/390/430/768/1024/1280 responsive inline calendar, light/dark, scroll restoration and overflow via Playwright; approved stylesheet Git blob SHA."
 }

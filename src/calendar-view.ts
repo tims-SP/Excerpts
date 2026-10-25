@@ -1,27 +1,35 @@
-import { App, Modal } from "obsidian";
+import { setIcon } from "obsidian";
 import type { CardIndex } from "./model";
 import { buildHeatmap } from "./heatmap";
 
-/** Read-only activity calendar. It consumes a view snapshot, never scans the Vault. */
-export class ExcerptsCalendarModal extends Modal {
+/** Read-only calendar inside the existing Excerpts FileView; never reads the Vault. */
+export class ExcerptsCalendarView {
+  readonly element: HTMLElement;
   private readonly scrollEl: HTMLDivElement;
   private readonly summaryEl: HTMLElement;
   private readonly rowsEl: HTMLDivElement;
   private readonly warningEl: HTMLElement;
-  private readonly onDismiss: () => void;
 
-  constructor(app: App, cards: readonly CardIndex[], stale: boolean, onDismiss: () => void) {
-    super(app);
-    this.onDismiss = onDismiss;
-    this.modalEl.addClass("ex-calendar-modal");
-    this.contentEl.empty();
+  constructor(cards: readonly CardIndex[], status: "done" | "stale" | "error", onBack: () => void) {
     const shell = document.createElement("section");
     shell.className = "ex-calendar-shell";
+    this.element = shell;
+    shell.hidden = true;
     shell.setAttribute("aria-label", "摘录日历");
 
+    const navigation = document.createElement("div");
+    navigation.className = "ex-calendar-nav";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "ex-calendar-back clickable-icon";
+    back.setAttribute("aria-label", "返回摘录列表");
+    back.title = "返回摘录列表";
+    setIcon(back, "arrow-left");
+    back.addEventListener("click", onBack);
     const header = document.createElement("h2");
     header.className = "ex-calendar-title";
     header.textContent = "摘录日历";
+    navigation.append(back, header);
 
     this.summaryEl = document.createElement("div");
     this.summaryEl.className = "ex-calendar-summary";
@@ -69,32 +77,20 @@ export class ExcerptsCalendarModal extends Modal {
     more.textContent = "多";
     legend.append(more);
     bottom.append(note, legend);
-    shell.append(header, this.summaryEl, this.warningEl, this.scrollEl, bottom);
-    this.contentEl.append(shell);
-    this.update(cards, stale);
+    shell.append(navigation, this.summaryEl, this.warningEl, this.scrollEl, bottom);
+    this.update(cards, status);
   }
 
-  onOpen(): void {
-    // The vertical layout starts with recent dates; scrolling remains confined to this panel.
-    const positionLatest = () => {
-      if (this.scrollEl.isConnected) this.scrollEl.scrollTop = this.scrollEl.scrollHeight;
-    };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(positionLatest);
-    else positionLatest();
+  setStatus(status: "done" | "stale" | "error"): void {
+    this.warningEl.hidden = status === "done";
+    this.warningEl.textContent = status === "error" ?
+      "上次扫描失败，当前显示的是旧统计" : status === "stale" ?
+      "索引待刷新，当前统计可能不是最新" : "";
   }
 
-  onClose(): void {
-    this.onDismiss();
-  }
-
-  setStale(stale: boolean): void {
-    this.warningEl.hidden = !stale;
-    this.warningEl.textContent = stale ? "索引待刷新，当前统计可能不是最新" : "";
-  }
-
-  update(cards: readonly CardIndex[], stale: boolean, now = new Date()): void {
+  update(cards: readonly CardIndex[], status: "done" | "stale" | "error", now = new Date()): void {
     const data = buildHeatmap(cards, now);
-    this.setStale(stale);
+    this.setStatus(status);
     this.summaryEl.replaceChildren();
     for (const [number, caption] of [
       [data.total, "过去一年摘录"],
