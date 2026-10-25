@@ -60,6 +60,25 @@ with sync_playwright() as p:
                 print(theme,width,depth,info)
             page.locator('.ex-calendar-back').click()
             page.close()
+    # A selected day must remain readable when rotating across the 800px grid breakpoint.
+    page=browser.new_page(viewport={'width':390,'height':840},is_mobile=True,has_touch=True)
+    page.set_content(html,wait_until='domcontentloaded')
+    page.wait_for_function('window.__ready === true || !!window.__error')
+    assert not page.evaluate('window.__error')
+    page.wait_for_selector('.ex-card')
+    page.locator('.ex-page-options').click()
+    page.locator('.menu button',has_text='摘录日历').click()
+    page.locator('.ex-calendar-mobile .ex-calendar-day').first.click()
+    assert page.locator('.ex-calendar-selected').evaluate('el=>Boolean(el.closest(".ex-calendar-month-section"))')
+    page.set_viewport_size({'width':1024,'height':840})
+    page.wait_for_function("""() => {const el=document.querySelector('.ex-calendar-selected');
+        return !el.hidden && getComputedStyle(el).display!=='none' &&
+        el.previousElementSibling?.classList.contains('ex-calendar-layout');}""",timeout=3000)
+    page.set_viewport_size({'width':390,'height':840})
+    page.wait_for_function("""() => Boolean(document.querySelector('.ex-calendar-selected')
+        ?.closest('.ex-calendar-month-section'))""",timeout=3000)
+    page.screenshot(path=str(OUTPUT/'responsive-detail-rotation-390.png'))
+    page.close()
     # Nested/outer scrolling is common in themed or mobile Obsidian panes. The
     # plugin must disable its own sticky nav instead of pinning to the wrong viewport.
     page=browser.new_page(viewport={'width':390,'height':840},is_mobile=True,has_touch=True)
