@@ -29,6 +29,8 @@ test('composer remains a single-surface textarea with theme-native focus and res
   assert.match(css,/textarea\.ex-compose-text::placeholder\s*\{\s*color: var\(--text-normal\); opacity: 0\.5;/);
   assert.match(css,/\.ex-capture-overflow/);
   assert.match(css,/\.ex-capture-tag-toggle/);
+  assert.match(css,/\.excerpts-root \.ex-capture-selected\s*\{[^}]*max-width: 100%/);
+  assert.doesNotMatch(css,/\.ex-capture-selected\s*\{[^}]*max-width: calc\(100% - 36px\)/);
   assert.doesNotMatch(css,/\.ex-capture-selected button\.ex-tag-remove/);
   assert.match(css,/--interactive-accent/);
 });

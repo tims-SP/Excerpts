@@ -134,7 +134,7 @@
   align-items: center; justify-content: flex-start; flex-wrap: nowrap; gap: 5px;
 }
 .excerpts-root .ex-capture-selected {
-  display: flex; flex: 0 1 auto; min-width: 0; max-width: calc(100% - 36px);
+  display: flex; flex: 0 1 auto; min-width: 0; max-width: 100%;
   height: 36px; align-items: center; flex-wrap: nowrap; gap: 5px; overflow: hidden;
 }
 .excerpts-root .ex-capture-selected[hidden],
