@@ -44,6 +44,14 @@ test('secondary fields share restrained geometry without changing the composer o
   assert.match(css,/\.excerpts-root \.ex-tag-search :is\(input\.ex-tags-input,input\.ex-tag-custom\):focus-visible\s*\{\s*outline: none !important/);
   assert.match(css,/\.excerpts-root input\.ex-search:is\(:hover,:focus\) \{ min-height: 44px; height: 44px;/);
   assert.match(css,/\.excerpts-root \.ex-tag-search-clear \{ width: 44px; height: 44px;/);
+  assert.match(css,/\.excerpts-root \.ex-search-wrap \{ position: relative;/);
+  assert.match(css,/\.excerpts-root button\.ex-search-clear \{[^}]*position: absolute;[^}]*width: 32px; height: 32px;/);
+  assert.match(css,/input\.ex-search:placeholder-shown \+ button\.ex-search-clear/);
+  assert.match(css,/\.excerpts-root button\.ex-search-clear \{\s*width: 44px; height: 44px;/);
+  assert.match(css,/\.excerpts-root input\.ex-search:disabled/);
+  assert.match(css,/\.excerpts-root \.ex-tag-search:has\(input:disabled\)/);
+  assert.match(css,/\.ex-settings-root \.setting-item-control:has\(input\[type="text"\]\) \{[^}]*flex-wrap: nowrap/);
+  assert.match(css,/\.ex-settings-root \.setting-item-control input\[type="text"\] \{[^}]*flex: 1 1 160px/);
   assert.doesNotMatch(css,/(?:^|\n)\s*(?:input|textarea)(?:::[a-z-]+)?\s*\{/);
 });
 
