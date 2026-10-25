@@ -176,7 +176,7 @@ with sync_playwright() as playwright:
             if theme == "dark":
                 page.evaluate("document.documentElement.classList.add('theme-dark')")
             page.wait_for_selector(".ex-card .ex-section", timeout=15000)
-            page.wait_for_selector(".ex-scan-status[hidden]", timeout=5000)
+            page.locator(".ex-scan-status").wait_for(state="hidden", timeout=5000)
             assert page.locator(".ex-scan-status").get_attribute("data-state") == "done"
             manifest["geometry"][key] = geometry(page, theme, width)
             screenshot(page, theme, width, "home", "page-header",
