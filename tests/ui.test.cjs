@@ -738,6 +738,73 @@ test('card tag edit stays open and preserves the SAME input when selecting sever
   await t.close();
 });
 
+test('active last tag stays visible through folding, expand/collapse and clearing the filter',async()=>{
+  const t=await fixture(), renderer=t.pane.renderer, item=renderer.items.find(x=>x.path===t.md.path);
+  const tags=['文学','哲学','历史','阅读','随笔','艺术','生活','人物','札记','电影'];
+  item.tags=[...tags];
+  const row=t.pane.contentEl.querySelector('.ex-card .ex-chips');
+  Object.defineProperty(row,'clientWidth',{configurable:true,value:182});
+  const measure=()=>{
+    row.querySelectorAll('.ex-tag').forEach(el=>{
+      el.getBoundingClientRect=()=>({width:el.textContent.includes('超长')?280:64});
+    });
+    row.querySelector('.ex-add-tag').getBoundingClientRect=()=>({width:36});
+    const more=row.querySelector('.ex-tag-overflow');
+    if(more)more.getBoundingClientRect=()=>({width:20+8*more.textContent.length});
+  };
+  renderer.tagFilter='电影';
+  renderer.renderTags(row,item,false);measure();renderer.reflowTagRow(row);
+  assert.equal(row.querySelector('.ex-tag').textContent,'#电影');
+  assert.equal(row.querySelector('.ex-tag.ex-selected').hidden,false);
+  assert.equal(row.querySelector('.ex-tag.ex-selected').getAttribute('aria-pressed'),'true');
+  assert.equal(row.querySelector('.ex-tag.ex-selected').title,'#电影');
+  let hidden=[...row.querySelectorAll('.ex-tag')].filter(x=>x.hidden).length;
+  assert.ok(hidden>0);
+  assert.equal(row.querySelector('.ex-tag-overflow').textContent,'+'+hidden);
+  row.querySelector('.ex-tag-overflow').click();
+  assert.equal(row.querySelectorAll('.ex-tag[hidden]').length,0);
+  assert.equal(row.querySelector('.ex-tag').textContent,'#电影');
+  row.querySelector('.ex-tag-collapse').click();
+  measure();renderer.reflowTagRow(row);
+  assert.equal(row.querySelector('.ex-tag.ex-selected').hidden,false);
+  renderer.tagFilter='';renderer.renderTags(row,item,false);measure();renderer.reflowTagRow(row);
+  assert.equal(row.querySelector('.ex-tag').textContent,'#文学');
+  assert.equal(row.querySelectorAll('.ex-tag.ex-selected').length,0);
+
+  const long='超长'+('阅读记录'.repeat(25));
+  item.tags=[...tags,long];
+  renderer.tagFilter=long;
+  renderer.renderTags(row,item,false);measure();renderer.reflowTagRow(row);
+  const selected=row.querySelector('.ex-tag.ex-selected');
+  assert.equal(selected.hidden,false);
+  assert.equal(selected.title,'#'+long);
+  assert.ok(parseFloat(selected.style.maxWidth)>0&&parseFloat(selected.style.maxWidth)<280);
+  hidden=[...row.querySelectorAll('.ex-tag')].filter(x=>x.hidden).length;
+  assert.equal(row.querySelector('.ex-tag-overflow').textContent,'+'+hidden);
+  await t.close();
+});
+
+test('one and twenty tag folded cards retain selected visibility and exact +N',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
+  const row=t.pane.contentEl.querySelector('.ex-card .ex-chips');
+  Object.defineProperty(row,'clientWidth',{configurable:true,value:166});
+  for(const count of [1,20]){
+    item.tags=Array.from({length:count},(_,i)=>'标签'+i);
+    renderer.tagFilter='标签'+(count-1);
+    renderer.renderTags(row,item,false);
+    row.querySelectorAll('.ex-tag').forEach(el=>{el.getBoundingClientRect=()=>({width:65})});
+    row.querySelector('.ex-add-tag').getBoundingClientRect=()=>({width:36});
+    const more=row.querySelector('.ex-tag-overflow');
+    more.getBoundingClientRect=()=>({width:20+8*more.textContent.length});
+    renderer.reflowTagRow(row);
+    assert.equal(row.querySelector('.ex-tag.ex-selected').hidden,false);
+    const hidden=[...row.querySelectorAll('.ex-tag')].filter(el=>el.hidden).length;
+    assert.equal(more.hidden,hidden===0);
+    if(hidden)assert.equal(more.textContent,'+'+hidden);
+  }
+  await t.close();
+});
+
 test('staged tag preview replaces saved chips, preserves the search input and cancels without writing',async()=>{
   const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
   const mount=card.querySelector('.ex-chips');
