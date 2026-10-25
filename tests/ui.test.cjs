@@ -841,7 +841,7 @@ test('page actions appear only in the timeline toolbar and disabled actions have
   assert.equal(root.querySelectorAll('.ex-page-options').length,1);
   assert.equal(root.querySelectorAll('.ex-card-options').length,1);
   assert.deepEqual(Menu.last.items.map(item=>item.title),
-    ['刷新摘录','批量选择','保存当前筛选…','清除筛选']);
+    ['刷新摘录','摘录日历','批量选择','保存当前筛选…','清除筛选']);
   assert.equal(Menu.last.items.find(item=>item.title==='刷新摘录').disabled,false);
   assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,false);
   assert.equal(Menu.last.items.find(item=>item.title==='保存当前筛选…').disabled,true);
@@ -888,7 +888,7 @@ test('saved page restores filters and can update only after explicit confirmatio
   assert.equal(t.files.get(saved.path).data,initial,'temporary filter changes must not rewrite file');
   clickByLabel(root,'页面选项');
   assert.deepEqual(Menu.last.items.map(item=>item.title),
-    ['刷新摘录','批量选择','更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
+    ['刷新摘录','摘录日历','批量选择','更新当前页面','另存为摘录页…','恢复已保存的筛选','清除筛选']);
   Menu.last.items.find(item=>item.title==='恢复已保存的筛选').handler();
   assert.equal(root.querySelector('.ex-selected').textContent,'#哲学');
   [...root.querySelectorAll('.ex-filter-tags button')].find(x=>x.textContent==='全部').click();
