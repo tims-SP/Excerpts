@@ -152,6 +152,12 @@
     "ex-radius-option",
     "ex-radius-pill",
     "ex-radius-surface",
+    "ex-recovery-action",
+    "ex-recovery-content",
+    "ex-recovery-copy",
+    "ex-recovery-description",
+    "ex-recovery-icon",
+    "ex-recovery-title",
     "ex-save-page-cancel",
     "ex-save-page-description",
     "ex-save-page-field",
@@ -185,6 +191,7 @@
     "ex-selection-footer-count",
     "ex-selection-indicator",
     "ex-selection-toolbar",
+    "ex-settings-busy-hint",
     "ex-settings-root",
     "ex-space-1",
     "ex-space-2",
@@ -193,6 +200,7 @@
     "ex-space-5",
     "ex-space-6",
     "ex-tag",
+    "ex-tag-cancel",
     "ex-tag-choice",
     "ex-tag-choice-check",
     "ex-tag-choice-empty",
@@ -201,6 +209,7 @@
     "ex-tag-collapse",
     "ex-tag-custom",
     "ex-tag-done",
+    "ex-tag-edit-warning",
     "ex-tag-editor",
     "ex-tag-editor-actions",
     "ex-tag-editor-count",
@@ -240,6 +249,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "26baade227e41a2014ebf6f8146e477eb2bf7180",
-  "stylesheet_review": "Reviewed non-sticky calendar navigation in Chromium: light/dark at 320/390/430/768px, mock native header with inner and outer scrolling at middle/oldest dates; dates remain below native bar. No real Android acceptance claimed."
+  "stylesheet_git_blob_sha": "207783a4e8e30cae327096bc292006bf1151b4f7",
+  "stylesheet_review": "Recovery prompt CSS is tracked; mock screenshot and geometry review is required before visual approval. No mobile acceptance claimed."
 }

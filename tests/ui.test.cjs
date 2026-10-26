@@ -1209,7 +1209,7 @@ test('cards without tags use a single compact footer add action, then expand edi
   assert.equal(card.querySelector('.ex-add-tag').getAttribute('aria-expanded'),'true');
   assert.equal(card.querySelector('.ex-add-tag').getAttribute('aria-label'),'取消标签编辑');
   assert.equal(card.querySelector('.ex-add-tag').textContent,'取消');
-  assert.equal(card.querySelector('.ex-tag-cancel'),null);
+  assert.ok(card.querySelector('.ex-tag-cancel'),'editor provides a second accessible cancellation control');
   card.querySelector('.ex-tag-custom').dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
   assert.equal(card.querySelector('.ex-card-footer .ex-add-tag').textContent,'＋ 标签');
@@ -3862,5 +3862,58 @@ test('tag menu is capped and tag picker reuses the same index between input even
     assert.equal(renderer.availableTags,tags,'typing never rebuilds or sorts the index');
   }
   assert.ok(t.pane.contentEl.querySelectorAll('.ex-capture-tags .ex-tag-choice').length<=9);
+  await t.close();
+});
+
+test('stale index supplies a direct recovery action and does not automatically scan',async()=>{
+  const t=await fixture(), root=t.pane.contentEl,r=[...t.plugin.rendered][0];
+  r.markStale(t.md.path);
+  const hint=root.querySelector('.ex-page-hint');
+  assert.equal(hint.dataset.state,'stale');
+  assert.equal(hint.querySelector('.ex-recovery-action').hidden,false);
+  hint.querySelector('.ex-recovery-action').click();
+  await waitFor(()=>r.scanStatus==='done'&&hint.hidden,'manual recovery');
+  await t.close();
+});
+test('stale tag editor cannot save and always permits cancellation',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=[...t.plugin.rendered][0];
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  r.markStale(t.md.path);
+  assert.equal(card.querySelector('.ex-tag-done').disabled,true);
+  assert.equal(card.querySelector('.ex-add-tag').disabled,false);
+  assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
+  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(r.openTagEditors.size,0);
+  assert.equal(t.getTagWrites(),0);
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  await t.close();
+});
+
+test('stale search recovery clears only query and requires explicit rescan',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=[...t.plugin.rendered][0];
+  clickByLabel(root,'搜索');
+  const q=root.querySelector('.ex-search');q.value='测试标题';
+  q.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchReady&&r.searchText==='测试标题','search ready');
+  r.tagFilter='哲学';r.markStale(t.md.path);
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'search-stale');
+  root.querySelector('.ex-recovery-action').click();
+  assert.equal(r.searchText,'');
+  assert.equal(r.tagFilter,'哲学');
+  assert.equal(r.scanStatus,'stale');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  await t.close();
+});
+test('stale selection describes how to recover without losing count',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=[...t.plugin.rendered][0];
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(i=>i.title==='批量选择').handler();
+  r.markStale(t.md.path);
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0/);
+  assert.match(root.querySelector('.ex-selection-footer-count').textContent,/退出选择后刷新/);
+  root.querySelector('.ex-select-done').click();
+  assert.equal(r.selectionMode,'normal');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
   await t.close();
 });

@@ -264,10 +264,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       ({ kind, title, description, action, actionLabel });
     if (this.homeInvalid) return info("invalid", "当前摘录页已失效",
       this.homeInvalidCause === "configuration"
-        ? "筛选配置已变化。请保存草稿并从文件列表重新打开。"
+        ? "筛选配置已变化。如有未保存的草稿，请先复制，再从文件列表重新打开。"
         : this.workspace.kind === "folder"
-          ? "文件夹位置已变化。请保存草稿并从文件夹右键菜单重新打开。"
-          : "页面位置已变化。请保存草稿并从文件列表重新打开。");
+          ? "文件夹位置已变化。如有未保存的草稿，请先复制，再从文件夹右键菜单重新打开。"
+          : "页面位置已变化。如有未保存的草稿，请先复制，再从文件列表重新打开。");
     if (this.deleteBusy) return info("deleting", "正在删除摘录", "删除完成后可继续操作。");
     if (this.saveBusy) return info("saving", "正在保存摘录", "保存完成后可继续操作。");
     if (this.pendingTags.size) return info("saving-tags", "正在保存标签", "请等待当前标签写入完成。");
@@ -286,7 +286,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.scanStatus === "scanning") return null; // Existing progress is sufficient.
     if (this.plugin.isNavigating()) return info("navigating", "正在打开摘录页", "请等待页面打开完成。");
     if (this.plugin.isBusy(this)) return info("other-busy", "另一个摘录页正在操作",
-      "请等待该操作完成。不会自动重试当前操作。");
+      "请等待其他摘录页完成操作，然后手动刷新；不会自动重试。");
     if (!this.searchReady) return info("searching", "正在搜索摘录", "搜索完成后可继续操作。");
     if ((this.scanStatus === "stale" || this.scanStatus === "error") &&
       this.searchText && this.reason("refresh") !== null)
@@ -1248,7 +1248,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const stale = this.scanStatus !== "done" && !this.selectionBusy && !this.deleteBusy;
     this.selectionCountEl.textContent = this.selectionBusy ?
       "正在选择 " + this.selectionProcessed + " / " + this.selectionBatchTotal :
-      stale ? "列表已变化" : "已选 " + chosen + " / " + total;
+      "已选 " + chosen + " / " + total + (stale ? " · 列表已变化" : "");
     this.selectedFooterCountEl.textContent = this.selectionBusy ?
       "正在选择…" : stale ? "请退出选择后刷新" : "已选择 " + chosen + " 条";
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
