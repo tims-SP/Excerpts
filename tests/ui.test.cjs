@@ -3060,11 +3060,11 @@ test('hand-edited saved page rejects leading or trailing whitespace tags, preser
   const t=await fixture();
   const file=await t.plugin.createSavedPage(t.home.path,'边界配置',{tag:'',query:''});
   const pane=t.plugin.factory({});document.body.append(pane.contentEl);
-  for(const invalid of ['哲学 ',' 哲学',' ','\\t哲学']) {
-    t.files.get(file.path).data='version: 1\\nfilter:\\n  tag: '+JSON.stringify(invalid)+'\\n  query: ""\\n';
+  for(const invalid of ['哲学 ',' 哲学',' ','\t哲学']) {
+    t.files.get(file.path).data='version: 1\nfilter:\n  tag: '+JSON.stringify(invalid)+'\n  query: ""\n';
     await assert.rejects(pane.openFile(file),/标签不能包含首尾空格/);
   }
-  t.files.get(file.path).data='version: 1\\nfilter:\\n  tag: "世界 文学"\\n  query: ""\\n';
+  t.files.get(file.path).data='version: 1\nfilter:\n  tag: "世界 文学"\n  query: ""\n';
   await pane.openFile(file);
   assert.equal(pane.renderer.tagFilter,'世界 文学');
   await pane.onUnloadFile(file);pane.contentEl.remove();
