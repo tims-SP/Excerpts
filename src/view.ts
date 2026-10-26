@@ -314,8 +314,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!this.pageHintEl) return;
     const info = this.getRecoveryInfo();
     if (!info) {
-      this.pageHintEl.hidden = true;
-      this.pageHintEl.removeAttribute("data-state");
+      if (!this.pageHintEl.hidden) this.pageHintEl.hidden = true;
+      if (this.pageHintEl.hasAttribute("data-state")) this.pageHintEl.removeAttribute("data-state");
       return;
     }
     if (this.pageHintEl.hidden) this.pageHintEl.hidden = false;
@@ -339,7 +339,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (actionable) {
       const label = info.actionLabel ?? "";
       if (this.recoveryActionButton.textContent !== label) this.recoveryActionButton.textContent = label;
-      this.recoveryActionButton.disabled = false;
+      if (this.recoveryActionButton.disabled) this.recoveryActionButton.disabled = false;
     }
   }
   private runRecoveryAction(expected?: RecoveryAction): void {
@@ -415,11 +415,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           !this.pendingTags.size && !this.openTagEditors.size;
         el.disabled = !safeExplanation && Boolean(pageBlock);
         if (safeExplanation && pageBlock) {
-          el.setAttribute("aria-disabled", "true"); // Still clickable to announce why.
-          el.title = pageBlock;
+          if (el.getAttribute("aria-disabled") !== "true")
+            el.setAttribute("aria-disabled", "true"); // Still clickable to announce why.
+          if (el.title !== pageBlock) el.title = pageBlock;
         } else {
-          el.removeAttribute("aria-disabled");
-          el.title = pageBlock ?? "卡片选项";
+          if (el.hasAttribute("aria-disabled")) el.removeAttribute("aria-disabled");
+          const label = pageBlock ?? "卡片选项";
+          if (el.title !== label) el.title = label;
         }
         continue;
       }
