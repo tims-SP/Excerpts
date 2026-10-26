@@ -4049,7 +4049,10 @@ test('card more explains a cross-page mutex without reading or opening a file me
   r.syncControls();
   const button=root.querySelector('.ex-card-options');
   assert.equal(button.disabled,false,'reason-only entry is still clickable');
-  assert.equal(button.getAttribute('aria-disabled'),'true');
+  assert.equal(button.dataset.exReasonOnly,'true');
+  assert.equal(button.hasAttribute('aria-disabled'),false,'a reason-only action is not a disabled button');
+  assert.equal(button.hasAttribute('aria-haspopup'),false,'it does not open a menu while locked');
+  assert.match(button.getAttribute('aria-label'),/查看操作受限原因/);
   let reads=0;const original=t.plugin.repo.read.bind(t.plugin.repo);
   t.plugin.repo.read=async(...args)=>{reads++;return original(...args);};
   Menu.last=null;Notice.last='';
@@ -4059,7 +4062,9 @@ test('card more explains a cross-page mutex without reading or opening a file me
   assert.equal(Menu.last,null,'blocked click must not expose file operations');
   t.plugin.releaseScan(owner);
   assert.equal(button.disabled,false);
-  assert.equal(button.hasAttribute('aria-disabled'),false);
+  assert.equal(button.dataset.exReasonOnly,undefined);
+  assert.equal(button.getAttribute('aria-haspopup'),'menu');
+  assert.equal(button.getAttribute('aria-label'),'卡片选项');
   button.click();
   await waitFor(()=>Menu.last?.items.some(i=>i?.title==='阅读原文'),'normal menu restored');
   await t.close();
@@ -4077,5 +4082,126 @@ test('stale tag editor owns the only inline warning and restores top recovery af
   card.querySelector('.ex-tag-cancel').click();
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
   assert.equal(root.querySelector('.ex-page-hint').hidden,false);
+  await t.close();
+});
+
+test('recovery clear preserves the current scroll anchor instead of moving to search result top',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const field=root.querySelector('.ex-search');
+  field.value='测试标题';
+  field.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchReady&&r.searchText==='测试标题','search ready');
+  r.markStale(t.md.path);
+  const host=root.closest('.excerpts-native-host');
+  host.scrollTop=480;
+  const policies=[],setRows=r.timeline.setRows.bind(r.timeline);
+  r.timeline.setRows=(rows,policy)=>{policies.push(policy);return setRows(rows,policy);};
+  root.querySelector('.ex-recovery-action').click();
+  assert.equal(r.searchText,'');
+  assert.equal(r.scanStatus,'stale','clear does not trigger a scan');
+  assert.ok(policies.includes('anchor'),'recovery must retain the visible card anchor');
+  assert.equal(host.scrollTop,480,'recovery does not jump to results heading');
+  await t.close();
+});
+
+test('stale card recovery never waits for Markdown reads and offers no unsafe file actions',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  r.markStale(t.md.path);
+  let reads=0;
+  t.plugin.repo.read=async()=>{reads++;return new Promise(()=>{});};
+  Menu.last=null;
+  root.querySelector('.ex-card-options').click();
+  await waitFor(()=>Menu.last!==null,'read-independent menu');
+  assert.equal(reads,0,'recovery menu must not call the Markdown reader');
+  assert.deepEqual(Menu.last.items.filter(Boolean).map(x=>x.title),['刷新摘录'],
+    'only the safe recovery action is offered until the index is current');
+  await t.close();
+});
+
+test('stale search recovery menu is read-independent and never auto-scans',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  input.value='测试标题';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchReady,'search ready');
+  r.markStale(t.md.path);
+  let reads=0,scans=0;
+  const originalScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.read=async()=>{reads++;return new Promise(()=>{});};
+  t.plugin.repo.scan=async(...args)=>{scans++;return originalScan(...args);};
+  Menu.last=null;
+  root.querySelector('.ex-card-options').click();
+  await waitFor(()=>Menu.last!==null,'read-independent search recovery');
+  assert.deepEqual(Menu.last.items.filter(Boolean).map(x=>x.title),['清除搜索']);
+  assert.equal(reads,0);
+  Menu.last.items.find(x=>x?.title==='清除搜索').handler();
+  assert.equal(scans,0);
+  assert.equal(r.searchText,'');
+  await t.close();
+});
+
+test('deleted file is not exposed through cached card read, edit, or delete commands',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  t.files.delete(t.md.path);
+  Notice.last=''; Menu.last=null;
+  root.querySelector('.ex-card-options').click();
+  await waitFor(()=>r.scanStatus==='stale','missing card recognized');
+  assert.match(Notice.last,/已移动或删除/);
+  assert.equal(Menu.last,null,'an invalid file must not yield normal file operations');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  await t.close();
+});
+
+test('file disappearing during an asynchronous menu read never leaves stale file operations',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const normalRead=t.plugin.repo.read.bind(t.plugin.repo);
+  t.plugin.repo.read=async path=>{
+    const result=await normalRead(path);
+    t.files.delete(path);
+    return result;
+  };
+  Menu.last=null; Notice.last='';
+  root.querySelector('.ex-card-options').click();
+  await waitFor(()=>r.scanStatus==='stale','missing after read');
+  assert.equal(Menu.last,null);
+  assert.match(Notice.last,/已移动或删除/);
+  await t.close();
+});
+
+test('other view mutex guidance requires rescan only for a noncurrent index',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const other={};
+  assert.equal(t.plugin.tryAcquireScan(other),true);
+  r.syncControls();
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'other-busy');
+  assert.match(root.querySelector('.ex-recovery-description').textContent,/无需额外刷新/);
+  t.plugin.releaseScan(other);
+  assert.equal(root.querySelector('.ex-page-hint').hidden,true);
+  r.markStale(t.md.path);
+  assert.equal(t.plugin.tryAcquireScan(other),true);
+  r.syncControls();
+  assert.match(root.querySelector('.ex-recovery-description').textContent,/按照本页提示恢复索引/);
+  t.plugin.releaseScan(other);
+  assert.equal(r.scanStatus,'stale');
+  await t.close();
+});
+
+test('page menu labels clearing as clearing and not as an automatic refresh',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const search=root.querySelector('.ex-search');
+  search.value='测试标题';
+  search.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchReady,'ready search');
+  r.markStale(t.md.path);
+  clickByLabel(root,'页面选项');
+  const clear=Menu.last.items.find(x=>x?.title==='清除搜索');
+  assert.ok(clear);
+  assert.equal(Menu.last.items.some(x=>x?.title==='清除搜索后刷新'),false);
+  clear.handler();
+  assert.equal(r.searchText,'');
+  assert.equal(r.scanStatus,'stale');
   await t.close();
 });
