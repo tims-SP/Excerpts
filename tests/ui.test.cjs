@@ -3958,3 +3958,99 @@ test('an idle saved search on a blocked view allows manual scan without dropping
   assert.equal(r.searchText,'测试标题');
   await t.close();
 });
+
+test('calendar stale and error guidance directs the user to the existing feed refresh',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(i=>i.title==='摘录日历').handler();
+  assert.equal(r.pageMode,'calendar');
+  const hint=root.querySelector('.ex-calendar-warning');
+  r.markStale(t.md.path);
+  assert.match(hint.textContent,/返回摘录列表后手动刷新/);
+  assert.equal(root.querySelector('.ex-feed-view').hidden,true,'feed recovery is not an active calendar button');
+  root.querySelector('.ex-calendar-back').click();
+  assert.equal(r.pageMode,'feed');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  await t.close();
+});
+
+test('a stale card menu offers the existing manual refresh and preserves browsing position',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  const host=root.closest('.excerpts-native-host');
+  host.scrollTop=320;
+  const before=host.scrollTop;
+  r.markStale(t.md.path);
+  const more=root.querySelector('.ex-card-options');
+  assert.equal(more.disabled,false);
+  more.click();
+  await waitFor(()=>Menu.last?.items.some(i=>i?.title==='刷新摘录'),'card recovery menu');
+  const refresh=Menu.last.items.find(i=>i?.title==='刷新摘录');
+  assert.equal(refresh.disabled,undefined);
+  assert.equal(host.scrollTop,before,'opening recovery menu must not move the scroll position');
+  refresh.handler();
+  await waitFor(()=>r.scanStatus==='done','card manual refresh');
+  await t.close();
+});
+
+test('a stale card menu clears search first without launching scan or changing tag filter',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  input.value='测试标题';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchReady,'search settled');
+  r.tagFilter='哲学';r.markStale(t.md.path);
+  let scans=0;
+  const original=t.plugin.repo.scan.bind(t.plugin.repo);
+  t.plugin.repo.scan=async(...args)=>{scans++;return original(...args);};
+  root.querySelector('.ex-card-options').click();
+  await waitFor(()=>Menu.last?.items.some(i=>i?.title==='清除搜索'),'clear search in card menu');
+  const old=Menu.last.items.find(i=>i?.title==='清除搜索');
+  r.clearSearchForRecovery();
+  old.handler(); // Menu actions recheck the current action before execution.
+  assert.equal(scans,0);
+  assert.equal(r.searchText,'');
+  assert.equal(r.tagFilter,'哲学');
+  assert.equal(r.scanStatus,'stale');
+  root.querySelector('.ex-card-options').click();
+  await waitFor(()=>Menu.last?.items[0]?.title==='刷新摘录','next card menu');
+  assert.equal(scans,0,'refresh is never started automatically');
+  await t.close();
+});
+
+test('card more explains a cross-page mutex without reading or opening a file menu',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  const owner={};
+  assert.equal(t.plugin.tryAcquireScan(owner),true);
+  r.syncControls();
+  const button=root.querySelector('.ex-card-options');
+  assert.equal(button.disabled,false,'reason-only entry is still clickable');
+  assert.equal(button.getAttribute('aria-disabled'),'true');
+  let reads=0;const original=t.plugin.repo.read.bind(t.plugin.repo);
+  t.plugin.repo.read=async(...args)=>{reads++;return original(...args);};
+  Menu.last=null;Notice.last='';
+  button.click();
+  assert.match(Notice.last,/另一个摘录页面正在操作/);
+  assert.equal(reads,0,'blocked click must not read Markdown');
+  assert.equal(Menu.last,null,'blocked click must not expose file operations');
+  t.plugin.releaseScan(owner);
+  assert.equal(button.disabled,false);
+  assert.equal(button.hasAttribute('aria-disabled'),false);
+  button.click();
+  await waitFor(()=>Menu.last?.items.some(i=>i?.title==='阅读原文'),'normal menu restored');
+  await t.close();
+});
+
+test('stale tag editor owns the only inline warning and restores top recovery after cancel',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  r.markStale(t.md.path);
+  assert.equal(root.querySelector('.ex-page-hint').hidden,true,'no duplicate top warning');
+  assert.match(card.querySelector('.ex-tag-edit-warning').textContent,/取消标签编辑后刷新/);
+  assert.equal(card.querySelector('.ex-tag-done').disabled,true);
+  assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
+  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  assert.equal(root.querySelector('.ex-page-hint').hidden,false);
+  await t.close();
+});
