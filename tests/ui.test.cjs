@@ -297,6 +297,69 @@ test('stale and error statuses remain visible beyond the success timeout',async(
   await t.close();
 });
 
+
+test('stale indexes expose a direct refresh action while preserving unsaved capture text',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const draft=root.querySelector('.ex-compose-text');
+  draft.value='不能丢失的草稿';
+  draft.dispatchEvent(new window.Event('input',{bubbles:true}));
+  t.plugin.onFileChange(t.md.path);
+  const hint=root.querySelector('.ex-page-hint');
+  const action=hint.querySelector('button');
+  assert.equal(renderer.scanStatus,'stale');
+  assert.equal(hint.hidden,false);
+  assert.match(hint.textContent,/索引需要手动刷新/);
+  assert.equal(action.hidden,false);
+  assert.equal(action.textContent,'刷新摘录');
+  action.click();
+  await waitFor(()=>renderer.scanStatus==='done','inline refresh completes');
+  assert.equal(hint.hidden,true);
+  assert.equal(draft.value,'不能丢失的草稿');
+  await t.close();
+});
+
+test('stale search requires explicit clearing before the recovery button can scan',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  input.value='测试';
+  input.dispatchEvent(new window.Event('input',{bubbles:true}));
+  await waitFor(()=>renderer.searchReady && renderer.searchText==='测试','search completes');
+  t.plugin.onFileChange(t.md.path);
+  const hint=root.querySelector('.ex-page-hint');
+  const action=hint.querySelector('button');
+  assert.equal(action.hidden,false);
+  assert.equal(action.textContent,'清除搜索','recovery must not bypass the search guard');
+  action.click();
+  assert.equal(renderer.searchText,'');
+  assert.equal(input.value,'');
+  assert.equal(renderer.scanStatus,'stale','clearing search alone must not initiate scanning');
+  assert.equal(action.textContent,'刷新摘录');
+  action.click();
+  await waitFor(()=>renderer.scanStatus==='done','refreshed after explicit query clearing');
+  assert.equal(hint.hidden,true);
+  await t.close();
+});
+
+test('stale selection cannot bypass its lock through inline recovery',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  assert.equal(renderer.selectionMode,'selecting');
+  t.plugin.onFileChange(t.md.path);
+  const hint=root.querySelector('.ex-page-hint');
+  const action=hint.querySelector('button');
+  assert.match(hint.textContent,/退出批量选择/);
+  assert.equal(action.hidden,true,'no unsafe refresh during selection');
+  root.querySelector('.ex-select-done').click();
+  assert.equal(renderer.selectionMode,'normal');
+  assert.equal(action.hidden,false);
+  assert.equal(action.textContent,'刷新摘录');
+  action.click();
+  await waitFor(()=>renderer.scanStatus==='done','refresh after leaving selection');
+  await t.close();
+});
+
 test('opening .excerpts displays an editorial date-group feed and always-visible composer',async()=>{
   const t=await fixture();const root=t.pane.contentEl;
   assert.equal(t.plugin.extensions.type,'excerpts-home-file');
@@ -2345,6 +2408,8 @@ test('opening another excerpt page during scanning requires explicit manual refr
   assert.match(root.querySelector('.ex-page-hint').textContent,/其他摘录页.*手动刷新/);
   assert.equal(root.querySelector('.ex-page-hint').hidden,false);
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'blocked');
+  const recovery=root.querySelector('.ex-page-hint button');
+  assert.equal(recovery.hidden,true,'refresh is unavailable while another scan holds the mutex');
   assert.equal(root.querySelector('.ex-search').disabled,true);
   assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
   assert.equal(scans,1,'the second initial scan is rejected, never queued');
@@ -2353,12 +2418,14 @@ test('opening another excerpt page during scanning requires explicit manual refr
   await waitFor(()=>first.scanStatus==='done','first scan completes');
   assert.equal(scans,1,'finishing another page never replays a blocked scan');
   assert.equal(second.scanStatus,'blocked','the refusal and manual guidance persist');
+  assert.equal(recovery.hidden,false,'recovery unlocks without starting a scan');
+  assert.equal(recovery.textContent,'刷新摘录');
 
   clickByLabel(root,'页面选项');
   const refresh=Menu.last.items.find(item=>item.title==='刷新摘录');
   assert.equal(refresh.disabled,false);
   assert.equal(Menu.last.items.find(item=>item.title==='批量选择').disabled,true);
-  refresh.handler();
+  recovery.click();
   await waitFor(()=>second.scanStatus==='done' && scans===2,'explicit second page refresh');
   assert.equal(root.querySelector('.ex-page-hint').hidden,true);
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
