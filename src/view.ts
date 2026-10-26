@@ -344,7 +344,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private runRecoveryAction(expected?: RecoveryAction): void {
     const info = this.getRecoveryInfo(); // Recheck on every click.
-    if (!info || (expected && info.action !== expected)) return;
+    if (!info || (expected && info.action !== expected)) {
+      if (expected) new Notice(this.reason(expected === "clear-search" ? "search" : "refresh") ??
+        "摘录状态已变化，请重新打开菜单");
+      return;
+    }
     if (info.action === "refresh") this.requestRefresh(true);
     else if (info.action === "clear-search") this.clearSearchForRecovery();
     else if (info.action === "exit-selection" &&
