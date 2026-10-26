@@ -1,7 +1,7 @@
 import { HeightIndex } from "./height-index";
 
 /** The caller must explicitly choose which user-visible scroll position to retain. */
-export type ScrollPolicy = "keep" | "top" | "anchor";
+export type ScrollPolicy = "keep" | "top" | "anchor" | "results";
 
 interface ScrollAnchor { path: string; index: number; offset: number; }
 
@@ -23,6 +23,8 @@ interface VirtualOptions {
   mount: (row: TimelineRow, index: number) => HTMLElement;
   unmount: (row: TimelineRow, element: HTMLElement) => void;
   update?: (row: TimelineRow, index: number, element: HTMLElement, previous: TimelineRow) => void;
+  /** User-initiated filter changes focus the result header, not the composer. */
+  resultsTop?: () => number;
   pinnedPath?: () => string | null;
   onScrollBlocked?: () => void;
   resizeRows?: () => TimelineRow[];
@@ -131,6 +133,8 @@ export class VirtualTimeline {
     this.updateSpacers();
     if (policy === "top" || (policy === "anchor" && !rows.length)) {
       this.viewport.scrollTop = 0;
+    } else if (policy === "results") {
+      this.viewport.scrollTop = Math.max(0, this.options.resultsTop?.() ?? 0);
     } else if (policy === "anchor" && anchor && anchorTarget !== null) {
       this.restoreAnchor(anchor, anchorTarget);
     } else {

@@ -256,8 +256,33 @@ test('hidden list updates are deferred; changes render once on return without lo
   assert.equal(root.querySelector('.ex-card'),originalCard,'hidden redraw keeps card mounted');
   root.querySelector('.ex-calendar-back').click();
   assert.equal(renderer.feedRenderPending,false);
-  assert.equal(renderer.renderToken,oldToken+1,'one redraw after returning');
+  assert.equal(renderer.renderToken,oldToken,'returning from calendar preserves valid Markdown renderers');
+  assert.equal(root.querySelector('.ex-card'),originalCard,'pending list update keeps the original card');
   assert.equal(input.value,'保留草稿');
+  await t.close();
+});
+
+test('tag filter and matching search keep a hydrated overlapping excerpt card',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const original=root.querySelector('.ex-card'),before=renders.length;
+  clickByLabel(root,'筛选标签');
+  const chip=[...root.querySelectorAll('.ex-filter-tags button')].find(b=>b.textContent.includes('#哲学'));
+  assert.ok(chip);
+  chip.click();
+  assert.equal(root.querySelector('.ex-card'),original);
+  assert.equal(renderer.tagFilter,'哲学');
+  const all=[...root.querySelectorAll('.ex-filter-tags button')].find(b=>b.textContent==='全部');
+  all.click();
+  assert.equal(root.querySelector('.ex-card'),original);
+  assert.equal(renders.length,before,'tag change never re-renders unchanged Markdown');
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('input.ex-search');
+  input.value='测试标题';
+  input.dispatchEvent(new window.Event('input',{bubbles:true}));
+  assert.equal(root.querySelector('.ex-card'),original,'typing does not clear the committed list');
+  await waitFor(()=>renderer.searchReady && renderer.matches?.has(t.md.path),'matching search completed');
+  assert.equal(root.querySelector('.ex-card'),original,'matching search preserves the same renderer');
+  assert.equal(renders.length,before,'search does not unnecessarily invoke MarkdownRenderer');
   await t.close();
 });
 

@@ -391,3 +391,23 @@ test('fifty identical list commits do not remount Markdown cards',()=>{
   assert.equal(host.querySelector('[data-path="p-0"]'),el);
   timeline.dispose();dom.window.close();
 });
+
+test('explicit result navigation targets result header instead of composer',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:400});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,left:0,width:700,height:0});
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    resultsTop:()=>242,
+    mount:row=>{const el=document.createElement('article');el.dataset.path=row.path;
+      el.getBoundingClientRect=()=>({height:100,width:700});return el;},
+    unmount:()=>{}
+  });
+  timeline.setRows(Array.from({length:10},(_,i)=>({
+    path:String(i),firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey:'v1'
+  })),'results');
+  assert.equal(viewport.scrollTop,242);
+  timeline.dispose();dom.window.close();
+});
