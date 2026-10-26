@@ -816,7 +816,51 @@ test('empty tag rows never measure missing first pill or display +0 in narrow pa
   assert.doesNotThrow(()=>renderer.reflowTagRow(row));
   assert.equal(more.hidden,true);
   assert.equal(row.querySelectorAll('.ex-tag').length,0);
-  assert.ok(row.querySelector('.ex-add-tag'));
+  assert.equal(row.querySelector('.ex-add-tag').hidden,true,'unusable add control must not remain focusable');
+  await t.close();
+});
+
+test('clipped tag add actions disappear and recover when the pane becomes usable',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
+  const row=t.pane.contentEl.querySelector('.ex-card .ex-chips');
+  let width=24;
+  Object.defineProperty(row,'clientWidth',{configurable:true,get(){return width}});
+  item.tags=['阅读','电影'];
+  renderer.renderTags(row,item,false);
+  const add=row.querySelector('.ex-add-tag'),more=row.querySelector('.ex-tag-overflow');
+  add.getBoundingClientRect=()=>({width:44});
+  more.getBoundingClientRect=()=>({width:34});
+  row.querySelectorAll('.ex-tag').forEach(el=>{el.getBoundingClientRect=()=>({width:58})});
+  renderer.reflowTagRow(row);
+  assert.equal(add.hidden,true);
+  assert.equal(more.hidden,true);
+  assert.ok([...row.querySelectorAll('.ex-tag')].every(el=>el.hidden));
+  width=128;
+  renderer.reflowTagRow(row);
+  assert.equal(add.hidden,false,'width recovery restores the existing action');
+  assert.equal(more.hidden,false);
+  await t.close();
+});
+
+test('the current top filter is scrolled into view horizontally without page scrolling',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,strip=t.pane.contentEl.querySelector('.ex-filter-tags');
+  renderer.availableTags=['一','二','三','四','五','六','七','八','九','长标签'];
+  renderer.filterOpen=true;renderer.tagFilter='长标签';
+  let pageTop=115;
+  const host=t.pane.contentEl.closest('.excerpts-native-host');
+  Object.defineProperty(host,'scrollTop',{configurable:true,get(){return pageTop},set(v){pageTop=v}});
+  strip.scrollLeft=0;
+  strip.getBoundingClientRect=()=>({left:10,right:130,width:120});
+  renderer.renderTagsFilter();
+  const selected=strip.querySelector('.ex-active-filter');
+  selected.getBoundingClientRect=()=>({left:100,right:205,width:105});
+  await wait();
+  assert.equal(strip.scrollLeft,75,'horizontal tag strip reveals its active pill');
+  assert.equal(pageTop,115,'never move the vertical feed to show a chip');
+  assert.equal(selected.title,'#长标签');
+  assert.equal(selected.getAttribute('aria-label'),'当前筛选标签：长标签');
+  strip.scrollLeft=60;renderer.tagFilter='';renderer.renderTagsFilter();
+  assert.equal(strip.scrollLeft,0,'clearing selection resets horizontal offset');
   await t.close();
 });
 
@@ -3009,6 +3053,21 @@ test('saved filter file remains saved and modal closes when its native open fail
   assert.equal(t.files.get(path).data.includes('tag: "哲学"'),true);
   assert.equal([...t.files.keys()].filter(x=>x===path).length,1);
   assert.equal(t.plugin.homeNavigationBusy,false);
+  await t.close();
+});
+
+test('hand-edited saved page rejects leading or trailing whitespace tags, preserving valid internal spaces',async()=>{
+  const t=await fixture();
+  const file=await t.plugin.createSavedPage(t.home.path,'边界配置',{tag:'',query:''});
+  const pane=t.plugin.factory({});document.body.append(pane.contentEl);
+  for(const invalid of ['哲学 ',' 哲学',' ','\t哲学']) {
+    t.files.get(file.path).data='version: 1\nfilter:\n  tag: '+JSON.stringify(invalid)+'\n  query: ""\n';
+    await assert.rejects(pane.openFile(file),/标签不能包含首尾空格/);
+  }
+  t.files.get(file.path).data='version: 1\nfilter:\n  tag: "世界 文学"\n  query: ""\n';
+  await pane.openFile(file);
+  assert.equal(pane.renderer.tagFilter,'世界 文学');
+  await pane.onUnloadFile(file);pane.contentEl.remove();
   await t.close();
 });
 

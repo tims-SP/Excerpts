@@ -73,7 +73,7 @@ REQUIRED = {
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
-    "filter", "page-menu", "card-filtered-tag", "card-filter-extreme", "section-open", "card-picker", "card-picker-changed", "card-menu",
+    "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-picker", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
@@ -314,11 +314,48 @@ with sync_playwright() as playwright:
                 key,"active tag is not prioritized")
             more = card.locator(".ex-tag-overflow")
             if width <= 390:
+                # New cards fold on the next animation frame; avoid checking
+                # the initial all-visible DOM before reflow has actually run.
+                page.wait_for_function("""() => {
+                  const bar=document.querySelector('.ex-card .ex-chips');
+                  return !!bar && !!bar.querySelector('.ex-tag-overflow:not([hidden])');
+                }""", timeout=5000)
                 assert more.is_visible(), (key,"narrow filtered card not folded")
             if more.is_visible():
                 hidden = card.locator(".ex-tag[hidden]").count()
                 assert hidden and more.inner_text() == "+" + str(hidden), (key,"filtered overflow count")
             screenshot(page, theme, width, "card-filtered-tag", "card-tags", "card-footer")
+            strip = page.locator(".ex-filter-tags")
+            strip.evaluate("el => {el.scrollLeft = el.scrollWidth}")
+            page.evaluate("window.__pane.renderer.renderTagsFilter()")
+            page.wait_for_function("""() => {
+              const bar=document.querySelector('.ex-filter-tags'),active=bar?.querySelector('.ex-active-filter');
+              if(!bar||!active)return false;
+              const b=bar.getBoundingClientRect(),r=active.getBoundingClientRect();
+              return r.left>=b.left-1 && r.right<=b.right+1;
+            }""", timeout=4000)
+            screenshot(page, theme, width, "filter-selected-scroll", "list-filter")
+            if width <= 390:
+                renderer = page.evaluate_handle("window.__pane.renderer")
+                page.evaluate("""() => {
+                  const r=window.__pane.renderer;
+                  r.tagFilter="超长筛选标签".repeat(15);r.renderTagsFilter();
+                }""")
+                long_active = page.locator(".ex-active-filter")
+                page.wait_for_function("""() => {
+                  const bar=document.querySelector('.ex-filter-tags'),active=bar?.querySelector('.ex-active-filter');
+                  if(!bar||!active)return false;
+                  const b=bar.getBoundingClientRect(),r=active.getBoundingClientRect();
+                  return r.left>=b.left-1 && r.right<=b.right+1;
+                }""", timeout=4000)
+                assert long_active.get_attribute("title").startswith("#超长筛选标签")
+                assert long_active.evaluate("el=>getComputedStyle(el).justifyContent") == "flex-start", (
+                    key,"long active filter must align the tag prefix at the start")
+                assert long_active.locator(".ex-active-filter-label").evaluate(
+                    "el=>getComputedStyle(el).textOverflow") == "ellipsis", (key,"missing text ellipsis")
+                assert long_active.evaluate("el=>el.getBoundingClientRect().width<=Math.min(200,el.parentElement.clientWidth)+1"), (key,"long filter escapes strip")
+                screenshot(page, theme, width, "filter-long-selected", "list-filter")
+                page.evaluate("""() => {const r=window.__pane.renderer;r.tagFilter="读书笔记";r.renderTagsFilter()}""")
             if width <= 390:
                 lane = card.locator(".ex-chips")
                 lane.evaluate("(el)=>{el.style.flex='0 0 80px';el.style.width='80px'}")
@@ -328,6 +365,12 @@ with sync_playwright() as playwright:
                 assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text()=="#读书笔记", (
                     key,"fallback must retain top filter state")
                 screenshot(page, theme, width, "card-filter-extreme", "card-tags", "card-footer")
+                lane.evaluate("(el)=>{el.style.flex='0 0 22px';el.style.width='22px'}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                assert card.locator(".ex-add-tag").is_hidden(), (key,"clipped add action must be hidden")
+                assert card.locator(".ex-tag-overflow").is_hidden(), (key,"clipped +N must be hidden")
+                assert card.locator(".ex-card-options").is_visible(), (key,"More must remain accessible")
+                screenshot(page, theme, width, "card-filter-no-actions", "card-tags", "card-footer")
                 lane.evaluate("(el)=>{el.style.removeProperty('flex');el.style.removeProperty('width')}")
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
                 active = card.locator(".ex-tag.ex-selected")

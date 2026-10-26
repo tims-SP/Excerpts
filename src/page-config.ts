@@ -17,6 +17,11 @@ export function parsePageFilter(raw: string): PageFilter | null {
   if (typeof value.tag !== "string" || typeof value.query !== "string" ||
       value.tag.length > 120 || value.query.length > 500)
     throw new Error("摘录页标签或搜索词无效");
+  // Display and exact-match filtering must use the same tag string.
+  // Invalid hand-edited pages fail explicitly instead of silently returning
+  // empty results while showing a trimmed chip.
+  if (value.tag !== value.tag.trim())
+    throw new Error("摘录页标签不能包含首尾空格，请检查 .excerpts 文件");
   return { tag: value.tag, query: value.query };
 }
 
