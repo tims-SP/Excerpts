@@ -161,6 +161,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动"),
       resizeRows: () => this.timelineRows(this.visibleItems())
     });
+    // A theme/font change can alter chip widths without resizing the feed.
+    // Reuse the existing visible-row layout function rather than observing
+    // every card or invalidating the virtual timeline.
+    this.registerEvent(this.plugin.app.workspace.on("css-change", () => {
+      if (!this.disposed && this.pageMode === "feed") this.reflowVisibleTags();
+    }));
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
         if (this.pageMode === "calendar") {
