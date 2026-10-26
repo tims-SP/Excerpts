@@ -288,7 +288,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.scanStatus === "done"
         ? "本页索引仍可使用。请等待其他页面的操作完成后继续，无需额外刷新。"
         : this.scanStatus === "blocked"
-          ? "请等待其他摘录页完成操作，再手动扫描本页；不会自动重试。"
+          ? "请等待其他摘录页完成操作，再手动刷新本页索引；不会自动重试。"
           : "请等待其他摘录页完成操作，再按照本页提示恢复索引；不会自动重试。");
     if (!this.searchReady) return null; // Search count already displays progress.
     if ((this.scanStatus === "stale" || this.scanStatus === "error") &&
