@@ -165,7 +165,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // Reuse the existing visible-row layout function rather than observing
     // every card or invalidating the virtual timeline.
     this.registerEvent(this.plugin.app.workspace.on("css-change", () => {
-      if (!this.disposed && this.pageMode === "feed") this.reflowVisibleTags();
+      if (this.disposed || this.pageMode !== "feed") return;
+      this.reflowVisibleTags();
+      this.scheduleActiveFilterVisibility();
     }));
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
@@ -174,6 +176,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           return; // Hidden feed geometry is not measurable.
         }
         this.reflowVisibleTags();
+        this.scheduleActiveFilterVisibility();
         this.reflowCaptureTags();
         for (const update of this.previewUpdates.values()) update();
         for (const group of this.sectionHeightChecks.values()) {
@@ -1426,11 +1429,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       ? [activeTag, ...this.availableTags.filter(tag => tag !== activeTag)]
       : this.availableTags;
     const limit = 8;
-    for (const tag of tags.slice(0, limit)) this.tagBar.append(button("#" + tag, () => {
-      if (!this.guard("filter")) return;
-      this.tagFilter = this.tagFilter === tag ? "" : tag;
-      this.renderTagsFilter(); this.drawCards("top");
-    }, this.tagFilter === tag ? "ex-selected" : "ex-btn-quiet"));
+    for (const tag of tags.slice(0, limit)) {
+      const current = this.tagFilter === tag;
+      const chip = button("#" + tag, () => {
+        if (!this.guard("filter")) return;
+        this.tagFilter = this.tagFilter === tag ? "" : tag;
+        this.renderTagsFilter(); this.drawCards("top");
+      }, current ? "ex-selected" : "ex-btn-quiet");
+      if (current) {
+        chip.classList.add("ex-active-filter");
+        chip.title = "#" + tag;
+        chip.setAttribute("aria-label", "当前筛选标签：" + tag);
+      }
+      this.tagBar.append(chip);
+    }
     if (tags.length > limit) {
       const more = button("更多标签 · " + (tags.length-limit), () => {
         if (!this.guard("filter")) return;
@@ -1445,7 +1457,25 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }, "ex-btn-quiet");
       this.tagBar.append(more);
     }
+    if (!activeTag) this.tagBar.scrollLeft = 0;
+    else this.scheduleActiveFilterVisibility();
     this.updateAvailability();
+  }
+  /** Scroll only inside the tag strip, never the page. */
+  private scheduleActiveFilterVisibility(): void {
+    const strip = this.tagBar;
+    const chip = strip.querySelector<HTMLButtonElement>(".ex-active-filter");
+    if (!chip) return;
+    const reveal = () => {
+      if (this.disposed || !strip.isConnected || !chip.isConnected || strip.hidden) return;
+      const bounds = strip.getBoundingClientRect();
+      const selected = chip.getBoundingClientRect();
+      if (!bounds.width || !selected.width) return;
+      if (selected.left < bounds.left) strip.scrollLeft += selected.left - bounds.left;
+      else if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right;
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
+    else setTimeout(reveal, 0);
   }
   private unmountMarkdown(path?: string): void {
     const paths = path ? [path] : [...this.markdownChildren.keys()];
@@ -2146,7 +2176,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const pills = Array.from(mount.querySelectorAll<HTMLButtonElement>(".ex-tag"));
     const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
     const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
-    if (!overflow || !add || !mount.clientWidth) return;
+    if (!overflow || !add) return;
+    // Restore the real hit target before measuring; narrow panes may have
+    // hidden it during the previous pass.
+    add.hidden = false;
+    if (!mount.clientWidth) { add.hidden = true; overflow.hidden = true; return; }
+    const addWidth = add.getBoundingClientRect().width;
+    if (mount.clientWidth < addWidth) {
+      // A clipped button is not a usable action. The card's More menu stays.
+      add.hidden = true;
+      pills.forEach(pill => { pill.hidden = true; });
+      overflow.hidden = true;
+      return;
+    }
     // Empty cards have no tag to measure or clamp. The add action stays.
     if (!pills.length) {
       overflow.hidden = true;
@@ -2159,7 +2201,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     overflow.hidden = true;
     const width = mount.clientWidth;
     const gap = 5;
-    const addWidth = add.getBoundingClientRect().width;
     const pillWidths = pills.map(pill => pill.getBoundingClientRect().width);
     const fullWidth = addWidth + pillWidths.reduce((total, value) => total + value, 0)
       + gap * pills.length;
