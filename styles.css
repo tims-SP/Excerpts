@@ -1060,3 +1060,10 @@
 .ex-settings-root .ex-settings-busy-hint {padding:10px 12px;background:var(--background-secondary);color:var(--text-muted);font-size:12px;border-radius:8px;}
 @container (max-width:700px) {.excerpts-root .ex-page-hint {width:100%;margin-left:0;} .excerpts-root button.ex-recovery-action {min-height:44px;}}
 @media (pointer:coarse) {.excerpts-root button.ex-recovery-action,.excerpts-root button.ex-tag-cancel {min-height:44px;}}
+
+/* A blocked card menu remains reachable only to explain the active operation lock. */
+.excerpts-root button.ex-card-options[aria-disabled="true"] {
+  opacity: .72;
+  color: var(--text-muted);
+  cursor: help;
+}
