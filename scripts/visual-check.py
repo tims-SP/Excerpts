@@ -230,6 +230,21 @@ with sync_playwright() as playwright:
             selected = card.locator(".ex-tag.ex-selected")
             assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text() == "#读书笔记", (
                 theme,width,"top bar must show active filter")
+            strip = page.locator(".ex-filter-tags")
+            # The bar may be scrolled far away by touch before a new selection.
+            # Rerendering must reveal the active pill without scrolling the page.
+            strip.evaluate("el => { el.scrollLeft = el.scrollWidth }")
+            before_vertical = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
+            page.evaluate("window.__pane.renderer.renderTagsFilter()")
+            page.wait_for_function("""() => {
+              const bar=document.querySelector('.ex-filter-tags'), chip=bar?.querySelector('.ex-active-filter');
+              if(!bar||!chip)return false;
+              const b=bar.getBoundingClientRect(),c=chip.getBoundingClientRect();
+              return c.left>=b.left-1 && c.right<=b.right+1;
+            }""", timeout=4000)
+            assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") == before_vertical, (
+                theme,width,"filter bar positioning scrolled the page")
+            selected = card.locator(".ex-tag.ex-selected")
             assert selected.count() == 1 and selected.is_visible(), (theme,width,"filtered tag was hidden")
             assert selected.inner_text() == "#读书笔记", (theme,width,"wrong highlighted tag")
             assert card.locator(".ex-chips .ex-tag").first.get_attribute("aria-pressed") == "true", (theme,width,"priority order")
