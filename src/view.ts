@@ -1609,54 +1609,103 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.availableTags = [...new Set(this.items.flatMap(item => item.tags))]
       .sort((a, b) => a.localeCompare(b, "zh"));
   }
+  /** Reconcile a small filter strip by tag identity; never replace unchanged buttons. */
   private renderTagsFilter(): void {
-    this.tagBar.replaceChildren();
-    this.tagBar.hidden = !this.filterOpen && !this.tagFilter;
-    this.filterButton.setAttribute("aria-expanded", String(!this.tagBar.hidden));
+    const strip = this.tagBar;
+    strip.hidden = !this.filterOpen && !this.tagFilter;
+    this.filterButton.setAttribute("aria-expanded", String(!strip.hidden));
     this.filterButton.disabled = !this.availableTags.length && !this.tagFilter;
-    if (this.tagBar.hidden) return;
-    const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards("results"); },
-      this.tagFilter ? "ex-btn-quiet" : "ex-selected");
+    if (strip.hidden) { this.updateAvailability(); return; }
+    const existing = new Map(Array.from(strip.querySelectorAll<HTMLButtonElement>("button[data-tag-key]"))
+      .map(chip => [chip.dataset.tagKey!, chip] as const));
+    const focused = strip.contains(document.activeElement)
+      ? (document.activeElement as HTMLButtonElement).dataset.tagKey : undefined;
+    const desired: HTMLButtonElement[] = [];
+    const use = (key: string, make: () => HTMLButtonElement): HTMLButtonElement => {
+      const found = existing.get(key);
+      if (found) return found;
+      const created = make();
+      created.dataset.tagKey = key;
+      return created;
+    };
+    const all = use("all", () => button("全部", () => {
+      if (!this.guard("filter")) return;
+      this.tagFilter = "";
+      this.renderTagsFilter(); this.drawCards("results");
+    }));
+    all.classList.toggle("ex-selected", !this.tagFilter);
+    all.classList.toggle("ex-btn-quiet", Boolean(this.tagFilter));
     all.setAttribute("aria-pressed", String(!this.tagFilter));
-    this.tagBar.append(all);
-    // Keep the selected filter readable, including saved pages whose tag is
-    // no longer present in the current index. Never mutate availableTags.
+    desired.push(all);
+
     const activeTag = this.tagFilter.trim();
     const tags = activeTag
       ? [activeTag, ...this.availableTags.filter(tag => tag !== activeTag)]
       : this.availableTags;
     const limit = 8;
     for (const tag of tags.slice(0, limit)) {
-      const current = this.tagFilter === tag;
-      const chip = button("#" + tag, () => {
+      const selected = activeTag === tag;
+      const chip = use("tag:" + tag, () => button("#" + tag, () => {
         if (!this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
         this.renderTagsFilter(); this.drawCards("results");
-      }, current ? "ex-selected" : "ex-btn-quiet");
-      chip.setAttribute("aria-pressed", String(current));
-      if (current) {
-        chip.classList.add("ex-active-filter");
+      }));
+      const wasSelected = chip.classList.contains("ex-active-filter");
+      chip.classList.toggle("ex-selected", selected);
+      chip.classList.toggle("ex-btn-quiet", !selected);
+      chip.classList.toggle("ex-active-filter", selected);
+      chip.setAttribute("aria-pressed", String(selected));
+      if (selected) {
         chip.title = "#" + tag;
         chip.setAttribute("aria-label", "当前筛选标签：" + tag);
-        chip.replaceChildren(node("span", "ex-active-filter-label", "#" + tag));
+        if (!wasSelected)
+          chip.replaceChildren(node("span", "ex-active-filter-label", "#" + tag));
+      } else if (wasSelected) {
+        chip.textContent = "#" + tag;
+        chip.removeAttribute("aria-label");
+        chip.removeAttribute("title");
       }
-      this.tagBar.append(chip);
+      desired.push(chip);
     }
     if (tags.length > limit) {
-      const more = button("更多标签 · " + (tags.length-limit), () => {
+      const more = use("more", () => button("", () => {
         if (!this.guard("filter")) return;
+        const active = this.tagFilter.trim();
+        const current = active
+          ? [active, ...this.availableTags.filter(tag => tag !== active)]
+          : this.availableTags;
         const menu = new Menu();
-        for (const tag of tags.slice(limit, limit + 40)) menu.addItem(item => item.setTitle("#" + tag).onClick(() => {
-          if (!this.guard("filter")) return;
-          this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("results");
-        }));
-        if (tags.length > limit + 40) menu.addItem(item =>
-          item.setTitle("其余 " + (tags.length - limit - 40) + " 个标签，请使用搜索").setDisabled(true));
-        const rect = more.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
-      }, "ex-btn-quiet");
-      this.tagBar.append(more);
+        for (const tag of current.slice(limit, limit + 40)) menu.addItem(item =>
+          item.setTitle("#" + tag).onClick(() => {
+            if (!this.guard("filter")) return;
+            this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("results");
+          }));
+        if (current.length > limit + 40) menu.addItem(item =>
+          item.setTitle("其余 " + (current.length - limit - 40) + " 个标签，请使用搜索").setDisabled(true));
+        const rect = more.getBoundingClientRect();
+        menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
+      }, "ex-btn-quiet"));
+      const label = "更多标签 · " + (tags.length - limit);
+      if (more.textContent !== label) more.textContent = label;
+      desired.push(more);
     }
-    if (!activeTag) this.tagBar.scrollLeft = 0;
+    const wanted = new Set(desired);
+    for (const child of Array.from(strip.children))
+      if (!wanted.has(child as HTMLButtonElement)) child.remove();
+    // Minimize reorders so an unchanged focused control is not detached.
+    let next: ChildNode | null = null;
+    for (let i = desired.length - 1; i >= 0; i--) {
+      const chip = desired[i];
+      if (chip.nextSibling !== next || chip.parentElement !== strip)
+        strip.insertBefore(chip, next);
+      next = chip;
+    }
+    if (focused && document.activeElement !== desired.find(chip => chip.dataset.tagKey === focused)) {
+      const target = desired.find(chip => chip.dataset.tagKey === focused) ??
+        desired.find(chip => chip.dataset.tagKey === "all");
+      if (target && !target.disabled) target.focus({ preventScroll: true });
+    }
+    if (!activeTag) strip.scrollLeft = 0;
     else this.scheduleActiveFilterVisibility();
     this.updateAvailability();
   }
@@ -1798,7 +1847,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (wrapper.dataset.tagFilter !== this.tagFilter) {
       const item = this.itemByPath.get(row.path);
       const chips = wrapper.querySelector<HTMLElement>(".ex-chips");
-      if (item && chips) this.renderTags(chips, item, this.openTagEditors.has(row.path));
+      if (item && chips) this.syncCardFilterPresentation(chips, item);
       wrapper.dataset.tagFilter = this.tagFilter;
     }
   }
@@ -2244,6 +2293,36 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     });
   }
 
+  /** Selection-only changes do not destroy chip buttons or the tag editor action. */
+  private syncCardFilterPresentation(mount: HTMLElement, item: CardIndex): void {
+    if (this.openTagEditors.has(item.path)) return;
+    const pills = Array.from(mount.querySelectorAll<HTMLButtonElement>(".ex-tag"));
+    const selected = this.tagFilter && item.tags.includes(this.tagFilter) ? this.tagFilter : "";
+    for (const pill of pills) {
+      const tag = pill.getAttribute("aria-label")?.slice("筛选标签：".length);
+      const active = Boolean(selected) && tag === selected;
+      pill.classList.toggle("ex-selected", active);
+      pill.setAttribute("aria-pressed", String(active));
+    }
+    if (selected) {
+      const activePill = pills.find(pill =>
+        pill.getAttribute("aria-label") === "筛选标签：" + selected);
+      if (activePill && mount.firstElementChild !== activePill)
+        mount.insertBefore(activePill, mount.firstElementChild);
+    } else {
+      // Restore the source order when the filter is cleared.
+      const ordered = [...item.tags];
+      let cursor: ChildNode | null = mount.firstChild;
+      for (const tag of ordered) {
+        const pill = pills.find(button =>
+          button.getAttribute("aria-label") === "筛选标签：" + tag);
+        if (!pill) continue;
+        if (cursor === pill) cursor = cursor.nextSibling;
+        else mount.insertBefore(pill, cursor);
+      }
+    }
+    this.scheduleTagReflow(mount);
+  }
   private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();
     const card = mount.closest<HTMLElement>(".ex-card");

@@ -286,6 +286,41 @@ test('tag filter and matching search keep a hydrated overlapping excerpt card',a
   await t.close();
 });
 
+test('top filter controls survive selection changes and retain keyboard focus',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'筛选标签');
+  const bar=root.querySelector('.ex-filter-tags');
+  const all=bar.querySelector('button[data-tag-key="all"]');
+  const philosophy=bar.querySelector('button[data-tag-key="tag:哲学"]');
+  assert.ok(all && philosophy);
+  philosophy.focus();
+  philosophy.click();
+  assert.equal(bar.querySelector('button[data-tag-key="all"]'),all);
+  assert.equal(bar.querySelector('button[data-tag-key="tag:哲学"]'),philosophy);
+  assert.equal(document.activeElement,philosophy);
+  all.click();
+  assert.equal(bar.querySelector('button[data-tag-key="tag:哲学"]'),philosophy);
+  assert.equal(document.activeElement,all);
+  await t.close();
+});
+
+test('a card filter toggles selected tag without recreating its chips or Markdown body',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const card=root.querySelector('.ex-card'),tag=card.querySelector('.ex-tag');
+  const add=card.querySelector('.ex-add-tag'),before=renders.length;
+  tag.click();
+  assert.equal(root.querySelector('.ex-card'),card);
+  assert.equal(card.querySelector('.ex-tag'),tag);
+  assert.equal(card.querySelector('.ex-add-tag'),add);
+  assert.equal(tag.getAttribute('aria-pressed'),'true');
+  tag.click();
+  assert.equal(root.querySelector('.ex-card'),card);
+  assert.equal(card.querySelector('.ex-tag'),tag);
+  assert.equal(tag.getAttribute('aria-pressed'),'false');
+  assert.equal(renders.length,before);
+  await t.close();
+});
+
 test('calendar dates expose exact counts and selection via keyboard',async()=>{
   const t=await fixture(),root=t.pane.contentEl;
   clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();
