@@ -2014,16 +2014,26 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     if (!editorOpen && !this.expandedTagRows.has(item.path)) {
       const more = button("", () => {
+        const transferFocus = document.activeElement === more;
         this.expandedTagRows.add(item.path);
         this.renderTags(mount, item, false);
+        if (transferFocus) {
+          this.reflowTagRow(mount);
+          this.focusAvailableTagAction(mount, "collapse");
+        }
       }, "ex-tag-overflow");
       more.hidden = true;
       mount.append(more);
     }
     if (!editorOpen && this.expandedTagRows.has(item.path)) {
       const collapse = button("收起", () => {
+        const transferFocus = document.activeElement === collapse;
         this.expandedTagRows.delete(item.path);
         this.renderTags(mount, item, false);
+        if (transferFocus) {
+          this.reflowTagRow(mount);
+          this.focusAvailableTagAction(mount, "overflow");
+        }
       }, "ex-tag-collapse");
       collapse.setAttribute("aria-label", "收起标签");
       mount.append(collapse);
@@ -2180,6 +2190,23 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private reflowVisibleTags(): void {
     for (const row of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-chips"))) this.reflowTagRow(row);
   }
+  /** Restore focus only when a focused tag control is replaced or hidden. */
+  private focusAvailableTagAction(mount: HTMLElement, preferred: "collapse" | "overflow" | "add"): void {
+    const order = preferred === "collapse" ? [".ex-tag-collapse", ".ex-tag-overflow", ".ex-add-tag"] :
+      preferred === "add" ? [".ex-add-tag", ".ex-tag-overflow"] :
+        [".ex-tag-overflow", ".ex-add-tag"];
+    const card = mount.closest<HTMLElement>(".ex-card");
+    const controls = [...order.map(selector => mount.querySelector<HTMLButtonElement>(selector)),
+      card?.querySelector<HTMLButtonElement>(".ex-card-options")];
+    for (const control of controls) {
+      if (!control || !control.isConnected || control.hidden || control.disabled || control.closest("[hidden]")) continue;
+      const box = control.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) continue;
+      if (mount.contains(control) && (!mount.clientWidth || box.width > mount.clientWidth + 1)) continue;
+      control.focus({ preventScroll: true });
+      if (document.activeElement === control) return;
+    }
+  }
   private reflowTagRow(mount: HTMLElement): void {
     const card = mount.closest<HTMLElement>(".ex-card");
     if (!card) return;
@@ -2230,21 +2257,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!item) return;
       this.renderTags(mount, item, false);
       this.reflowTagRow(mount);
-      if (hadFocus) {
-        const more = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
-        const addButton = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
-        if (more && !more.hidden) more.focus();
-        else if (addButton && !addButton.hidden) addButton.focus();
-        else card.querySelector<HTMLButtonElement>(".ex-card-options")?.focus();
-      }
+      if (hadFocus) this.focusAvailableTagAction(mount, "overflow");
       return;
     }
+    const focused = mount.contains(document.activeElement) &&
+      document.activeElement?.tagName === "BUTTON" ? document.activeElement as HTMLButtonElement : null;
     const pills = Array.from(mount.querySelectorAll<HTMLButtonElement>(".ex-tag"));
     const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
     const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
     if (!overflow || !add) return;
     // Restore the real hit target before measuring; narrow panes may have
-    // hidden it during the previous pass.
+    // hidden it during the previous pass. The finally block also covers early returns.
+    try {
     add.hidden = false;
     if (!mount.clientWidth) { add.hidden = true; overflow.hidden = true; return; }
     const addWidth = add.getBoundingClientRect().width;
@@ -2314,6 +2338,18 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       overflow.textContent = "+" + (pills.length - count);
       overflow.setAttribute("aria-label", "展开剩余 " + (pills.length - count) + " 个标签");
     } else overflow.hidden = true;
+    } finally {
+      // Measuring +N briefly hides it; Chromium blurs even if it is then
+      // shown again. Restore the same control before trying alternatives.
+      if (focused && document.activeElement !== focused && focused.isConnected && !focused.hidden && !focused.disabled) {
+        const box = focused.getBoundingClientRect();
+        if (box.width >= 1 && box.height >= 1 && box.width <= mount.clientWidth + 1)
+          focused.focus({ preventScroll: true });
+      }
+      if (focused && (document.activeElement !== focused || !focused.isConnected || focused.hidden || focused.disabled)) {
+        this.focusAvailableTagAction(mount, focused.classList.contains("ex-add-tag") ? "add" : "overflow");
+      }
+    }
   }
 
 

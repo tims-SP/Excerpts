@@ -930,6 +930,67 @@ test('narrow folded tag rows decline unreadable pills and refuse unsafe expander
   await t.close();
 });
 
+test('manual tag expand and collapse retain keyboard focus on the replacement control',async()=>{
+  const t=await fixture(),r=t.pane.renderer,item=r.items[0];
+  item.tags=['文学','历史','艺术','哲学','人物','电影'];
+  const card=t.pane.contentEl.querySelector('.ex-card'),lane=card.querySelector('.ex-chips');
+  Object.defineProperty(lane,'clientWidth',{configurable:true,value:170});
+  const original=HTMLElement.prototype.getBoundingClientRect;
+  HTMLElement.prototype.getBoundingClientRect=function(){
+    if(this===lane)return {width:170,height:44,left:0,right:170,top:0,bottom:44};
+    const cls=this.classList;
+    if(cls?.contains('ex-tag'))return {width:60,height:32,left:0,right:60,top:0,bottom:32};
+    if(cls?.contains('ex-tag-collapse'))return {width:60,height:32,left:0,right:60,top:0,bottom:32};
+    if(cls?.contains('ex-tag-overflow'))return {width:38,height:32,left:0,right:38,top:0,bottom:32};
+    if(cls?.contains('ex-add-tag'))return {width:36,height:32,left:0,right:36,top:0,bottom:32};
+    if(cls?.contains('ex-card-options'))return {width:44,height:44,left:0,right:44,top:0,bottom:44};
+    return original.call(this);
+  };
+  try {
+    r.renderTags(lane,item,false);r.reflowTagRow(lane);
+    const overflow=lane.querySelector('.ex-tag-overflow');
+    assert.equal(overflow.hidden,false);
+    overflow.focus();overflow.click();
+    assert.equal(lane.classList.contains('ex-tags-expanded'),true);
+    const collapse=lane.querySelector('.ex-tag-collapse');
+    assert.equal(document.activeElement,collapse,'keyboard expand moves focus to Collapse');
+    collapse.click();
+    assert.equal(lane.classList.contains('ex-tags-expanded'),false);
+    assert.equal(document.activeElement,lane.querySelector('.ex-tag-overflow'),'keyboard collapse returns focus to +N');
+    r.reflowTagRow(lane);
+    assert.equal(document.activeElement,lane.querySelector('.ex-tag-overflow'),'refolding never strands keyboard focus');
+  } finally { HTMLElement.prototype.getBoundingClientRect=original;await t.close(); }
+});
+
+test('focused card tag controls move to available controls when folding hides them',async()=>{
+  const t=await fixture(),r=t.pane.renderer,item=r.items[0];
+  item.tags=['文学','历史','艺术','哲学','人物'];
+  const card=t.pane.contentEl.querySelector('.ex-card'),lane=card.querySelector('.ex-chips');
+  let width=180;
+  Object.defineProperty(lane,'clientWidth',{configurable:true,get(){return width}});
+  const original=HTMLElement.prototype.getBoundingClientRect;
+  HTMLElement.prototype.getBoundingClientRect=function(){
+    if(this===lane)return {width,height:44,left:0,right:width,top:0,bottom:44};
+    const cls=this.classList;
+    if(cls?.contains('ex-tag'))return {width:60,height:32,left:0,right:60,top:0,bottom:32};
+    if(cls?.contains('ex-tag-overflow'))return {width:38,height:32,left:0,right:38,top:0,bottom:32};
+    if(cls?.contains('ex-add-tag'))return {width:36,height:32,left:0,right:36,top:0,bottom:32};
+    if(cls?.contains('ex-card-options'))return {width:44,height:44,left:0,right:44,top:0,bottom:44};
+    return original.call(this);
+  };
+  try {
+    r.renderTags(lane,item,false);r.reflowTagRow(lane);
+    const pill=lane.querySelector('.ex-tag');
+    pill.focus();width=110;r.reflowTagRow(lane);
+    assert.equal(pill.hidden,true);
+    assert.equal(document.activeElement,lane.querySelector('.ex-tag-overflow'),'hidden pill focus moves to +N');
+    const add=lane.querySelector('.ex-add-tag');
+    add.focus();width=18;r.reflowTagRow(lane);
+    assert.equal(add.hidden,true);
+    assert.equal(document.activeElement,card.querySelector('.ex-card-options'),'hidden add action moves to card More');
+  } finally { HTMLElement.prototype.getBoundingClientRect=original;await t.close(); }
+});
+
 test('expanded card tags automatically fold on unsafe geometry and repair focus',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
   item.tags=['文学','历史','哲学','电影','艺术'];
