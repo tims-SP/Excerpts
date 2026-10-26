@@ -50,6 +50,15 @@ function dayLabel(timestamp: number): { title: string; subtitle: string } {
   return { title, subtitle };
 }
 
+type RecoveryAction = "none" | "refresh" | "clear-search" | "exit-selection";
+type RecoveryInfo = {
+  kind: string;
+  title: string;
+  description: string;
+  action: RecoveryAction;
+  actionLabel?: string;
+};
+
 /** Unsaved text survives view teardown within the current plugin session. */
 const composerDrafts = new Map<string, { text: string; tags: string[] }>();
 
@@ -89,6 +98,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanCompletionTimer: ReturnType<typeof setTimeout> | null = null;
   private scanStatusEl!: HTMLElement;
   private pageHintEl!: HTMLElement;
+  private recoveryTitleEl!: HTMLElement;
+  private recoveryDescriptionEl!: HTMLElement;
+  private recoveryIconEl!: HTMLElement;
+  private recoveryActionButton!: HTMLButtonElement;
   private scanTextEl!: HTMLElement;
   private scanIconEl!: HTMLElement;
   private scanProgressEl!: HTMLElement;
@@ -243,6 +256,98 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     return null;
   }
+
+  /** Purely derived feedback: no second mutable operation state. */
+  private getRecoveryInfo(): RecoveryInfo | null {
+    const info = (kind: string, title: string, description: string,
+      action: RecoveryAction = "none", actionLabel?: string): RecoveryInfo =>
+      ({ kind, title, description, action, actionLabel });
+    if (this.homeInvalid) return info("invalid", "当前摘录页已失效",
+      this.homeInvalidCause === "configuration"
+        ? "筛选配置已变化。请保存草稿并从文件列表重新打开。"
+        : this.workspace.kind === "folder"
+          ? "文件夹位置已变化。请保存草稿并从文件夹右键菜单重新打开。"
+          : "页面位置已变化。请保存草稿并从文件列表重新打开。");
+    if (this.deleteBusy) return info("deleting", "正在删除摘录", "删除完成后可继续操作。");
+    if (this.saveBusy) return info("saving", "正在保存摘录", "保存完成后可继续操作。");
+    if (this.pendingTags.size) return info("saving-tags", "正在保存标签", "请等待当前标签写入完成。");
+    if (this.selectionBusy) return info("selecting-busy", "正在处理批量选择", "完成后可继续操作。");
+    if (this.selectionMode === "deleting") return info("deleting", "正在删除摘录", "删除完成后可继续操作。");
+    if (this.selectionMode === "selecting" && this.scanStatus !== "done")
+      return info("selection-stale", "当前选择已过期",
+        "摘录列表已变化。请退出批量选择，再刷新索引。", "exit-selection", "退出选择");
+    if (this.openTagEditors.size && this.scanStatus !== "done")
+      return info("tag-stale", "标签编辑期间内容已变化",
+        "请在卡片中取消标签编辑，然后刷新摘录。");
+    if (this.selectionMode === "selecting")
+      return info("selection-active", "正在批量选择", "完成或取消选择后可执行其他操作。");
+    if (this.openTagEditors.size)
+      return info("tag-active", "正在编辑卡片标签", "请先完成或取消卡片中的标签编辑。");
+    if (this.scanStatus === "scanning") return null; // Existing progress is sufficient.
+    if (this.plugin.isNavigating()) return info("navigating", "正在打开摘录页", "请等待页面打开完成。");
+    if (this.plugin.isBusy(this)) return info("other-busy", "另一个摘录页正在操作",
+      "请等待该操作完成。不会自动重试当前操作。");
+    if (!this.searchReady) return info("searching", "正在搜索摘录", "搜索完成后可继续操作。");
+    if ((this.scanStatus === "stale" || this.scanStatus === "error") &&
+      this.searchText && this.reason("refresh") !== null)
+      return info("search-stale", "请先清除搜索条件",
+        "清除搜索后才能刷新索引，当前标签筛选不会改变。", "clear-search", "清除搜索");
+    if (this.scanStatus === "blocked") return info("blocked", "尚未扫描摘录",
+      "本页尚无索引，请手动刷新。", "refresh", "刷新摘录");
+    if (this.scanStatus === "stale") return info("stale", "摘录内容已变化",
+      "刷新索引后可继续筛选和编辑标签。", "refresh", "刷新摘录");
+    if (this.scanStatus === "error") return info("error", "摘录扫描失败",
+      "请重新扫描；失败时不会覆盖已有内容。", "refresh", "重试扫描");
+    return null;
+  }
+  private canCancelTagEdit(path: string): boolean {
+    return !this.disposed && this.openTagEditors.has(path) && !this.pendingTags.has(path);
+  }
+  private clearSearchForRecovery(): boolean {
+    if (!this.searchText) return false;
+    const blocked = this.reason("search");
+    if (blocked && !this.canClearSearch()) { new Notice(blocked); return false; }
+    this.searchText = "";
+    this.searchInput.value = "";
+    this.scheduleSearch();
+    this.updateAvailability();
+    return true;
+  }
+  private renderRecoveryHint(): void {
+    if (!this.pageHintEl) return;
+    const info = this.getRecoveryInfo();
+    if (!info) {
+      this.pageHintEl.hidden = true;
+      this.pageHintEl.removeAttribute("data-state");
+      return;
+    }
+    this.pageHintEl.hidden = false;
+    this.pageHintEl.dataset.state = info.kind;
+    this.recoveryTitleEl.textContent = info.title;
+    this.recoveryDescriptionEl.textContent = info.description;
+    setIcon(this.recoveryIconEl, info.kind === "error" || info.kind === "invalid"
+      ? "alert-circle" : info.kind === "stale" || info.kind === "search-stale"
+        ? "refresh-cw" : "info");
+    const actionable = info.action !== "none" &&
+      (info.action !== "refresh" || this.reason("refresh") === null) &&
+      (info.action !== "clear-search" || this.canClearSearch()) &&
+      (info.action !== "exit-selection" ||
+        (this.selectionMode === "selecting" && !this.selectionBusy));
+    this.recoveryActionButton.hidden = !actionable;
+    if (actionable) {
+      this.recoveryActionButton.textContent = info.actionLabel ?? "";
+      this.recoveryActionButton.disabled = false;
+    }
+  }
+  private runRecoveryAction(): void {
+    const info = this.getRecoveryInfo(); // Recheck on every click.
+    if (!info) return;
+    if (info.action === "refresh") this.requestRefresh(true);
+    else if (info.action === "clear-search") this.clearSearchForRecovery();
+    else if (info.action === "exit-selection" &&
+      this.selectionMode === "selecting" && !this.selectionBusy) this.exitSelectionMode();
+    this.renderRecoveryHint();
+  }
   private guard(action: Parameters<ExcerptsRenderChild["reason"]>[0]): boolean {
     const blocked = this.reason(action);
     if (blocked) { new Notice(blocked); return false; }
@@ -299,9 +404,27 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const isTagFilter = el.classList.contains("ex-tag");
       const otherTagEditor = el.classList.contains("ex-add-tag") &&
         this.openTagEditors.size > 0 && !this.openTagEditors.has(el.closest<HTMLElement>(".ex-card")?.dataset.path ?? "");
-      el.disabled = otherTagEditor || Boolean(this.reason(isTagFilter ? "filter" :
-        el.classList.contains("ex-add-tag") ? "tag" : "page"));
+      const path = el.closest<HTMLElement>(".ex-card")?.dataset.path ?? "";
+      el.disabled = el.classList.contains("ex-add-tag") && this.openTagEditors.has(path)
+        ? !this.canCancelTagEdit(path)
+        : otherTagEditor || Boolean(this.reason(isTagFilter ? "filter" :
+          el.classList.contains("ex-add-tag") ? "tag" : "page"));
     }
+    for (const editor of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".ex-tag-editor:not([hidden])"))) {
+      const path = editor.closest<HTMLElement>(".ex-card")?.dataset.path ?? "";
+      const pending = this.pendingTags.has(path);
+      const done = editor.querySelector<HTMLButtonElement>(".ex-tag-done");
+      const cancel = editor.querySelector<HTMLButtonElement>(".ex-tag-cancel");
+      if (done) done.disabled = pending || Boolean(this.reason("tag")) || this.scanStatus !== "done";
+      if (cancel) cancel.disabled = !this.canCancelTagEdit(path);
+      const warning = editor.querySelector<HTMLElement>(".ex-tag-edit-warning");
+      if (warning) {
+        const blocked = this.reason("tag");
+        warning.hidden = !blocked;
+        warning.textContent = blocked ?? "";
+      }
+    }
+    this.renderRecoveryHint();
     if (broadcast) this.plugin.notifyActivityChange(this);
   }
   /** Register the exact path before vault.create can emit a create event. */
@@ -486,11 +609,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         ? "因其他摘录页正在操作，本页未扫描。待操作结束后，请从页面选项手动刷新。"
         : "";
     this.scanStatusEl.title = hint;
-    if (this.pageHintEl) {
-      this.pageHintEl.textContent = hint;
-      this.pageHintEl.dataset.state = status;
-      this.pageHintEl.hidden = !hint;
-    }
     setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
       status === "done" ? "check" : status === "stale" ? "refresh-cw" :
       status === "error" || status === "invalid" ? "alert-circle" :
@@ -501,6 +619,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.scanProgressEl.setAttribute("aria-valuemax", String(this.scanTotal));
       this.scanFillEl.style.width = (this.scanTotal ? this.scanDone / this.scanTotal * 100 : 0) + "%";
     }
+    this.renderRecoveryHint();
   }
   private announceScan(message: string): void {
     this.scanAnnouncementEl.textContent = message;
@@ -531,8 +650,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scanStatusEl.append(scanLine, this.scanProgressEl);
     // Screen-reader announcements remain available after the visual status hides.
     header.append(this.scanStatusEl, this.scanAnnouncementEl);
-    this.pageHintEl = node("p", "ex-page-hint");
-    this.pageHintEl.setAttribute("role", "status");
+    this.pageHintEl = node("section", "ex-page-hint");
+    this.pageHintEl.hidden = true;
+    this.pageHintEl.setAttribute("aria-label", "摘录操作提示");
+    const recoveryBody = node("div", "ex-recovery-content");
+    this.recoveryIconEl = node("span", "ex-recovery-icon");
+    const recoveryCopy = node("div", "ex-recovery-copy");
+    this.recoveryTitleEl = node("strong", "ex-recovery-title");
+    this.recoveryDescriptionEl = node("p", "ex-recovery-description");
+    this.recoveryDescriptionEl.setAttribute("role", "status");
+    this.recoveryDescriptionEl.setAttribute("aria-live", "polite");
+    recoveryCopy.append(this.recoveryTitleEl, this.recoveryDescriptionEl);
+    recoveryBody.append(this.recoveryIconEl, recoveryCopy);
+    this.recoveryActionButton = button("", () => this.runRecoveryAction(), "ex-recovery-action");
+    this.recoveryActionButton.hidden = true;
+    this.pageHintEl.append(recoveryBody, this.recoveryActionButton);
     root.append(header, this.pageHintEl);
     this.renderScanStatus();
 
@@ -795,12 +927,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // A native search input with one accessible clear action. The trailing
     // control sits in reserved input padding, never above entered text.
     this.searchClearButton = iconButton("x", "清空搜索", () => {
-      const blocked = this.searchQueryBlockReason();
-      if (blocked && !this.canClearSearch()) { new Notice(blocked); return; }
-      this.searchText = "";
-      this.searchInput.value = "";
-      this.scheduleSearch();
-      this.searchInput.focus();
+      if (this.clearSearchForRecovery()) this.searchInput.focus();
     }, "ex-search-clear");
     this.searchWrap.append(this.searchInput, this.searchClearButton);
     const searchButton = iconButton("search", "搜索", () => {
@@ -811,16 +938,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         return;
       }
       if (this.canClearSearch()) {
-        this.searchText = ""; this.searchInput.value = "";
-        this.scheduleSearch(); this.searchWrap.hidden = true;
-        searchButton.setAttribute("aria-expanded", "false");
+        if (this.clearSearchForRecovery()) {
+          this.searchWrap.hidden = true;
+          searchButton.setAttribute("aria-expanded", "false");
+        }
         return;
       }
       if (!this.guard("search")) return;
       this.searchWrap.hidden = !this.searchWrap.hidden;
       searchButton.setAttribute("aria-expanded", String(!this.searchWrap.hidden));
       if (!this.searchWrap.hidden) this.searchInput.focus();
-      else if (this.searchText) { this.searchInput.value = ""; this.searchText = ""; this.scheduleSearch(); }
+      else if (this.searchText) this.clearSearchForRecovery();
     });
     this.searchButton = searchButton;
     searchButton.setAttribute("aria-expanded", String(!this.searchWrap.hidden));
@@ -848,9 +976,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         const blocked = this.searchQueryBlockReason();
         if (blocked) { new Notice(blocked); return; }
       }
-      this.searchText = ""; this.searchInput.value = "";
-      this.searchWrap.hidden = true; searchButton.setAttribute("aria-expanded", "false");
-      this.scheduleSearch(); searchButton.focus();
+      if (this.clearSearchForRecovery()) {
+        this.searchWrap.hidden = true; searchButton.setAttribute("aria-expanded", "false");
+        searchButton.focus();
+      }
     });
     actions.append(searchButton);
     this.filterButton = iconButton("tags", "筛选标签", () => {
@@ -940,6 +1069,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     menu.addItem(item => item.setTitle("刷新摘录").setIcon("refresh-cw")
       .setDisabled(Boolean(this.reason("refresh")))
       .onClick(() => this.requestRefresh(true)));
+    if (this.searchText && this.reason("refresh")?.includes("清除搜索条件")) {
+      menu.addItem(item => item.setTitle("清除搜索后刷新").setIcon("search-x")
+        .setDisabled(Boolean(this.reason("search")) && !this.canClearSearch())
+        .onClick(() => this.clearSearchForRecovery()));
+    }
     menu.addItem(item => item.setTitle("摘录日历").setIcon("calendar-days")
       .setDisabled(!this.canOpenCalendar())
       .onClick(() => this.openCalendar()));
@@ -1111,11 +1245,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.selectionMode === "normal") return;
     const chosen = this.selectedPaths.size, total = this.selectionScope.size;
     this.containerEl.classList.toggle("ex-is-selecting-busy", this.selectionBusy);
+    const stale = this.scanStatus !== "done" && !this.selectionBusy && !this.deleteBusy;
     this.selectionCountEl.textContent = this.selectionBusy ?
       "正在选择 " + this.selectionProcessed + " / " + this.selectionBatchTotal :
-      "已选 " + chosen + " / " + total;
+      stale ? "列表已变化" : "已选 " + chosen + " / " + total;
     this.selectedFooterCountEl.textContent = this.selectionBusy ?
-      "正在选择…" : "已选择 " + chosen + " 条";
+      "正在选择…" : stale ? "请退出选择后刷新" : "已选择 " + chosen + " 条";
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
     this.selectionAllButton.disabled = this.homeInvalid || this.scanStatus !== "done" ||
       this.deleteBusy || this.selectionBusy || total === 0;
@@ -2062,6 +2197,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     }, "ex-add-tag");
     if (editorOpen) {
+      toggle.disabled = !this.canCancelTagEdit(item.path);
       toggle.classList.add("ex-is-cancelling");
       const icon = node("span", "ex-card-tag-toggle-icon");
       setIcon(icon, "x");
@@ -2075,6 +2211,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
 
   private closeTagEditor(item: CardIndex, card: HTMLElement | null | undefined): void {
+    if (!this.canCancelTagEdit(item.path)) return;
     this.openTagEditors.delete(item.path);
     const editor = card?.querySelector<HTMLElement>(".ex-tag-editor");
     if (editor) { editor.hidden = true; editor.replaceChildren(); }
@@ -2129,8 +2266,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     heading.append(title, counter);
     updatePreview();
     const controls = node("div", "ex-tag-editor-actions");
+    const cancel = button("取消", () => {
+      if (this.canCancelTagEdit(item.path)) this.closeTagEditor(item, card);
+    }, "ex-tag-cancel");
     const done = button("完成", () => void commit(), "ex-tag-done");
-    controls.append(done);
+    controls.append(cancel, done);
+    const warning = node("p", "ex-tag-edit-warning");
+    const blockedAtOpen = this.reason("tag");
+    warning.textContent = blockedAtOpen ?? "";
+    warning.hidden = !blockedAtOpen;
+    done.disabled = Boolean(blockedAtOpen) || this.scanStatus !== "done";
     const picker = new TagPicker({
       available: () => this.availableTags,
       selected: () => selected,
@@ -2141,7 +2286,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         else selected.delete(tag);
         updatePreview();
       },
-      onEscape: () => { if (!this.pendingTags.has(item.path)) this.closeTagEditor(item, card); }
+      onEscape: () => { if (this.canCancelTagEdit(item.path)) this.closeTagEditor(item, card); }
     });
     const inlineInfo = item.inlineTags.length
       ? node("div", "ex-tag-inline-hint",
@@ -2152,7 +2297,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.closeTagEditor(item, card); return;
       }
       this.pendingTags.add(item.path);
-      picker.setDisabled(true); done.disabled = true;
+      picker.setDisabled(true); done.disabled = true; cancel.disabled = true;
       card?.querySelector<HTMLButtonElement>(".ex-add-tag")?.setAttribute("disabled", "");
       counter.textContent = "保存中…";
       done.textContent = "保存中…";
@@ -2170,7 +2315,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       } catch (error) {
         notify(error);
         if (editor.isConnected) {
-          picker.setDisabled(false); done.disabled = false;
+          picker.setDisabled(false); done.disabled = false; cancel.disabled = false;
           done.textContent = "完成";
           updatePreview();
           picker.focus();
@@ -2180,7 +2325,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.updateAvailability();
       }
     };
-    editor.append(heading, preview, picker.element);
+    editor.append(heading, warning, preview, picker.element);
     if (inlineInfo) editor.append(inlineInfo);
     editor.append(controls);
     picker.focus();
