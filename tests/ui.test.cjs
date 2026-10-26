@@ -1841,7 +1841,8 @@ test('bulk delete keeps modified snapshots and open editors safe; failed files r
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale');
   await t.plugin.openMarkdown(t.md.path);await wait();
   clickByLabel(root,'卡片选项');await wait();
-  assert.equal(Menu.last.items.at(-1).disabled,true,'stale index prohibits another deletion');
+  assert.deepEqual(Menu.last.items.filter(Boolean).map(item=>item.title),['刷新摘录'],
+    'stale index exposes recovery only, never another deletion');
   assert.ok(t.files.has(t.md.path),'open Markdown editors are protected');
   await t.close();
 });
