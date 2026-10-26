@@ -337,7 +337,7 @@ with sync_playwright() as playwright:
             clear.click()
             assert card.locator(".ex-tag-custom").input_value() == "", (theme,width,"clear did not restore placeholder")
             assert card.locator(".ex-tag-choice").count() > 0, (theme, width, "picker choices")
-            assert not card.locator(".ex-tag-cancel").count(), (theme,width,"redundant cancel")
+            assert card.locator(".ex-tag-cancel").is_visible(), (theme,width,"editor cancel missing")
             cancel = card.locator(".ex-add-tag")
             assert cancel.get_attribute("aria-label") == "取消标签编辑", (theme,width,"footer cancel label")
             assert cancel.inner_text() == "取消", (theme,width,"footer cancel text")
