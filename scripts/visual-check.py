@@ -280,6 +280,33 @@ with sync_playwright() as playwright:
                 lane.evaluate("(el)=>{el.style.removeProperty('flex');el.style.removeProperty('width')}")
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
                 selected = card.locator(".ex-tag.ex-selected")
+            # Keyboard-only controls must retain focus after DOM replacement and
+            # after the next-frame overflow measurement toggles +N visibility.
+            lane = card.locator(".ex-chips")
+            lane.evaluate("(el)=>{el.style.flex='0 0 150px';el.style.width='150px'}")
+            page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+            keyboard_overflow = lane.locator(".ex-tag-overflow")
+            assert keyboard_overflow.is_visible(), (theme,width,"no +N for keyboard focus test")
+            keyboard_overflow.focus()
+            host_scroll = page.locator(".excerpts-native-host").evaluate("el=>el.scrollTop")
+            keyboard_overflow.press("Enter")
+            assert lane.locator(".ex-tag-collapse").evaluate("el=>el===document.activeElement"), (
+                theme,width,"keyboard expand lost focus")
+            lane.locator(".ex-tag-collapse").press("Enter")
+            page.wait_for_timeout(75)
+            assert lane.locator(".ex-tag-overflow").evaluate("el=>el===document.activeElement"), (
+                theme,width,"keyboard collapse or scheduled reflow lost focus")
+            assert abs(page.locator(".excerpts-native-host").evaluate("el=>el.scrollTop")-host_scroll)<=2, (
+                theme,width,"focus restore scrolled the page")
+            lane.locator(".ex-add-tag").focus()
+            lane.evaluate("(el)=>{el.style.flex='0 0 18px';el.style.width='18px'}")
+            page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+            assert card.locator(".ex-add-tag").is_hidden(), (theme,width,"narrow add should be hidden")
+            assert card.locator(".ex-card-options").evaluate("el=>el===document.activeElement"), (
+                theme,width,"narrow reflow lost keyboard focus")
+            lane.evaluate("(el)=>{el.style.removeProperty('flex');el.style.removeProperty('width')}")
+            page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+            selected = card.locator(".ex-tag.ex-selected")
             selected.click()
             card = page.locator(".ex-card").first
             assert card.locator(".ex-tag").first.inner_text() == "#生活", (theme,width,"source order not restored")
