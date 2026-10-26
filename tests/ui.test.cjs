@@ -298,6 +298,7 @@ test('top filter controls survive selection changes and retain keyboard focus',a
   assert.equal(bar.querySelector('button[data-tag-key="all"]'),all);
   assert.equal(bar.querySelector('button[data-tag-key="tag:哲学"]'),philosophy);
   assert.equal(document.activeElement,philosophy);
+  all.focus(); // A keyboard activation focuses its target; HTMLElement.click() alone does not.
   all.click();
   assert.equal(bar.querySelector('button[data-tag-key="tag:哲学"]'),philosophy);
   assert.equal(document.activeElement,all);
