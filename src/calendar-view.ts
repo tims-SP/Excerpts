@@ -92,8 +92,8 @@ export class ExcerptsCalendarView {
   setStatus(status: "done" | "stale" | "error"): void {
     this.warningEl.hidden = status === "done";
     this.warningEl.textContent = status === "error" ?
-      "上次扫描失败，当前显示的是旧统计" : status === "stale" ?
-      "索引待刷新，当前统计可能不是最新" : "";
+      "上次扫描失败，当前显示旧统计。请返回摘录列表重新扫描。" : status === "stale" ?
+      "索引已变化，统计可能不是最新。请返回摘录列表后手动刷新。" : "";
   }
 
   private createDay(day: HeatmapDay): HTMLElement {
