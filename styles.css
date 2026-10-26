@@ -343,6 +343,7 @@
 .excerpts-root .ex-filter-tags button.ex-active-filter {
   flex: 0 0 auto; min-width: 0; max-width: min(200px, 100%);
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  text-align: left;
 }
 .excerpts-root .ex-filter-tags button.ex-btn::before {
   content: ""; position: absolute; inset-inline: 0; top: 50%;
