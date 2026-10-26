@@ -2321,7 +2321,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         else mount.insertBefore(pill, cursor);
       }
     }
-    this.scheduleTagReflow(mount);
+    // The reused pills may still be hidden by the previous +N clamp. Reflow now,
+    // while this retained card is connected, so the active tag is never hidden
+    // until the next animation frame.
+    this.reflowTagRow(mount);
   }
   private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();
