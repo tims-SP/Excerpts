@@ -987,7 +987,14 @@ test('narrow card tag editing retains staged data, accessible cancel and complet
   assert.equal(card.querySelector('.ex-tag-custom'),input);
   assert.equal(card.querySelector('.ex-tag-done').disabled,false);
   assert.equal(t.getTagWrites(),0);
+  width=30;Notice.last=null;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.match(Notice.last,/扩大后完成或取消标签编辑/);
+  assert.equal(footer.dataset.exNarrowWarning,'shown');
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2 · 未保存');
+  Notice.last=null;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.equal(Notice.last,null,'repeated measurements do not spam warnings');
   width=220;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.equal(footer.dataset.exNarrowWarning,undefined);
   assert.equal(footer.classList.contains('ex-edit-compact'),false);
   cancel.click();
   assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
