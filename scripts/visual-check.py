@@ -228,6 +228,8 @@ with sync_playwright() as playwright:
             assert not card.locator(".ex-chips").evaluate("el => el.classList.contains('ex-tags-expanded')"), (
                 theme,width,"filtered row must be folded")
             selected = card.locator(".ex-tag.ex-selected")
+            assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text() == "#读书笔记", (
+                theme,width,"top bar must show active filter")
             assert selected.count() == 1 and selected.is_visible(), (theme,width,"filtered tag was hidden")
             assert selected.inner_text() == "#读书笔记", (theme,width,"wrong highlighted tag")
             assert card.locator(".ex-chips .ex-tag").first.get_attribute("aria-pressed") == "true", (theme,width,"priority order")
@@ -240,6 +242,29 @@ with sync_playwright() as playwright:
             if more.is_visible():
                 hidden = card.locator(".ex-tag[hidden]").count()
                 assert hidden > 0 and more.inner_text() == "+"+str(hidden), (theme,width,"wrong +N")
+            # Physically constrain the chip lane without resizing the viewport.
+            # Verify the safe states, not merely DOM hidden flags at 320px.
+            if width <= 390:
+                lane = card.locator(".ex-chips")
+                for lane_width in (80,120,160):
+                    lane.evaluate("(el,w)=>{el.style.flex='0 0 '+w+'px';el.style.width=w+'px'}",lane_width)
+                    page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                    selected = card.locator(".ex-tag.ex-selected")
+                    more = card.locator(".ex-tag-overflow")
+                    add_width = card.locator(".ex-add-tag").bounding_box()["width"]
+                    more_width = more.bounding_box()["width"]
+                    readable = lane_width - add_width - more_width - 10 >= 40
+                    assert selected.is_visible() == readable, (
+                        theme,width,lane_width,add_width,more_width,"incorrect readable fallback")
+                    assert more.is_visible(), (theme,width,lane_width,"missing safe expander")
+                    if selected.is_visible():
+                        rect = selected.bounding_box()
+                        assert rect["width"] >= 40, (theme,width,lane_width,"unreadable active chip")
+                    assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), (
+                        theme,width,lane_width,"narrow lane overflow")
+                lane.evaluate("(el)=>{el.style.removeProperty('flex');el.style.removeProperty('width')}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                selected = card.locator(".ex-tag.ex-selected")
             selected.click()
             card = page.locator(".ex-card").first
             assert card.locator(".ex-tag").first.inner_text() == "#生活", (theme,width,"source order not restored")

@@ -17,7 +17,7 @@ function require(id){if(id!=="obsidian")throw Error("Unmocked: "+id);return obsi
 class TAbstractFile{constructor(path){this.path=path;this.parent={path:path.split("/").slice(0,-1).join("/")||"/"}}}
 class TFile extends TAbstractFile{constructor(path,n){super(path);const filename=path.split("/").pop();this.basename=filename.replace(/\.[^.]+$/,"");this.extension=filename.split(".").pop();this.stat={ctime:Date.now()-n*86400000,mtime:Date.now()-n*86400000,size:128}}}
 class TFolder extends TAbstractFile{}
-class Component{constructor(el){this.containerEl=el;this.children=[]}load(){this.onload?.()}unload(){this.onunload?.()}addChild(child){this.children.push(child)}removeChild(child){this.children=this.children.filter(v=>v!==child)}}
+class Component{constructor(el){this.containerEl=el;this.children=[]}load(){this.onload?.()}unload(){this.onunload?.()}addChild(child){this.children.push(child)}removeChild(child){this.children=this.children.filter(v=>v!==child)}registerEvent(ref){return ref}}
 class MarkdownRenderChild extends Component{}
 class ItemView extends Component{constructor(){super(document.createElement("div"));this.contentEl=this.containerEl}async setState(){}}
 class FileView extends ItemView{constructor(){super();this.file=null}async openFile(file){this.file=file;await this.onLoadFile(file)}}

@@ -161,6 +161,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动"),
       resizeRows: () => this.timelineRows(this.visibleItems())
     });
+    // A theme/font change can alter chip widths without resizing the feed.
+    // Reuse the existing visible-row layout function rather than observing
+    // every card or invalidating the virtual timeline.
+    this.registerEvent(this.plugin.app.workspace.on("css-change", () => {
+      if (!this.disposed && this.pageMode === "feed") this.reflowVisibleTags();
+    }));
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
         if (this.pageMode === "calendar") {
@@ -1413,7 +1419,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards("top"); },
       this.tagFilter ? "ex-btn-quiet" : "ex-selected");
     this.tagBar.append(all);
-    const tags = this.availableTags;
+    // Keep the selected filter readable, including saved pages whose tag is
+    // no longer present in the current index. Never mutate availableTags.
+    const activeTag = this.tagFilter.trim();
+    const tags = activeTag
+      ? [activeTag, ...this.availableTags.filter(tag => tag !== activeTag)]
+      : this.availableTags;
     const limit = 8;
     for (const tag of tags.slice(0, limit)) this.tagBar.append(button("#" + tag, () => {
       if (!this.guard("filter")) return;
@@ -2136,6 +2147,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
     const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
     if (!overflow || !add || !mount.clientWidth) return;
+    // Empty cards have no tag to measure or clamp. The add action stays.
+    if (!pills.length) {
+      overflow.hidden = true;
+      return;
+    }
     pills.forEach(pill => {
       pill.hidden = false;
       pill.style.removeProperty("max-width");
@@ -2148,9 +2164,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const fullWidth = addWidth + pillWidths.reduce((total, value) => total + value, 0)
       + gap * pills.length;
     if (fullWidth <= width) return;
-    // A lone long label has no hidden siblings and needs no +N button.
-    if (pills.length === 1) {
-      pills[0].style.maxWidth = Math.max(1, width - addWidth - gap) + "px";
+    // Preserve a single readable tag without creating a redundant +N.
+    // When even 40px is unavailable, use the existing overflow control.
+    const minReadableWidth = 40;
+    if (pills.length === 1 && width - addWidth - gap >= minReadableWidth) {
+      pills[0].style.maxWidth = (width - addWidth - gap) + "px";
       return;
     }
 
@@ -2159,6 +2177,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     overflow.textContent = "+" + pills.length;
     overflow.hidden = false;
     const overflowWidth = overflow.getBoundingClientRect().width;
+    if (width < addWidth + gap + overflowWidth) {
+      // Neither a legible label nor an expander fits. Keep the add action;
+      // the active filter is visible in the toolbar, even on saved pages.
+      pills.forEach(pill => { pill.hidden = true; });
+      overflow.hidden = true;
+      return;
+    }
     let used = addWidth + gap + overflowWidth;
     let count = 0;
     for (let i = 0; i < pills.length - 1; i++) {
@@ -2172,7 +2197,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // space, preserving +N and the add action at normal usable pane widths.
     if (!count && pills[0].classList.contains("ex-selected")) {
       const available = width - addWidth - overflowWidth - gap * 2;
-      if (available > 0) {
+      if (available >= minReadableWidth) {
         pills[0].style.maxWidth = available + "px";
         count = 1;
       }
