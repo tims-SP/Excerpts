@@ -625,6 +625,13 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "card-recovery-menu-scrolled", "list-menu")
             page.locator(".menu button", has_text="刷新摘录").click()
             page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
+            page.wait_for_function("""() => {
+              const cards = [...document.querySelectorAll('.ex-card')].filter(card => {
+                const rect = card.getBoundingClientRect();
+                return rect.width > 0 && rect.y < innerHeight && rect.bottom > 0;
+              });
+              return cards.length > 0 && cards.every(card => !card.classList.contains('ex-card-loading'));
+            }""", timeout=15000)
             page.evaluate("""() => {
               const owner = {};
               window.__lockReviewOwner = owner;
