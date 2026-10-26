@@ -626,7 +626,7 @@ with sync_playwright() as playwright:
             assert candidates, (key,"no card feedback control")
             assert candidates[0].is_enabled()
             assert candidates[0].get_attribute("aria-disabled") == "true"
-            screenshot(page, theme, width, "card-mutex-feedback", "card-footer")
+            screenshot(page, theme, width, "card-mutex-feedback")
             page.evaluate("() => window.__notices = []")
             candidates[0].click()
             assert any("另一个摘录页面正在操作" in x for x in page.evaluate("window.__notices || []")), (
