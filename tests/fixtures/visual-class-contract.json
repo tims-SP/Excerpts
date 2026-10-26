@@ -152,6 +152,7 @@
     "ex-radius-option",
     "ex-radius-pill",
     "ex-radius-surface",
+    "ex-reason-only",
     "ex-recovery-action",
     "ex-recovery-content",
     "ex-recovery-copy",
@@ -249,6 +250,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "d53f70ea1bd25433a56f069aec3898b5e784fa3c",
-  "stylesheet_review": "Reviewed actual-bundle Chromium screenshots for the scoped blocked-card menu style at 320, 390, 768 and 1280 px in light and dark themes. Scrolled recovery menu and tag/calendar states were visually checked; no overlapping controls or horizontal overflow observed. Native Android/iOS verification remains outstanding."
+  "stylesheet_git_blob_sha": "a28234ec717908e00c69231b624aa5472520cdc8",
+  "stylesheet_review": "Reviewed the scoped reason-only menu styling and scroll-anchor behavior against real compiled Chromium screenshots (320, 390, 768, 1280 px; light/dark) from Screenshot QA run 40367100255. All 43 scenarios and 46 component checks passed (912 PNGs). Native Android/iOS keyboard and assistive-technology testing remain outstanding."
 }
