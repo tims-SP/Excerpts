@@ -7,6 +7,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
   private listModeDropdown: DropdownComponent | null = null;
   private listBatchDropdown: DropdownComponent | null = null;
   private homeButtons: ButtonComponent[] = [];
+  private busyHint: HTMLElement | null = null;
   syncBusy(): void {
     const busy = !this.plugin.canOpenHome();
     this.scopeToggle?.setDisabled(busy);
@@ -14,6 +15,7 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     this.listModeDropdown?.setDisabled(busy);
     this.listBatchDropdown?.setDisabled(busy);
     for (const button of this.homeButtons) button.setDisabled(busy);
+    if (this.busyHint) this.busyHint.hidden = !busy;
   }
   private canOpen(): boolean {
     if (this.plugin.canOpenHome()) return true;
@@ -30,9 +32,14 @@ export class ExcerptsSettingTab extends PluginSettingTab {
     this.listModeDropdown = null;
     this.listBatchDropdown = null;
     this.homeButtons = [];
+    this.busyHint = null;
     root.createEl("h2", { text: "摘录 · Excerpts" });
     root.createEl("p", { text: "首页.excerpts 是主入口；其他 .excerpts 文件可保存独立筛选，摘录内容仍是普通 Markdown。" });
     root.createEl("h3", { text: "首页入口" });
+    this.busyHint = root.createEl("p", { text:
+      "另一项摘录操作尚未完成。请先结束当前操作，再创建或打开摘录页。" });
+    this.busyHint.classList.add("ex-settings-busy-hint");
+    this.busyHint.hidden = true;
     let folder = "";
     new Setting(root).setName("创建首页文件")
       .setDesc("在 Vault 内指定文件夹，创建空白首页.excerpts。已有文件不会被覆盖。")
