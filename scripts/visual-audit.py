@@ -68,6 +68,7 @@ REQUIRED = {
     "folder-view": ".ex-folder-fixture .excerpts-root",
     "invalid-page": ".ex-page-hint:not([hidden])",
     "recovery-action": ".ex-page-hint .ex-recovery-action:not([hidden])",
+    "recovery-hint": ".ex-page-hint:not([hidden])",
     "scan-progress": ".ex-scan-progress:not([hidden])",
 }
 # Names deliberately identify states as well as components. New features should
@@ -77,7 +78,8 @@ SCENARIOS = [
     "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
-    "scan-blocked", "scan-error", "stale", "recovery-blocked", "recovery-stale", "scan-progress", "invalid"
+    "scan-blocked", "scan-error", "stale", "recovery-blocked", "recovery-stale",
+    "recovery-search-stale", "recovery-tag-stale", "recovery-selection-stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
 WIDTHS = (320, 390, 768, 1280)
@@ -281,8 +283,17 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-search-clear").is_visible(), (key,"filled search clear")
             page.wait_for_selector(".ex-empty", timeout=15000)
             screenshot(page, theme, width, "search-empty", "list-search", "empty-results")
-            page.locator(".ex-search-clear").click()
-            assert page.locator(".ex-search").input_value() == "", (key,"clear search value")
+            assert not page.locator(".ex-page-hint").is_visible(), (key,"normal search shows intrusive recovery hint")
+            page.evaluate("() => window.__pane.renderer.markStale()")
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "search-stale"
+            assert page.locator(".ex-recovery-action").is_visible()
+            screenshot(page, theme, width, "recovery-search-stale", "recovery-action", "list-search")
+            page.locator(".ex-recovery-action").click()
+            assert page.locator(".ex-search").input_value() == "", (key,"recovery did not clear search")
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
+            page.locator(".ex-recovery-action").click()
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
+            assert page.locator(".ex-page-hint").is_hidden(), (key,"recovered search hint lingered")
             assert page.locator(".ex-search-wrap").is_visible(), (key,"search remains expanded")
             page.locator(".ex-search").press("Escape")
             page.wait_for_selector(".ex-card .ex-section", timeout=15000)
@@ -412,6 +423,7 @@ with sync_playwright() as playwright:
             assert card.locator(".ex-tag-selected").is_visible(), (key,"selected preview")
             assert card.locator(".ex-tag-selected-chip").count() >= 1, (key,"preview content")
             assert card.locator(".ex-chips .ex-tag").count() == 0, (key,"old tags remain visible")
+            assert page.locator(".ex-page-hint").is_hidden(), (key,"normal tag edit shows intrusive recovery hint")
             screenshot(page, theme, width, "card-picker",
                        "card-tag-editor", "card-tag-search",
                        "card-tag-options", "card-tag-actions")
@@ -439,8 +451,17 @@ with sync_playwright() as playwright:
             assert "未保存" in card.locator(".ex-tag-editor-count").inner_text(), (key,"staged edit cue")
             screenshot(page, theme, width, "card-picker-changed",
                        "card-tag-editor", "card-tag-search", "card-tag-options")
-            card.locator(".ex-add-tag").click()
+            page.evaluate("() => window.__pane.renderer.markStale()")
+            assert card.locator(".ex-tag-done").is_disabled(), (key,"stale tag edit permits unsafe save")
+            assert card.locator(".ex-tag-cancel").is_enabled(), (key,"stale tag cancel locked")
+            assert card.locator(".ex-tag-edit-warning").is_visible()
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "tag-stale"
+            screenshot(page, theme, width, "recovery-tag-stale", "card-tag-editor", "recovery-hint")
+            card.locator(".ex-tag-cancel").click()
             assert card.locator(".ex-tag-editor").is_hidden(), (key,"cancel closes editor")
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
+            page.locator(".ex-recovery-action").click()
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
             card.locator(".ex-card-options").click()
             page.wait_for_selector(".menu button", timeout=8000)
             screenshot(page, theme, width, "card-menu", "list-menu")
@@ -454,13 +475,23 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-selection-toolbar").is_visible()
             page.locator(".ex-card").first.click(position={"x": 10, "y": 10})
             assert page.locator(".ex-card[aria-checked='true']").count() >= 1
+            assert page.locator(".ex-page-hint").is_hidden(), (key,"normal selection shows intrusive recovery hint")
             screenshot(page, theme, width, "selection",
                        "selection-toolbar", "selection-card", "selection-footer")
             page.locator(".ex-delete-selected").click()
             assert page.locator(".ex-delete-modal").is_visible()
             screenshot(page, theme, width, "bulk-delete", "delete-bulk-dialog")
             page.locator(".ex-delete-cancel").click()
+            page.evaluate("() => window.__pane.renderer.markStale()")
+            assert page.locator(".ex-selection-footer-count").inner_text() == "请退出选择后刷新"
+            assert page.locator(".ex-delete-selected").is_disabled()
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "selection-stale"
+            screenshot(page, theme, width, "recovery-selection-stale",
+                       "selection-footer", "selection-toolbar", "recovery-hint")
             page.locator(".ex-select-cancel").click()
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
+            page.locator(".ex-recovery-action").click()
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
 
             # Saving a filter is a separate native dialog, not part of the card.
             page.locator(".ex-filter-tags button").nth(1).click()
