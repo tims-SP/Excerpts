@@ -12,7 +12,7 @@ HTMLElement.prototype.createEl=function(tag,{text}={}){const el=document.createE
 class TAbstractFile {constructor(path){this.path=path;}}
 class TFile extends TAbstractFile {constructor(path){super(path);const leaf=path.split('/').pop();this.basename=leaf.replace(/\.[^.]+$/,'');this.extension=leaf.split('.').pop();this.stat={mtime:200,ctime:100,size:128};this.parent={path:path.split('/').slice(0,-1).join('/') || '/'};}}
 class TFolder extends TAbstractFile{}
-class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}load(){this.onload?.();}unload(){this.onunload?.();}}
+class MarkdownRenderChild {constructor(el){this.containerEl=el;this.children=[];}addChild(c){this.children.push(c);}removeChild(c){this.children=this.children.filter(x=>x!==c);}registerEvent(ref){return ref;}load(){this.onload?.();}unload(){this.onunload?.();}}
 class ItemView {constructor(){this.contentEl=document.createElement('div');}async setState(){}}
 class FileView extends ItemView {constructor(){super();this.file=null;}async openFile(f){this.file=f;await this.onLoadFile?.(f);}}
 class MarkdownView {constructor(){this.mode='preview';this.editor={cursor:null,scrolled:null,focused:false,lastLine(){return 0;},getLine(){return '';},setCursor(pos){this.cursor=pos;},scrollIntoView(range,center){this.scrolled={range,center};},focus(){this.focused=true;}};}getMode(){return this.mode;}}
@@ -817,6 +817,32 @@ test('empty tag rows never measure missing first pill or display +0 in narrow pa
   assert.equal(more.hidden,true);
   assert.equal(row.querySelectorAll('.ex-tag').length,0);
   assert.ok(row.querySelector('.ex-add-tag'));
+  await t.close();
+});
+
+test('native css-change reflows tag widths without relying on viewport resize',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
+  const lane=t.pane.contentEl.querySelector('.ex-card .ex-chips');
+  assert.equal(typeof t.workspaceEvents.get('css-change'),'function');
+  item.tags=['一','二','三','四','匹配'];
+  renderer.tagFilter='匹配';
+  renderer.renderTags(lane,item,false);
+  Object.defineProperty(lane,'clientWidth',{configurable:true,value:150});
+  let tagWidth=22;
+  lane.querySelectorAll('.ex-tag').forEach(el=>{
+    el.getBoundingClientRect=()=>({width:tagWidth});
+  });
+  lane.querySelector('.ex-add-tag').getBoundingClientRect=()=>({width:30});
+  const more=lane.querySelector('.ex-tag-overflow');
+  more.getBoundingClientRect=()=>({width:34});
+  renderer.reflowTagRow(lane);
+  const before=[...lane.querySelectorAll('.ex-tag')].filter(el=>el.hidden).length;
+  assert.ok(before<4);
+  tagWidth=90;
+  t.workspaceEvents.get('css-change')();
+  const after=[...lane.querySelectorAll('.ex-tag')].filter(el=>el.hidden).length;
+  assert.ok(after>before,'font and theme CSS width changes must recompute folding');
+  assert.equal(lane.querySelector('.ex-tag.ex-selected').hidden,false);
   await t.close();
 });
 
