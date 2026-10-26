@@ -49,6 +49,8 @@ the specific prerequisite and a direct **刷新摘录** action once the operatio
 permits it. An active search first exposes **清除搜索**; clearing never
 automatically starts a scan. Bulk selection, tag edits and work in another
 Excerpts view still block refresh until their owners finish or explicitly exit.
+The hint also explains tag-editing, bulk-selection and cross-page navigation
+guards while the underlying index is otherwise ready; it never bypasses them.
 The hint updates when the existing owner lock changes, without polling,
 replaying a refused operation or creating a second queue. Invalid views remain
 read-only, with instructions to copy unsaved drafts and reopen the original entry.
