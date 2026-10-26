@@ -268,26 +268,24 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         : this.workspace.kind === "folder"
           ? "文件夹位置已变化。如有未保存的草稿，请先复制，再从文件夹右键菜单重新打开。"
           : "页面位置已变化。如有未保存的草稿，请先复制，再从文件列表重新打开。");
-    if (this.deleteBusy) return info("deleting", "正在删除摘录", "删除完成后可继续操作。");
-    if (this.saveBusy) return info("saving", "正在保存摘录", "保存完成后可继续操作。");
-    if (this.pendingTags.size) return info("saving-tags", "正在保存标签", "请等待当前标签写入完成。");
-    if (this.selectionBusy) return info("selecting-busy", "正在处理批量选择", "完成后可继续操作。");
-    if (this.selectionMode === "deleting") return info("deleting", "正在删除摘录", "删除完成后可继续操作。");
+    if (this.deleteBusy) return null; // Delete modal already owns progress.
+    if (this.saveBusy) return null; // Composer already shows save progress.
+    if (this.pendingTags.size) return null; // Tag editor shows its pending write.
+    if (this.selectionBusy) return null; // Selection toolbar already shows progress.
+    if (this.selectionMode === "deleting") return null;
     if (this.selectionMode === "selecting" && this.scanStatus !== "done")
       return info("selection-stale", "当前选择已过期",
         "摘录列表已变化。请退出批量选择，再刷新索引。", "exit-selection", "退出选择");
     if (this.openTagEditors.size && this.scanStatus !== "done")
       return info("tag-stale", "标签编辑期间内容已变化",
         "请在卡片中取消标签编辑，然后刷新摘录。");
-    if (this.selectionMode === "selecting")
-      return info("selection-active", "正在批量选择", "完成或取消选择后可执行其他操作。");
-    if (this.openTagEditors.size)
-      return info("tag-active", "正在编辑卡片标签", "请先完成或取消卡片中的标签编辑。");
+    if (this.selectionMode === "selecting") return null; // Normal selection is not an exception.
+    if (this.openTagEditors.size) return null; // The inline editor already has exit controls.
     if (this.scanStatus === "scanning") return null; // Existing progress is sufficient.
     if (this.plugin.isNavigating()) return info("navigating", "正在打开摘录页", "请等待页面打开完成。");
     if (this.plugin.isBusy(this)) return info("other-busy", "另一个摘录页正在操作",
       "请等待其他摘录页完成操作，然后手动刷新；不会自动重试。");
-    if (!this.searchReady) return info("searching", "正在搜索摘录", "搜索完成后可继续操作。");
+    if (!this.searchReady) return null; // Search count already displays progress.
     if ((this.scanStatus === "stale" || this.scanStatus === "error") &&
       this.searchText && this.reason("refresh") !== null)
       return info("search-stale", "请先清除搜索条件",
