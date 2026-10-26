@@ -277,8 +277,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       return info("selection-stale", "当前选择已过期",
         "摘录列表已变化。请退出批量选择，再刷新索引。", "exit-selection", "退出选择");
     if (this.openTagEditors.size && this.scanStatus !== "done")
-      return info("tag-stale", "标签编辑期间内容已变化",
-        "请在卡片中取消标签编辑，然后刷新摘录。");
+      return null; // The active tag editor owns the explanation and cancel action.
     if (this.selectionMode === "selecting") return null; // Normal selection is not an exception.
     if (this.openTagEditors.size) return null; // The inline editor already has exit controls.
     if (this.scanStatus === "scanning") return null; // Existing progress is sufficient.
@@ -319,27 +318,33 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.pageHintEl.removeAttribute("data-state");
       return;
     }
-    this.pageHintEl.hidden = false;
-    this.pageHintEl.dataset.state = info.kind;
-    this.recoveryTitleEl.textContent = info.title;
-    this.recoveryDescriptionEl.textContent = info.description;
-    setIcon(this.recoveryIconEl, info.kind === "error" || info.kind === "invalid"
+    if (this.pageHintEl.hidden) this.pageHintEl.hidden = false;
+    if (this.pageHintEl.dataset.state !== info.kind) this.pageHintEl.dataset.state = info.kind;
+    if (this.recoveryTitleEl.textContent !== info.title) this.recoveryTitleEl.textContent = info.title;
+    if (this.recoveryDescriptionEl.textContent !== info.description)
+      this.recoveryDescriptionEl.textContent = info.description;
+    const icon = info.kind === "error" || info.kind === "invalid"
       ? "alert-circle" : info.kind === "stale" || info.kind === "search-stale"
-        ? "refresh-cw" : "info");
+        ? "refresh-cw" : "info";
+    if (this.recoveryIconEl.dataset.recoveryIcon !== icon) {
+      setIcon(this.recoveryIconEl, icon);
+      this.recoveryIconEl.dataset.recoveryIcon = icon;
+    }
     const actionable = info.action !== "none" &&
       (info.action !== "refresh" || this.reason("refresh") === null) &&
       (info.action !== "clear-search" || this.canClearSearch()) &&
       (info.action !== "exit-selection" ||
         (this.selectionMode === "selecting" && !this.selectionBusy));
-    this.recoveryActionButton.hidden = !actionable;
+    if (this.recoveryActionButton.hidden !== !actionable) this.recoveryActionButton.hidden = !actionable;
     if (actionable) {
-      this.recoveryActionButton.textContent = info.actionLabel ?? "";
+      const label = info.actionLabel ?? "";
+      if (this.recoveryActionButton.textContent !== label) this.recoveryActionButton.textContent = label;
       this.recoveryActionButton.disabled = false;
     }
   }
-  private runRecoveryAction(): void {
+  private runRecoveryAction(expected?: RecoveryAction): void {
     const info = this.getRecoveryInfo(); // Recheck on every click.
-    if (!info) return;
+    if (!info || (expected && info.action !== expected)) return;
     if (info.action === "refresh") this.requestRefresh(true);
     else if (info.action === "clear-search") this.clearSearchForRecovery();
     else if (info.action === "exit-selection" &&
@@ -399,6 +404,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       button.disabled = Boolean(this.reason("filter"));
     for (const el of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(
       ".ex-card .ex-card-options, .ex-card .ex-add-tag, .ex-card .ex-tag"))) {
+      const pageBlock = this.reason("page");
+      if (el.classList.contains("ex-card-options")) {
+        const safeExplanation = this.selectionMode === "normal" &&
+          !this.homeInvalid && !this.saveBusy && !this.deleteBusy &&
+          !this.pendingTags.size && !this.openTagEditors.size;
+        el.disabled = !safeExplanation && Boolean(pageBlock);
+        if (safeExplanation && pageBlock) {
+          el.setAttribute("aria-disabled", "true"); // Still clickable to announce why.
+          el.title = pageBlock;
+        } else {
+          el.removeAttribute("aria-disabled");
+          el.title = pageBlock ?? "卡片选项";
+        }
+        continue;
+      }
       const isTagFilter = el.classList.contains("ex-tag");
       const otherTagEditor = el.classList.contains("ex-add-tag") &&
         this.openTagEditors.size > 0 && !this.openTagEditors.has(el.closest<HTMLElement>(".ex-card")?.dataset.path ?? "");
@@ -418,8 +438,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const warning = editor.querySelector<HTMLElement>(".ex-tag-edit-warning");
       if (warning) {
         const blocked = this.reason("tag");
-        warning.hidden = !blocked;
-        warning.textContent = blocked ?? "";
+        const explanation = this.scanStatus !== "done"
+          ? "摘录内容已变化，请取消标签编辑后刷新。"
+          : (blocked ?? "");
+        if (warning.hidden !== !explanation) warning.hidden = !explanation;
+        if (warning.textContent !== explanation) warning.textContent = explanation;
       }
     }
     this.renderRecoveryHint();
@@ -1839,6 +1862,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     try { parsed = await this.repo.read(item.path); } catch { /* Deletion remains available if parsing fails. */ }
     if (this.disposed || !anchor.isConnected || !this.guard("page")) return;
     const menu = new Menu();
+    const recovery = this.getRecoveryInfo();
+    if (recovery?.action === "refresh" && this.reason("refresh") === null) {
+      menu.addItem(entry => entry.setTitle(recovery.actionLabel ?? "刷新摘录")
+        .setIcon("refresh-cw")
+        .onClick(() => this.runRecoveryAction("refresh")));
+      menu.addSeparator();
+    } else if (recovery?.action === "clear-search" && this.canClearSearch()) {
+      menu.addItem(entry => entry.setTitle("清除搜索").setIcon("search-x")
+        .onClick(() => this.runRecoveryAction("clear-search")));
+      menu.addSeparator();
+    }
     menu.addItem(entry => entry.setTitle("阅读原文").setIcon("book-open").onClick(() => {
       if (!this.guard("page")) return;
       void this.plugin.openMarkdownPreview(item.path).catch(notify);
@@ -2272,8 +2306,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     controls.append(cancel, done);
     const warning = node("p", "ex-tag-edit-warning");
     const blockedAtOpen = this.reason("tag");
-    warning.textContent = blockedAtOpen ?? "";
-    warning.hidden = !blockedAtOpen;
+    const initialWarning = this.scanStatus !== "done"
+      ? "摘录内容已变化，请取消标签编辑后刷新。" : (blockedAtOpen ?? "");
+    warning.textContent = initialWarning;
+    warning.hidden = !initialWarning;
     done.disabled = Boolean(blockedAtOpen) || this.scanStatus !== "done";
     const picker = new TagPicker({
       available: () => this.availableTags,
