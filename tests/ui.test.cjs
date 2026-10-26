@@ -298,6 +298,39 @@ test('stale and error statuses remain visible beyond the success timeout',async(
 });
 
 
+test('a ready view explains a global navigation guard instead of silently disabling controls',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  assert.equal(renderer.scanStatus,'done');
+  t.plugin.homeNavigationBusy=true;
+  t.plugin.notifyActivityChange();
+  const hint=root.querySelector('.ex-page-hint');
+  assert.equal(hint.hidden,false);
+  assert.match(hint.textContent,/正在打开摘录页/);
+  assert.equal(hint.querySelector('button').hidden,true);
+  assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
+  assert.equal(root.querySelector('button[aria-label="筛选标签"]').disabled,true);
+  t.plugin.homeNavigationBusy=false;
+  t.plugin.notifyActivityChange();
+  assert.equal(hint.hidden,true,'guard release restores the quiet page without a refresh');
+  await t.close();
+});
+
+test('active card tag editing shows an exit hint but does not close or discard the picker',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const card=root.querySelector('.ex-card');
+  clickByLabel(card,'添加标签');
+  assert.equal(renderer.openTagEditors.size,1);
+  const hint=root.querySelector('.ex-page-hint');
+  assert.equal(hint.hidden,false);
+  assert.match(hint.textContent,/完成或取消编辑/);
+  assert.equal(hint.querySelector('button').hidden,true);
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
+  clickByLabel(card,'取消标签编辑');
+  assert.equal(renderer.openTagEditors.size,0);
+  assert.equal(hint.hidden,true);
+  await t.close();
+});
+
 test('stale indexes expose a direct refresh action while preserving unsaved capture text',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const draft=root.querySelector('.ex-compose-text');
