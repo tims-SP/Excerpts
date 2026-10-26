@@ -314,6 +314,12 @@ with sync_playwright() as playwright:
                 key,"active tag is not prioritized")
             more = card.locator(".ex-tag-overflow")
             if width <= 390:
+                # New cards fold on the next animation frame; avoid checking
+                # the initial all-visible DOM before reflow has actually run.
+                page.wait_for_function("""() => {
+                  const bar=document.querySelector('.ex-card .ex-chips');
+                  return !!bar && !!bar.querySelector('.ex-tag-overflow:not([hidden])');
+                }""", timeout=5000)
                 assert more.is_visible(), (key,"narrow filtered card not folded")
             if more.is_visible():
                 hidden = card.locator(".ex-tag[hidden]").count()
