@@ -1053,3 +1053,10 @@
 .excerpts-root .ex-recovery-title { display:block; font-size:13px; font-weight:500; }
 .excerpts-root .ex-recovery-description { margin:2px 0 0; font-size:12px; line-height:1.5; color:var(--text-muted); }
 .excerpts-root button.ex-recovery-action { align-self:flex-end; min-height:32px; padding:4px 12px; border:1px solid var(--background-modifier-border); border-radius:8px; background:var(--background-primary); color:var(--text-normal); }
+
+.excerpts-root .ex-recovery-action[hidden], .excerpts-root .ex-tag-edit-warning[hidden], .ex-settings-root .ex-settings-busy-hint[hidden] {display:none !important;}
+.excerpts-root .ex-tag-edit-warning {margin:0;padding:8px;background:var(--background-secondary);color:var(--text-muted);border-radius:8px;font-size:12px;line-height:1.5;}
+.excerpts-root button.ex-tag-cancel {min-height:32px;color:var(--text-muted);background:transparent;}
+.ex-settings-root .ex-settings-busy-hint {padding:10px 12px;background:var(--background-secondary);color:var(--text-muted);font-size:12px;border-radius:8px;}
+@container (max-width:700px) {.excerpts-root .ex-page-hint {width:100%;margin-left:0;} .excerpts-root button.ex-recovery-action {min-height:44px;}}
+@media (pointer:coarse) {.excerpts-root button.ex-recovery-action,.excerpts-root button.ex-tag-cancel {min-height:44px;}}
