@@ -315,6 +315,20 @@ with sync_playwright() as playwright:
             assert cancel.get_attribute("aria-label") == "取消标签编辑", (theme,width,"footer cancel label")
             assert cancel.inner_text() == "取消", (theme,width,"footer cancel text")
             assert card.locator(".ex-tag-done").is_visible()
+            if width <= 390:
+                footer = card.locator(".ex-card-footer")
+                draft_input = card.locator(".ex-tag-custom")
+                footer.evaluate("el=>el.style.width='90px'")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                assert footer.evaluate("el=>el.classList.contains('ex-edit-compact')"), (
+                    theme,width,"editing controls not compact")
+                assert card.locator(".ex-card-actions").is_hidden(), (theme,width,"disabled More visible")
+                assert card.locator(".ex-add-tag").bounding_box()["width"] >= 44, (
+                    theme,width,"cancel target clipped")
+                assert draft_input.is_visible() and card.locator(".ex-tag-done").is_visible(), (
+                    theme,width,"draft editor controls missing")
+                footer.evaluate("el=>el.style.removeProperty('width')")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
             assert panel_box["y"] >= footer_box["y"] + footer_box["height"] - 1, (theme, width,"picker above footer")
             assert card.locator(".ex-tag-selected-chip").count() >= 1, (theme,width,"missing preview")
             assert not card.locator(".ex-chips .ex-tag").count(), (theme,width,"stale saved chips visible")
