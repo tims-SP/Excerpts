@@ -606,11 +606,18 @@ with sync_playwright() as playwright:
             assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") >= 300, (
                 key,"long list did not scroll")
             page.evaluate("() => window.__pane.renderer.markStale()")
-            buttons = page.locator(".ex-card-options").all()
-            accessible = [button for button in buttons if (
-                (rect := button.bounding_box()) and 0 <= rect["y"] <= 830 and rect["width"] > 0)]
-            assert accessible, (key,"no card menu at scroll position")
-            accessible[0].click()
+            # Query and click one currently mounted card in a single browser
+            # turn; the virtualizer is free to recycle its other row nodes.
+            assert page.evaluate("""() => {
+              const button = [...document.querySelectorAll('.ex-card-options')].find(el => {
+                const rect = el.getBoundingClientRect();
+                return el.isConnected && rect.width > 0 && rect.y >= 0 && rect.y <= 830;
+              });
+              if (!button || button.disabled) return false;
+              button.click();
+              return true;
+            }"""), (key,"no usable card menu at the current scroll position")
+            page.wait_for_selector(".menu button", timeout=8000)
             assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") >= 200, (
                 key,"opening a card menu reset scroll")
             assert page.locator(".menu button", has_text="刷新摘录").count() == 1, (
