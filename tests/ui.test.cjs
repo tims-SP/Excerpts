@@ -3918,3 +3918,43 @@ test('stale selection describes how to recover without losing count',async()=>{
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
   await t.close();
 });
+
+test('ordinary search, tag editing and bulk selection do not spawn recovery banners',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=[...t.plugin.rendered][0];
+  const hint=root.querySelector('.ex-page-hint');
+  assert.equal(hint.hidden,true);
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  assert.equal(r.openTagEditors.size,1);
+  assert.equal(hint.hidden,true,'tag edit has its own controls');
+  card.querySelector('.ex-tag-cancel').click();
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(x=>x.title==='批量选择').handler();
+  assert.equal(r.selectionMode,'selecting');
+  assert.equal(hint.hidden,true,'selection already has toolbar and footer');
+  root.querySelector('.ex-select-done').click();
+  clickByLabel(root,'搜索');
+  const search=root.querySelector('.ex-search');
+  search.value='测试标题';
+  search.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  assert.equal(hint.hidden,true,'search already has progress count');
+  await waitFor(()=>r.searchReady,'search finished');
+  assert.equal(hint.hidden,true);
+  await t.close();
+});
+
+test('an idle saved search on a blocked view allows manual scan without dropping query',async()=>{
+  const t=await fixture(),r=[...t.plugin.rendered][0],root=t.pane.contentEl;
+  r.scanStatus='blocked';
+  r.searchText='测试标题';
+  r.searchInput.value='测试标题';
+  r.renderScanStatus();
+  r.updateAvailability();
+  const hint=root.querySelector('.ex-page-hint');
+  assert.equal(hint.dataset.state,'blocked');
+  assert.equal(hint.querySelector('.ex-recovery-action').hidden,false);
+  hint.querySelector('.ex-recovery-action').click();
+  await waitFor(()=>r.scanStatus==='done' && r.searchReady,'persisted search scan');
+  assert.equal(r.searchText,'测试标题');
+  await t.close();
+});
