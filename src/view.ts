@@ -2197,6 +2197,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const compact = footer.clientWidth < required;
       const focusInsideActions = actions.contains(document.activeElement);
       footer.classList.toggle("ex-edit-compact", compact);
+      if (footer.clientWidth > 0 && footer.clientWidth < 44) {
+        if (footer.dataset.exNarrowWarning !== "shown") {
+          footer.dataset.exNarrowWarning = "shown";
+          new Notice("当前分栏过窄，请扩大后完成或取消标签编辑");
+        }
+      } else delete footer.dataset.exNarrowWarning;
       if (compact && focusInsideActions) cancel.focus();
       return;
     }
