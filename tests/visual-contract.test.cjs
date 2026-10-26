@@ -33,7 +33,7 @@ test('screenshot suite covers runtime states and records component crops for rev
   const suite = read('scripts/visual-audit.py');
   const workflow = read('.github/workflows/screenshot-qa.yml');
   const fixture = read('tests/fixtures/preview-template.html');
-  for (const name of ['page-header','composer','composer-tag-picker','calendar-panel','calendar-grid','calendar-back','card',
+  for (const name of ['page-header','composer','composer-tag-picker','calendar-panel','calendar-grid','calendar-back','calendar-warning','card',
                       'card-tag-editor','card-section-open','list-search','list-filter',
                       'list-menu','selection-toolbar','delete-single-dialog',
                       'delete-bulk-dialog','saved-filter-dialog','saved-filter-error',
