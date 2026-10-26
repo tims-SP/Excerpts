@@ -1062,7 +1062,7 @@
 @media (pointer:coarse) {.excerpts-root button.ex-recovery-action,.excerpts-root button.ex-tag-cancel {min-height:44px;}}
 
 /* A blocked card menu remains reachable only to explain the active operation lock. */
-.excerpts-root button.ex-card-options[aria-disabled="true"] {
+.excerpts-root button.ex-card-options[data-ex-reason-only="true"] {
   opacity: .72;
   color: var(--text-muted);
   cursor: help;
