@@ -340,6 +340,10 @@
   padding: 0 12px; white-space: nowrap; background: transparent;
   border-radius: var(--ex-radius-pill);
 }
+.excerpts-root .ex-filter-tags button.ex-active-filter {
+  flex: 0 0 auto; min-width: 0; max-width: min(200px, 100%);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
 .excerpts-root .ex-filter-tags button.ex-btn::before {
   content: ""; position: absolute; inset-inline: 0; top: 50%;
   height: 30px; transform: translateY(-50%); z-index: -1;
