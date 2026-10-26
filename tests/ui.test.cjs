@@ -952,7 +952,7 @@ test('expanded card tags automatically fold on unsafe geometry and repair focus'
     const collapse=row.querySelector('.ex-tag-collapse');
     collapse.focus();
     assert.equal(document.activeElement,collapse);
-    width=68;renderer.reflowTagRow(row);
+    width=78;renderer.reflowTagRow(row);
     assert.equal(row.classList.contains('ex-tags-expanded'),false);
     assert.equal(renderer.expandedTagRows.has(item.path),false);
     const more=row.querySelector('.ex-tag-overflow');
