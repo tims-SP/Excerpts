@@ -620,15 +620,23 @@ with sync_playwright() as playwright:
               if (!window.__plugin.tryAcquireScan(owner)) throw Error('mutex unavailable');
               window.__pane.renderer.syncControls();
             }""")
-            locked = page.locator(".ex-card-options").all()
-            candidates = [button for button in locked if (
-                (rect := button.bounding_box()) and 0 <= rect["y"] <= 830 and rect["width"] > 0)]
-            assert candidates, (key,"no card feedback control")
-            assert candidates[0].is_enabled()
-            assert candidates[0].get_attribute("aria-disabled") == "true"
+            # Inspect the currently mounted DOM within one JS evaluation:
+            # virtual rows may recycle between separate Playwright locators.
+            assert page.evaluate("""() => {
+              const buttons = [...document.querySelectorAll('.ex-card-options')];
+              const candidate = buttons.find(button => {
+                const rect = button.getBoundingClientRect();
+                return button.isConnected && rect.width > 0 && rect.y >= 0 && rect.y <= 830;
+              });
+              if (!candidate) return false;
+              window.__reviewMenuButton = candidate;
+              return !candidate.disabled && candidate.getAttribute('aria-disabled') === 'true';
+            }"""), (key,"locked card must expose reason without file operations")
             screenshot(page, theme, width, "card-mutex-feedback")
-            page.evaluate("() => window.__notices = []")
-            candidates[0].click()
+            page.evaluate("""() => {
+              window.__notices = [];
+              window.__reviewMenuButton.click();
+            }""")
             assert any("另一个摘录页面正在操作" in x for x in page.evaluate("window.__notices || []")), (
                 key,"blocked card did not explain the mutex")
             assert page.locator(".menu").count() == 0, (key,"blocked card exposed unsafe file actions")
