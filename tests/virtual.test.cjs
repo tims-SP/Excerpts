@@ -411,3 +411,79 @@ test('explicit result navigation targets result header instead of composer',()=>
   assert.equal(viewport.scrollTop,242);
   timeline.dispose();dom.window.close();
 });
+
+// Reusing identical rows must not trigger repeated expensive geometry reads.
+test('unchanged result commits reuse measured heights without rereading geometry',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:480});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  let reads=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:()=>{const el=document.createElement('article');
+      el.getBoundingClientRect=()=>{reads++;return {height:110,width:700,top:0};};return el;},
+    unmount:()=>{}
+  });
+  const rows=Array.from({length:10},(_,i)=>({
+    path:'n-'+i,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey:'one'
+  }));
+  timeline.setRows(rows,'keep');
+  const originalReads=reads;
+  for(let i=0;i<50;i++)timeline.setRows(rows,'keep');
+  assert.equal(reads,originalReads,'no new getBoundingClientRect calls for unchanged content and layout');
+  timeline.dispose();dom.window.close();
+});
+
+test('filter overlap leaves surviving native media nodes connected without moving them',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{const el=document.createElement('article');el.dataset.path=row.path;
+      if(row.path==='B')el.append(document.createElement('video'));
+      el.getBoundingClientRect=()=>({height:120,width:700,top:0});return el;},
+    unmount:()=>{}
+  });
+  const row=path=>({path,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:120,layoutKey:'one'});
+  timeline.setRows(['A','B','C'].map(row),'keep');
+  const media=host.querySelector('video'),body=media.parentElement;
+  const windowEl=host.querySelector('.ex-virtual-window');
+  const originalInsert=windowEl.insertBefore.bind(windowEl);
+  let displacedMedia=0;
+  windowEl.insertBefore=(element,before)=>{
+    if(element===body && element.isConnected)displacedMedia++;
+    return originalInsert(element,before);
+  };
+  timeline.setRows(['B','C','D'].map(row),'keep');
+  assert.equal(host.querySelector('video'),media);
+  assert.equal(media.isConnected,true);
+  assert.equal(displacedMedia,0,'unchanged media wrapper was never moved');
+  timeline.dispose();dom.window.close();
+});
+
+test('explicit clicked-card anchor takes precedence over viewport top and falls back to results',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,left:0,width:700,height:0});
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,resultsTop:()=>225,
+    mount:()=>{const el=document.createElement('article');
+      el.getBoundingClientRect=()=>({height:100,width:700,top:0});return el;},
+    unmount:()=>{}
+  });
+  const row=path=>({path,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey:'one'});
+  const rows=Array.from({length:20},(_,i)=>row('x'+i));
+  timeline.setRows(rows,'keep');
+  timeline.setRows(rows.slice(8),'anchor',{path:'x10',offset:75});
+  assert.equal(viewport.scrollTop,425,'clicked card x10 at index 2 must preserve its 75px inset');
+  timeline.setRows(rows.slice(0,5),'anchor',{path:'x10',offset:75});
+  assert.equal(viewport.scrollTop,225,'a removed interaction card returns to the result header');
+  timeline.dispose();dom.window.close();
+});

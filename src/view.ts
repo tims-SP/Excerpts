@@ -1861,7 +1861,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = this.queue.filter(task => task.path !== row.path);
     this.unmountMarkdown(row.path);
   }
-  private drawCards(policy: ScrollPolicy): void {
+  private drawCards(policy: ScrollPolicy, target?: { path: string; offset: number }): void {
     if (this.pageMode === "calendar") {
       // A hidden list has no reliable dimensions. Coalesce background changes rather
       // than unmounting the Markdown renderers or measuring zero-height rows.
@@ -1906,7 +1906,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
       }, { root, rootMargin: "350px 0px" });
     }
-    this.timeline?.setRows(this.timelineRows(visible), policy);
+    this.timeline?.setRows(this.timelineRows(visible), policy, target);
     if (!visible.length) {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
@@ -2297,6 +2297,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private syncCardFilterPresentation(mount: HTMLElement, item: CardIndex): void {
     if (this.openTagEditors.has(item.path)) return;
     const pills = Array.from(mount.querySelectorAll<HTMLButtonElement>(".ex-tag"));
+    const priorFocus = mount.contains(document.activeElement)
+      ? document.activeElement as HTMLButtonElement : null;
     const selected = this.tagFilter && item.tags.includes(this.tagFilter) ? this.tagFilter : "";
     for (const pill of pills) {
       const tag = pill.getAttribute("aria-label")?.slice("筛选标签：".length);
@@ -2325,6 +2327,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // while this retained card is connected, so the active tag is never hidden
     // until the next animation frame.
     this.reflowTagRow(mount);
+    if (priorFocus && priorFocus.isConnected && !priorFocus.hidden && !priorFocus.disabled &&
+        document.activeElement !== priorFocus) priorFocus.focus({ preventScroll: true });
+    else if (priorFocus && (priorFocus.hidden || !priorFocus.isConnected))
+      this.focusAvailableTagAction(mount, "overflow");
   }
   private renderTags(mount: HTMLElement, item: CardIndex, editorOpen = false): void {
     mount.replaceChildren();
@@ -2341,8 +2347,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!editorOpen) for (const tag of displayTags) {
       const pill = button("", () => {
         if (!this.guard("filter")) return;
+        const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
+        const origin = card?.getBoundingClientRect();
+        const viewportRect = viewport?.getBoundingClientRect();
+        const target = origin && viewportRect ? {path: item.path,
+          offset: origin.top - viewportRect.top} : undefined;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
-        this.renderTagsFilter(); this.drawCards("anchor");
+        this.renderTagsFilter(); this.drawCards("anchor", target);
       }, "ex-tag");
       pill.setAttribute("aria-label", "筛选标签：" + tag);
       pill.title = "#" + tag;

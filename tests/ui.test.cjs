@@ -322,6 +322,24 @@ test('a card filter toggles selected tag without recreating its chips or Markdow
   await t.close();
 });
 
+test('card filter passes the clicked-card position rather than an unrelated viewport row',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const host=root.closest('.excerpts-native-host');
+  const card=root.querySelector('.ex-card');
+  host.getBoundingClientRect=()=>({top:100,left:0,width:390,height:600});
+  card.getBoundingClientRect=()=>({top:245,left:0,bottom:500,width:300,height:255});
+  let captured;
+  const original=renderer.timeline.setRows.bind(renderer.timeline);
+  renderer.timeline.setRows=(rows,policy,target)=>{
+    captured={policy,target};
+    return original(rows,policy,target);
+  };
+  card.querySelector('.ex-tag').click();
+  assert.equal(captured.policy,'anchor');
+  assert.deepEqual(captured.target,{path:t.md.path,offset:145});
+  await t.close();
+});
+
 test('calendar dates expose exact counts and selection via keyboard',async()=>{
   const t=await fixture(),root=t.pane.contentEl;
   clickByLabel(root,'页面选项');Menu.last.items.find(i=>i.title==='摘录日历').handler();

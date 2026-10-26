@@ -82,11 +82,16 @@ export class VirtualTimeline {
     this.lastWidth = this.host.clientWidth;
   }
 
-  setRows(rows: readonly TimelineRow[], policy: ScrollPolicy): void {
+  setRows(rows: readonly TimelineRow[], policy: ScrollPolicy,
+    requestedAnchor?: { path: string; offset: number }): void {
     if (this.disposed) return;
     if (this.suspended) throw new Error("不能重绘隐藏的摘录列表");
     const previous = this.rows;
-    const anchor = policy === "anchor" ? this.captureAnchor() : null;
+    const anchor = policy === "anchor"
+      ? requestedAnchor
+        ? { ...requestedAnchor, index: previous.findIndex(row => row.path === requestedAnchor.path) }
+        : this.captureAnchor()
+      : null;
     const anchorTarget = anchor ? this.resolveAnchorTarget(anchor, previous, rows) : null;
     const priorScroll = this.viewport.scrollTop;
     const oldHeight = this.heights.total();
@@ -122,7 +127,11 @@ export class VirtualTimeline {
       element.dataset.virtualIndex = String(newIndex);
       this.mounted.set(newIndex!, element);
       this.options.update?.(next, newIndex!, element, oldRow);
-      const height = element.getBoundingClientRect().height;
+      // Completely unchanged rows already have a valid measurement; avoid a
+      // synchronous layout read on every filter or search result commit.
+      const cached = this.heightCache.get(oldRow.path);
+      const height = oldRow.layoutKey === next.layoutKey && cached?.layoutKey === next.layoutKey
+        ? cached.height : element.getBoundingClientRect().height;
       if (height > 0 && Number.isFinite(height)) this.recordMeasurement(newIndex!, height);
     }
     // Empty-state siblings from the previous result must not survive a new commit.
@@ -131,9 +140,10 @@ export class VirtualTimeline {
         child.remove();
     }
     this.updateSpacers();
-    if (policy === "top" || (policy === "anchor" && !rows.length)) {
+    if (policy === "top" || (policy === "anchor" && !rows.length && !requestedAnchor)) {
       this.viewport.scrollTop = 0;
-    } else if (policy === "results") {
+    } else if (policy === "results" ||
+      (policy === "anchor" && requestedAnchor && anchorTarget === null)) {
       this.viewport.scrollTop = Math.max(0, this.options.resultsTop?.() ?? 0);
     } else if (policy === "anchor" && anchor && anchorTarget !== null) {
       this.restoreAnchor(anchor, anchorTarget);
