@@ -77,6 +77,7 @@ SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
     "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
+    "card-recovery-menu-scrolled", "card-mutex-feedback", "calendar-stale-warning",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "recovery-blocked", "recovery-stale",
     "recovery-search-stale", "recovery-tag-stale", "recovery-selection-stale", "scan-progress", "invalid"
@@ -227,6 +228,17 @@ with sync_playwright() as playwright:
             assert page.locator(".excerpts-native-host").evaluate(
                 "el => el.scrollWidth <= el.clientWidth + 2"), ("page horizontal overflow", key)
             screenshot(page, theme, width, "calendar", *targets)
+            page.evaluate("""() => {
+              const r = window.__pane.renderer;
+              r.scanStatus = 'stale'; r.renderScanStatus();
+            }""")
+            assert "返回摘录列表后手动刷新" in page.locator(".ex-calendar-warning").inner_text()
+            assert page.locator(".ex-feed-view").is_hidden(), (key,"calendar recovery leaked feed action")
+            screenshot(page, theme, width, "calendar-stale-warning", "calendar-panel")
+            page.evaluate("""() => {
+              const r = window.__pane.renderer;
+              r.scanStatus = 'done'; r.renderScanStatus();
+            }""")
             active = ".ex-calendar-mobile" if width <= 768 else ".ex-calendar-layout"
             today = page.locator(active + " button.ex-calendar-day").last
             today.click()
@@ -455,8 +467,9 @@ with sync_playwright() as playwright:
             assert card.locator(".ex-tag-done").is_disabled(), (key,"stale tag edit permits unsafe save")
             assert card.locator(".ex-tag-cancel").is_enabled(), (key,"stale tag cancel locked")
             assert card.locator(".ex-tag-edit-warning").is_visible()
-            assert page.locator(".ex-page-hint").get_attribute("data-state") == "tag-stale"
-            screenshot(page, theme, width, "recovery-tag-stale", "card-tag-editor", "recovery-hint")
+            assert page.locator(".ex-page-hint").is_hidden(), (key,"duplicated stale tag warning")
+            assert "取消标签编辑后刷新" in card.locator(".ex-tag-edit-warning").inner_text()
+            screenshot(page, theme, width, "recovery-tag-stale", "card-tag-editor", "card-tag-actions")
             card.locator(".ex-tag-cancel").click()
             assert card.locator(".ex-tag-editor").is_hidden(), (key,"cancel closes editor")
             assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
@@ -566,6 +579,62 @@ with sync_playwright() as playwright:
               await window.__folderView.onClose();
               window.__folderView.contentEl.remove();
               document.getElementById('mount').hidden = false;
+            }""")
+
+            # A long real index must offer recovery at the current scroll position.
+            # Keep the same compiled bundle and virtualized list; do not fabricate cards.
+            page.evaluate("""() => {
+              for (let i = 0; i < 25; i++) {
+                add('摘录/滚动验收-' + i + '.md',
+                  '用于测试长列表中部的恢复入口和滚动位置。第 ' + i + ' 条。', [], i + 5);
+              }
+              const r = window.__pane.renderer;
+              r.searchText = ''; r.searchInput.value = '';
+              r.tagFilter = ''; r.matches = null;
+              window.__plugin.refreshViews(true);
+            }""")
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done' && window.__pane.renderer.items.length >= 28", timeout=15000)
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              host.style.height = '900px';
+              host.scrollTop = 520;
+            }""")
+            assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") >= 300, (
+                key,"long list did not scroll")
+            page.evaluate("() => window.__pane.renderer.markStale()")
+            buttons = page.locator(".ex-card-options").all()
+            accessible = [button for button in buttons if (
+                (rect := button.bounding_box()) and 0 <= rect["y"] <= 830 and rect["width"] > 0)]
+            assert accessible, (key,"no card menu at scroll position")
+            accessible[0].click()
+            assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") >= 200, (
+                key,"opening a card menu reset scroll")
+            assert page.locator(".menu button", has_text="刷新摘录").count() == 1, (
+                key,"manual refresh not offered inside scrolled card menu")
+            screenshot(page, theme, width, "card-recovery-menu-scrolled", "list-menu")
+            page.locator(".menu button", has_text="刷新摘录").click()
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
+            page.evaluate("""() => {
+              const owner = {};
+              window.__lockReviewOwner = owner;
+              if (!window.__plugin.tryAcquireScan(owner)) throw Error('mutex unavailable');
+              window.__pane.renderer.syncControls();
+            }""")
+            locked = page.locator(".ex-card-options").all()
+            candidates = [button for button in locked if (
+                (rect := button.bounding_box()) and 0 <= rect["y"] <= 830 and rect["width"] > 0)]
+            assert candidates, (key,"no card feedback control")
+            assert candidates[0].is_enabled()
+            assert candidates[0].get_attribute("aria-disabled") == "true"
+            screenshot(page, theme, width, "card-mutex-feedback", "card-footer")
+            page.evaluate("() => window.__notices = []")
+            candidates[0].click()
+            assert any("另一个摘录页面正在操作" in x for x in page.evaluate("window.__notices || []")), (
+                key,"blocked card did not explain the mutex")
+            assert page.locator(".menu").count() == 0, (key,"blocked card exposed unsafe file actions")
+            page.evaluate("""() => {
+              window.__plugin.releaseScan(window.__lockReviewOwner);
+              document.querySelector('.excerpts-native-host').style.removeProperty('height');
             }""")
 
             # The completed index is real; exercise its visual feedback separately.
