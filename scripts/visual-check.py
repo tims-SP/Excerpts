@@ -246,13 +246,17 @@ with sync_playwright() as playwright:
             # Verify the safe states, not merely DOM hidden flags at 320px.
             if width <= 390:
                 lane = card.locator(".ex-chips")
-                for lane_width, show_selected, show_more in [(80,False,True),(120,False,True),(160,True,True)]:
+                for lane_width in (80,120,160):
                     lane.evaluate("(el,w)=>{el.style.flex='0 0 '+w+'px';el.style.width=w+'px'}",lane_width)
                     page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
                     selected = card.locator(".ex-tag.ex-selected")
                     more = card.locator(".ex-tag-overflow")
-                    assert selected.is_visible() == show_selected, (theme,width,lane_width,"incorrect readable fallback")
-                    assert more.is_visible() == show_more, (theme,width,lane_width,"missing safe expander")
+                    add_width = card.locator(".ex-add-tag").bounding_box()["width"]
+                    more_width = more.bounding_box()["width"]
+                    readable = lane_width - add_width - more_width - 10 >= 40
+                    assert selected.is_visible() == readable, (
+                        theme,width,lane_width,add_width,more_width,"incorrect readable fallback")
+                    assert more.is_visible(), (theme,width,lane_width,"missing safe expander")
                     if selected.is_visible():
                         rect = selected.bounding_box()
                         assert rect["width"] >= 40, (theme,width,lane_width,"unreadable active chip")
