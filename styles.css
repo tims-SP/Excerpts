@@ -1045,3 +1045,11 @@
   .excerpts-root button.ex-calendar-back { width: 44px; height: 44px; }
   .excerpts-root .ex-calendar-title { font-size: 17px; }
 }
+
+.excerpts-root .ex-page-hint { display:flex; flex-direction:column; gap:8px; width:min(720px,calc(100% - 112px)); margin:0 0 12px 112px; padding:12px; background:var(--background-secondary); color:var(--text-normal); border-radius:12px; }
+.excerpts-root .ex-recovery-content { display:flex; gap:8px; align-items:flex-start; min-width:0; }
+.excerpts-root .ex-recovery-copy { flex:1; min-width:0; overflow-wrap:anywhere; }
+.excerpts-root .ex-recovery-icon { width:16px; height:16px; flex:0 0 16px; color:var(--text-muted); }
+.excerpts-root .ex-recovery-title { display:block; font-size:13px; font-weight:500; }
+.excerpts-root .ex-recovery-description { margin:2px 0 0; font-size:12px; line-height:1.5; color:var(--text-muted); }
+.excerpts-root button.ex-recovery-action { align-self:flex-end; min-height:32px; padding:4px 12px; border:1px solid var(--background-modifier-border); border-radius:8px; background:var(--background-primary); color:var(--text-normal); }
