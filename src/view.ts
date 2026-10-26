@@ -1421,6 +1421,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.tagBar.hidden) return;
     const all = button("全部", () => { if (!this.guard("filter")) return; this.tagFilter = ""; this.renderTagsFilter(); this.drawCards("top"); },
       this.tagFilter ? "ex-btn-quiet" : "ex-selected");
+    all.setAttribute("aria-pressed", String(!this.tagFilter));
     this.tagBar.append(all);
     // Keep the selected filter readable, including saved pages whose tag is
     // no longer present in the current index. Never mutate availableTags.
@@ -1436,6 +1437,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.tagFilter = this.tagFilter === tag ? "" : tag;
         this.renderTagsFilter(); this.drawCards("top");
       }, current ? "ex-selected" : "ex-btn-quiet");
+      chip.setAttribute("aria-pressed", String(current));
       if (current) {
         chip.classList.add("ex-active-filter");
         chip.title = "#" + tag;
@@ -2030,6 +2032,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.pendingTags.has(item.path)) return;
       if (this.openTagEditors.has(item.path)) this.closeTagEditor(item, card);
       else {
+        const footer = mount.closest<HTMLElement>(".ex-card-footer");
+        if (footer && footer.clientWidth > 0 && footer.clientWidth < 44) {
+          new Notice("当前分栏过窄，请扩大后再编辑标签");
+          return;
+        }
         if (this.openTagEditors.size && !this.openTagEditors.has(item.path)) {
           new Notice("请先完成或取消当前卡片的标签编辑");
           return;
@@ -2051,7 +2058,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toggle.title = editorOpen ? "取消标签编辑" : "添加标签";
     toggle.setAttribute("aria-expanded", String(editorOpen));
     mount.append(toggle);
-    if (!editorOpen) this.scheduleTagReflow(mount);
+    this.scheduleTagReflow(mount);
   }
 
   private closeTagEditor(item: CardIndex, card: HTMLElement | null | undefined): void {
@@ -2061,7 +2068,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const mount = card?.querySelector<HTMLElement>(".ex-chips");
     if (mount) {
       this.renderTags(mount, item, false);
-      mount.querySelector<HTMLButtonElement>(".ex-add-tag")?.focus();
+      this.reflowTagRow(mount);
+      const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
+      if (add && !add.hidden) add.focus();
+      else card?.querySelector<HTMLButtonElement>(".ex-card-options")?.focus();
     }
     this.updateAvailability();
   }
@@ -2171,9 +2181,64 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     for (const row of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-chips"))) this.reflowTagRow(row);
   }
   private reflowTagRow(mount: HTMLElement): void {
-    if (mount.classList.contains("ex-tags-editing")) return;
     const card = mount.closest<HTMLElement>(".ex-card");
-    if (!card || this.expandedTagRows.has(card.dataset.path ?? "")) return;
+    if (!card) return;
+    const footer = mount.closest<HTMLElement>(".ex-card-footer");
+    if (mount.classList.contains("ex-tags-editing")) {
+      if (!footer) return;
+      const cancel = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
+      const actions = footer.querySelector<HTMLElement>(".ex-card-actions");
+      if (!cancel || !actions) return;
+      // Measure the natural label with the normal footer; the compact state
+      // hides only the disabled More action and the redundant "取消" text.
+      footer.classList.remove("ex-edit-compact");
+      const required = cancel.getBoundingClientRect().width +
+        actions.getBoundingClientRect().width + 8;
+      const compact = footer.clientWidth < required;
+      const focusInsideActions = actions.contains(document.activeElement);
+      footer.classList.toggle("ex-edit-compact", compact);
+      if (footer.clientWidth > 0 && footer.clientWidth < 44) {
+        if (footer.dataset.exNarrowWarning !== "shown") {
+          footer.dataset.exNarrowWarning = "shown";
+          new Notice("当前分栏过窄，请扩大后完成或取消标签编辑");
+        }
+      } else delete footer.dataset.exNarrowWarning;
+      if (compact && focusInsideActions) cancel.focus();
+      return;
+    }
+    footer?.classList.remove("ex-edit-compact");
+    if (this.expandedTagRows.has(card.dataset.path ?? "")) {
+      const collapse = mount.querySelector<HTMLButtonElement>(".ex-tag-collapse");
+      const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
+      if (!collapse || !add || !mount.clientWidth) return;
+      const bounds = mount.getBoundingClientRect();
+      const controls = Array.from(mount.querySelectorAll<HTMLButtonElement>(
+        ".ex-tag, .ex-tag-collapse, .ex-add-tag"));
+      const unsafe = controls.some(control => {
+        const rect = control.getBoundingClientRect();
+        return rect.width > mount.clientWidth + 1 ||
+          (Number.isFinite(rect.left) && Number.isFinite(bounds.left) &&
+            rect.left < bounds.left - 1) ||
+          (Number.isFinite(rect.right) && Number.isFinite(bounds.right) &&
+            rect.right > bounds.right + 1);
+      });
+      if (!unsafe) return;
+      const hadFocus = mount.contains(document.activeElement);
+      const path = card.dataset.path ?? "";
+      this.expandedTagRows.delete(path);
+      const item = this.itemByPath.get(path);
+      if (!item) return;
+      this.renderTags(mount, item, false);
+      this.reflowTagRow(mount);
+      if (hadFocus) {
+        const more = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
+        const addButton = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
+        if (more && !more.hidden) more.focus();
+        else if (addButton && !addButton.hidden) addButton.focus();
+        else card.querySelector<HTMLButtonElement>(".ex-card-options")?.focus();
+      }
+      return;
+    }
     const pills = Array.from(mount.querySelectorAll<HTMLButtonElement>(".ex-tag"));
     const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
     const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");

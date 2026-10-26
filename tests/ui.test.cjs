@@ -930,6 +930,89 @@ test('narrow folded tag rows decline unreadable pills and refuse unsafe expander
   await t.close();
 });
 
+test('expanded card tags automatically fold on unsafe geometry and repair focus',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
+  item.tags=['文学','历史','哲学','电影','艺术'];
+  const card=t.pane.contentEl.querySelector('.ex-card'),row=card.querySelector('.ex-chips');
+  let width=180;
+  Object.defineProperty(row,'clientWidth',{configurable:true,get(){return width}});
+  row.getBoundingClientRect=()=>({left:0,right:width,width});
+  const original=HTMLElement.prototype.getBoundingClientRect;
+  HTMLElement.prototype.getBoundingClientRect=function(){
+    if(this.classList?.contains('ex-tag-collapse'))return {left:0,right:80,width:80};
+    if(this.classList?.contains('ex-add-tag'))return {left:0,right:36,width:36};
+    if(this.classList?.contains('ex-tag'))return {left:0,right:60,width:60};
+    if(this.classList?.contains('ex-tag-overflow'))return {left:0,right:36,width:36};
+    return original.call(this);
+  };
+  try {
+    renderer.renderTags(row,item,false);renderer.reflowTagRow(row);
+    row.querySelector('.ex-tag-overflow').click();
+    assert.ok(row.classList.contains('ex-tags-expanded'));
+    const collapse=row.querySelector('.ex-tag-collapse');
+    collapse.focus();
+    assert.equal(document.activeElement,collapse);
+    width=78;renderer.reflowTagRow(row);
+    assert.equal(row.classList.contains('ex-tags-expanded'),false);
+    assert.equal(renderer.expandedTagRows.has(item.path),false);
+    const more=row.querySelector('.ex-tag-overflow');
+    assert.equal(more.hidden,false,'folded +N must be preserved');
+    assert.equal(document.activeElement,more,'focus follows removed collapse control');
+    width=180;renderer.reflowTagRow(row);
+    assert.equal(row.classList.contains('ex-tags-expanded'),false,'resizing back must not auto-expand');
+    await t.close();
+  } finally { HTMLElement.prototype.getBoundingClientRect=original; }
+});
+
+test('narrow card tag editing retains staged data, accessible cancel and complete controls',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,card=t.pane.contentEl.querySelector('.ex-card');
+  const footer=card.querySelector('.ex-card-footer');
+  let width=200;
+  Object.defineProperty(footer,'clientWidth',{configurable:true,get(){return width}});
+  card.querySelector('.ex-add-tag').click();
+  const input=card.querySelector('.ex-tag-custom');
+  input.value='未提交草稿';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  const choice=[...card.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent.includes('创建 #未提交草稿'));
+  assert.ok(choice);choice.click();
+  const cancel=card.querySelector('.ex-add-tag');
+  const actions=card.querySelector('.ex-card-actions');
+  cancel.getBoundingClientRect=()=>({width:76});
+  actions.getBoundingClientRect=()=>({width:44});
+  renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.equal(footer.classList.contains('ex-edit-compact'),false);
+  width=84;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.equal(footer.classList.contains('ex-edit-compact'),true);
+  assert.equal(cancel.getAttribute('aria-label'),'取消标签编辑');
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2 · 未保存');
+  assert.equal(card.querySelector('.ex-tag-custom'),input);
+  assert.equal(card.querySelector('.ex-tag-done').disabled,false);
+  assert.equal(t.getTagWrites(),0);
+  width=30;Notice.last=null;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.match(Notice.last,/扩大后完成或取消标签编辑/);
+  assert.equal(footer.dataset.exNarrowWarning,'shown');
+  assert.equal(card.querySelector('.ex-tag-editor-count').textContent,'已选 2 · 未保存');
+  Notice.last=null;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.equal(Notice.last,null,'repeated measurements do not spam warnings');
+  width=220;renderer.reflowTagRow(card.querySelector('.ex-chips'));
+  assert.equal(footer.dataset.exNarrowWarning,undefined);
+  assert.equal(footer.classList.contains('ex-edit-compact'),false);
+  cancel.click();
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(t.getTagWrites(),0,'resizing an edit never commits drafts');
+  await t.close();
+});
+
+test('impossibly narrow card refuses starting an edit before draft state is created',async()=>{
+  const t=await fixture(),card=t.pane.contentEl.querySelector('.ex-card');
+  const footer=card.querySelector('.ex-card-footer');
+  Object.defineProperty(footer,'clientWidth',{configurable:true,value:30});
+  card.querySelector('.ex-add-tag').click();
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(t.pane.renderer.openTagEditors.size,0);
+  assert.match(Notice.last,/分栏过窄/);
+  await t.close();
+});
+
 test('active toolbar tag stays in the first eight even when its source index is later or missing',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
   const tags=['a','b','c','d','e','f','g','h','i','j'];
@@ -937,7 +1020,10 @@ test('active toolbar tag stays in the first eight even when its source index is 
   renderer.filterOpen=true;
   renderer.tagFilter='j';
   renderer.renderTagsFilter();
+  assert.equal(root.querySelector('.ex-filter-tags button').getAttribute('aria-pressed'),'false');
   let buttons=[...root.querySelectorAll('.ex-filter-tags button')];
+  assert.equal(buttons[1].getAttribute('aria-pressed'),'true');
+  assert.equal(buttons[2].getAttribute('aria-pressed'),'false');
   assert.equal(buttons[1].textContent,'#j');
   assert.equal(buttons[1].classList.contains('ex-selected'),true);
   assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
@@ -950,6 +1036,8 @@ test('active toolbar tag stays in the first eight even when its source index is 
   assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
   renderer.tagFilter='';
   renderer.renderTagsFilter();
+  assert.equal(root.querySelector('.ex-filter-tags button').getAttribute('aria-pressed'),'true');
+  assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].getAttribute('aria-pressed'),'false');
   assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].textContent,'#a');
   await t.close();
 });
