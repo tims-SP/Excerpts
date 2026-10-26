@@ -2210,8 +2210,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scheduleTagReflow(mount);
   }
 
-  private closeTagEditor(item: CardIndex, card: HTMLElement | null | undefined): void {
-    if (!this.canCancelTagEdit(item.path)) return;
+  private closeTagEditor(item: CardIndex, card: HTMLElement | null | undefined,
+    persisted = false): void {
+    if (!persisted && !this.canCancelTagEdit(item.path)) return;
     this.openTagEditors.delete(item.path);
     const editor = card?.querySelector<HTMLElement>(".ex-tag-editor");
     if (editor) { editor.hidden = true; editor.replaceChildren(); }
@@ -2308,7 +2309,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           this.workspace, targetFile);
         item.frontmatterTags = [...selected];
         item.tags = [...new Set([...selected, ...item.inlineTags])];
-        this.closeTagEditor(item, card);
+        this.closeTagEditor(item, card, true);
         this.rebuildAvailableTags();
         this.showSuggestions(); this.renderTagsFilter();
         this.markStale(item.path);
