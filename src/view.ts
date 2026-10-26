@@ -122,6 +122,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private expandedBodies = new Set<string>();
   private expandedTagRows = new Set<string>();
   private tagResizeObserver: ResizeObserver | null = null;
+  private typographySignature = "";
   private reflowCaptureTags: () => void = () => {};
   private openTagEditors = new Set<string>();
   private pendingTags = new Set<string>();
@@ -151,6 +152,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   onload(): void {
     this.build();
+    this.typographySignature = this.readTypographySignature();
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
     if (!viewport) throw new Error("缺少摘录页面滚动容器");
     this.timeline = new VirtualTimeline(this.listEl, viewport, {
@@ -161,11 +163,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动"),
       resizeRows: () => this.timelineRows(this.visibleItems())
     });
-    // A theme/font change can alter chip widths without resizing the feed.
-    // Reuse the existing visible-row layout function rather than observing
-    // every card or invalidating the virtual timeline.
+    // CSS changes can alter chip widths. Invalidate measured row heights only
+    // when computed typography changes; color-only themes keep their cache.
     this.registerEvent(this.plugin.app.workspace.on("css-change", () => {
       if (this.disposed || this.pageMode !== "feed") return;
+      this.checkTypographyChange();
       this.reflowVisibleTags();
       this.scheduleActiveFilterVisibility();
     }));
@@ -1012,6 +1014,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (viewport) viewport.scrollTop = restore ? this.feedScrollTop : 0;
     this.timeline?.setSuspended(false);
     this.timeline?.resize(); // Width may have changed while the feed was hidden.
+    this.checkTypographyChange(); // The font may also have changed while hidden.
     this.reflowVisibleTags();
     this.reflowCaptureTags();
     for (const update of this.previewUpdates.values()) update();
@@ -2181,6 +2184,23 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (inlineInfo) editor.append(inlineInfo);
     editor.append(controls);
     picker.focus();
+  }
+  /** Read actual excerpt font metrics without keeping another DOM observer. */
+  private readTypographySignature(): string {
+    const sample = node("span", "ex-quote");
+    sample.style.cssText = "position:absolute;visibility:hidden;pointer-events:none";
+    this.feedEl.append(sample);
+    try {
+      const computed = sample.ownerDocument.defaultView?.getComputedStyle(sample);
+      return [computed?.fontFamily, computed?.fontSize, computed?.lineHeight,
+        computed?.letterSpacing].join("\u001f");
+    } finally { sample.remove(); }
+  }
+  private checkTypographyChange(): void {
+    const next = this.readTypographySignature();
+    if (next === this.typographySignature) return;
+    this.typographySignature = next;
+    this.timeline?.invalidateTextMetrics();
   }
   private scheduleTagReflow(mount: HTMLElement): void {
     const work = () => { if (!this.disposed && mount.isConnected) this.reflowTagRow(mount); };

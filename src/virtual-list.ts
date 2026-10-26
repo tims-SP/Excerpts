@@ -129,7 +129,18 @@ export class VirtualTimeline {
     const refreshed = this.options.resizeRows?.();
     if (refreshed && refreshed.length === this.rows.length &&
         refreshed.every((row, index) => row.path === this.rows[index].path)) this.rows = refreshed;
-    this.heightCache.clear(); // Width changes invalidate line wrapping and media dimensions.
+    this.resetMeasuredHeights(anchor);
+  }
+
+  /** Only call when typography affecting row geometry actually changes. */
+  invalidateTextMetrics(): void {
+    if (this.disposed || this.suspended || !this.host.clientWidth) return;
+    this.resetMeasuredHeights(this.captureAnchor());
+  }
+
+  /** Share the existing width-change anchor-preserving invalidation path. */
+  private resetMeasuredHeights(anchor: ScrollAnchor | null): void {
+    this.heightCache.clear();
     this.mountedHeights.clear();
     this.mountedHeightSum = 0;
     this.heights = new HeightIndex(this.rows.map(row => row.estimatedHeight));
