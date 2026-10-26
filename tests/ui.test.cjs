@@ -805,6 +805,85 @@ test('one and twenty tag folded cards retain selected visibility and exact +N',a
   await t.close();
 });
 
+test('empty tag rows never measure missing first pill or display +0 in narrow panes',async()=>{
+  const t=await fixture(true),renderer=t.pane.renderer;
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  const row=card.querySelector('.ex-chips');
+  Object.defineProperty(row,'clientWidth',{configurable:true,value:30});
+  row.querySelector('.ex-add-tag').getBoundingClientRect=()=>({width:56});
+  const more=row.querySelector('.ex-tag-overflow');
+  more.getBoundingClientRect=()=>({width:38});
+  assert.doesNotThrow(()=>renderer.reflowTagRow(row));
+  assert.equal(more.hidden,true);
+  assert.equal(row.querySelectorAll('.ex-tag').length,0);
+  assert.ok(row.querySelector('.ex-add-tag'));
+  await t.close();
+});
+
+test('narrow folded tag rows decline unreadable pills and refuse unsafe expanders',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
+  const row=t.pane.contentEl.querySelector('.ex-card .ex-chips');
+  const all=['甲','乙','丙','丁','筛选'];
+  item.tags=[...all];
+  renderer.tagFilter='筛选';
+  let width=80;
+  Object.defineProperty(row,'clientWidth',{configurable:true,get(){return width;}});
+  const measure=()=>{
+    row.querySelectorAll('.ex-tag').forEach(el=>{el.getBoundingClientRect=()=>({width:65})});
+    row.querySelector('.ex-add-tag').getBoundingClientRect=()=>({width:36});
+    row.querySelector('.ex-tag-overflow').getBoundingClientRect=()=>({width:39});
+  };
+  renderer.renderTags(row,item,false);measure();
+  for(const [containerWidth,visibleSelected,visibleMore] of [
+    [60,false,false],[80,false,true],[120,false,true],[160,true,true]]) {
+    width=containerWidth;
+    assert.doesNotThrow(()=>renderer.reflowTagRow(row));
+    const selected=row.querySelector('.ex-tag.ex-selected'),more=row.querySelector('.ex-tag-overflow');
+    assert.equal(selected.hidden,!visibleSelected,'selected readability at '+width);
+    assert.equal(more.hidden,!visibleMore,'expander fit at '+width);
+    if(visibleSelected)assert.ok(!selected.style.maxWidth||parseFloat(selected.style.maxWidth)>=40);
+    if(visibleMore) {
+      const hidden=[...row.querySelectorAll('.ex-tag')].filter(x=>x.hidden).length;
+      assert.equal(more.textContent,'+'+hidden);
+    }
+  }
+  item.tags=['筛选'];
+  renderer.renderTags(row,item,false);measure();
+  width=120;renderer.reflowTagRow(row);
+  assert.equal(row.querySelector('.ex-tag').hidden,false);
+  assert.equal(row.querySelector('.ex-tag-overflow').hidden,true,'one legible tag needs no +N');
+  width=80;renderer.reflowTagRow(row);
+  assert.equal(row.querySelector('.ex-tag').hidden,true,'unreadable single tag safely hidden');
+  assert.equal(row.querySelector('.ex-tag-overflow').textContent,'+1');
+  row.querySelector('.ex-tag-overflow').click();
+  assert.equal(row.querySelector('.ex-tag').hidden,false,'one hidden tag can still be expanded');
+  await t.close();
+});
+
+test('active toolbar tag stays in the first eight even when its source index is later or missing',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
+  const tags=['a','b','c','d','e','f','g','h','i','j'];
+  renderer.availableTags=[...tags];
+  renderer.filterOpen=true;
+  renderer.tagFilter='j';
+  renderer.renderTagsFilter();
+  let buttons=[...root.querySelectorAll('.ex-filter-tags button')];
+  assert.equal(buttons[1].textContent,'#j');
+  assert.equal(buttons[1].classList.contains('ex-selected'),true);
+  assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
+  assert.match(buttons.at(-1).textContent,/更多标签 · 2/);
+  renderer.tagFilter='archived-only';
+  renderer.renderTagsFilter();
+  buttons=[...root.querySelectorAll('.ex-filter-tags button')];
+  assert.equal(buttons[1].textContent,'#archived-only');
+  assert.equal(buttons[1].classList.contains('ex-selected'),true);
+  assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
+  renderer.tagFilter='';
+  renderer.renderTagsFilter();
+  assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].textContent,'#a');
+  await t.close();
+});
+
 test('staged tag preview replaces saved chips, preserves the search input and cancels without writing',async()=>{
   const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
   const mount=card.querySelector('.ex-chips');
@@ -1208,6 +1287,22 @@ test('save current filter creates a reusable .excerpts file without replacing th
   assert.equal(t.plugin.settings.defaultHome,t.home.path);
   assert.equal(t.leaf.lastFile,saved.file);
   assert.equal(document.querySelector('.ex-save-page-modal'),null);
+  await t.close();
+});
+
+test('saved filtered page pins its active tag above the ordinary filter shortlist at first render',async()=>{
+  const t=await fixture();
+  const saved=await t.plugin.createSavedPage(t.home.path,'固定过滤',{tag:'哲学',query:''});
+  await t.pane.openFile(saved);
+  await waitFor(()=>t.pane.contentEl.querySelectorAll('.ex-card').length===1);
+  const r=t.pane.renderer;
+  r.availableTags=['a','b','c','d','e','f','g','h','i','哲学'];
+  r.renderTagsFilter();
+  const root=t.pane.contentEl;
+  const pills=[...root.querySelectorAll('.ex-filter-tags button')];
+  assert.equal(pills[1].textContent,'#哲学');
+  assert.equal(pills[1].classList.contains('ex-selected'),true);
+  assert.equal(root.querySelector('.ex-card .ex-tag.ex-selected').textContent,'#哲学');
   await t.close();
 });
 
