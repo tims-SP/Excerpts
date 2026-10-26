@@ -73,7 +73,7 @@ REQUIRED = {
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
-    "filter", "page-menu", "card-filtered-tag", "section-open", "card-picker", "card-picker-changed", "card-menu",
+    "filter", "page-menu", "card-filtered-tag", "card-filter-extreme", "section-open", "card-picker", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
@@ -319,6 +319,18 @@ with sync_playwright() as playwright:
                 hidden = card.locator(".ex-tag[hidden]").count()
                 assert hidden and more.inner_text() == "+" + str(hidden), (key,"filtered overflow count")
             screenshot(page, theme, width, "card-filtered-tag", "card-tags", "card-footer")
+            if width <= 390:
+                lane = card.locator(".ex-chips")
+                lane.evaluate("(el)=>{el.style.flex='0 0 80px';el.style.width='80px'}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                assert not card.locator(".ex-tag.ex-selected").is_visible(), (key,"80px should safely fold active chip")
+                assert card.locator(".ex-tag-overflow").is_visible(), (key,"80px must retain +N")
+                assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text()=="#读书笔记", (
+                    key,"fallback must retain top filter state")
+                screenshot(page, theme, width, "card-filter-extreme", "card-tags", "card-footer")
+                lane.evaluate("(el)=>{el.style.removeProperty('flex');el.style.removeProperty('width')}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                active = card.locator(".ex-tag.ex-selected")
             active.click()
             card = page.locator(".ex-card").first
             assert card.locator(".ex-tag").first.inner_text() == "#生活", (key,"source order restored")
