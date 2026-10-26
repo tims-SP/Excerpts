@@ -519,6 +519,13 @@
 }
 .excerpts-root .ex-chips.ex-tags-expanded { flex-wrap: wrap; overflow: visible; }
 .excerpts-root .ex-chips.ex-tags-editing { flex-wrap: nowrap; overflow: visible; }
+/* Narrow edit mode keeps the existing cancel control without squeezing its target. */
+.excerpts-root .ex-card-footer.ex-edit-compact .ex-card-actions,
+.excerpts-root .ex-card-footer.ex-edit-compact .ex-card-tag-toggle-text { display: none; }
+.excerpts-root .ex-card-footer.ex-edit-compact button.ex-add-tag.ex-is-cancelling {
+  min-width: 44px; min-height: 44px; padding: 0;
+  justify-content: center;
+}
 .excerpts-root .ex-chips .ex-btn[hidden] { display: none !important; }
 .excerpts-root button.ex-tag {
   position: relative; isolation: isolate; flex: 0 0 auto;
