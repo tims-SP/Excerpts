@@ -1067,3 +1067,7 @@
   color: var(--text-muted);
   cursor: help;
 }
+
+/* VirtualTimeline already compensates changes above the viewport. Letting
+   native scroll anchoring run as well doubles that compensation in Chromium. */
+.excerpts-native-host { overflow-anchor: none; }
