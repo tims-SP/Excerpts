@@ -864,6 +864,32 @@ test('the current top filter is scrolled into view horizontally without page scr
   await t.close();
 });
 
+test('font metric changes invalidate virtual heights but color-only css-change keeps cache',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer;
+  const timeline=renderer.timeline;
+  const real=window.getComputedStyle.bind(window);
+  const old=window.getComputedStyle;
+  let font='16px',family='Original Font',changes=0;
+  const originalInvalidate=timeline.invalidateTextMetrics.bind(timeline);
+  timeline.invalidateTextMetrics=()=>{changes++;originalInvalidate();};
+  window.getComputedStyle=(element,...rest)=>element.classList?.contains('ex-quote')
+    ? {fontFamily:family,fontSize:font,lineHeight:'1.72',letterSpacing:'normal'}
+    : real(element,...rest);
+  try {
+    renderer.typographySignature=renderer.readTypographySignature();
+    const onCssChange=t.workspaceEvents.get('css-change');
+    assert.equal(typeof onCssChange,'function');
+    onCssChange();assert.equal(changes,0,'identical typography must retain cached row heights');
+    font='27px';onCssChange();assert.equal(changes,1,'font size change invalidates once');
+    onCssChange();assert.equal(changes,1,'color-only css-change does not flush row heights');
+    family='Other Font';onCssChange();assert.equal(changes,2,'font family change invalidates');
+    font='16px';onCssChange();assert.equal(changes,3,'restoring font size invalidates again');
+  } finally {
+    window.getComputedStyle=old;
+    await t.close();
+  }
+});
+
 test('native css-change reflows tag widths without relying on viewport resize',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,item=renderer.items[0];
   const lane=t.pane.contentEl.querySelector('.ex-card .ex-chips');
