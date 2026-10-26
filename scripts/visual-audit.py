@@ -73,7 +73,7 @@ REQUIRED = {
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
-    "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-picker", "card-picker-changed", "card-menu",
+    "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
@@ -380,6 +380,27 @@ with sync_playwright() as playwright:
             card.locator(".ex-group-trigger").first.click()
             assert card.locator(".ex-group-body:not([hidden])").count() == 1
             screenshot(page, theme, width, "section-open", "card-section-open")
+            if width <= 390:
+                # Expand first and then shrink: expanded rows must not bypass
+                # the existing narrow fold and should restore a safe focus.
+                lane = card.locator(".ex-chips")
+                lane.evaluate("(el)=>{el.style.flex='0 0 130px';el.style.width='130px'}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                overflow = card.locator(".ex-tag-overflow")
+                assert overflow.is_visible(), (key,"no overflow for expanded-shrink test")
+                overflow.click()
+                assert lane.evaluate("el=>el.classList.contains('ex-tags-expanded')")
+                card.locator(".ex-tag-collapse").focus()
+                lane.evaluate("(el)=>{el.style.flex='0 0 22px';el.style.width='22px'}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                assert not lane.evaluate("el=>el.classList.contains('ex-tags-expanded')"), (
+                    key,"unsafe expanded lane did not auto-fold")
+                assert card.locator(".ex-card-options").is_visible(), (key,"card More inaccessible")
+                assert card.locator(".ex-card-options").evaluate("el=>document.activeElement===el"), (
+                    key,"collapsed focus not restored to an available control")
+                screenshot(page, theme, width, "card-expanded-narrow", "card-tags", "card-footer")
+                lane.evaluate("(el)=>{el.style.removeProperty('flex');el.style.removeProperty('width')}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
             card.locator(".ex-add-tag").click()
             assert card.locator(".ex-tag-editor").is_visible()
             tag_box = card.locator(".ex-tag-editor").bounding_box()
@@ -393,6 +414,25 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "card-picker",
                        "card-tag-editor", "card-tag-search",
                        "card-tag-options", "card-tag-actions")
+            if width <= 390:
+                footer = card.locator(".ex-card-footer")
+                initial_preview = card.locator(".ex-tag-editor-count").inner_text()
+                footer.evaluate("(el)=>{el.style.width='90px'}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                assert footer.evaluate("el=>el.classList.contains('ex-edit-compact')"), (
+                    key,"editing footer not safely compacted")
+                assert card.locator(".ex-card-actions").is_hidden(), (key,"disabled More remains visible")
+                cancel = card.locator(".ex-add-tag")
+                assert cancel.bounding_box()["width"] >= 44, (key,"cancel hit target too narrow")
+                assert cancel.is_visible() and card.locator(".ex-tag-done").is_visible(), (
+                    key,"edit exit or completion unavailable")
+                assert card.locator(".ex-tag-editor-count").inner_text() == initial_preview, (
+                    key,"resize unexpectedly changed draft")
+                screenshot(page, theme, width, "card-edit-compact", "card-footer", "card-tag-editor")
+                footer.evaluate("(el)=>{el.style.removeProperty('width')}")
+                page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
+                assert not footer.evaluate("el=>el.classList.contains('ex-edit-compact')"), (
+                    key,"editing layout failed to restore")
             choice = card.locator(".ex-tag-choice:not([disabled])").first
             choice.click()
             assert "未保存" in card.locator(".ex-tag-editor-count").inner_text(), (key,"staged edit cue")
