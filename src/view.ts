@@ -89,6 +89,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scanCompletionTimer: ReturnType<typeof setTimeout> | null = null;
   private scanStatusEl!: HTMLElement;
   private pageHintEl!: HTMLElement;
+  private pageHintTextEl!: HTMLSpanElement;
+  private pageHintActionEl!: HTMLButtonElement;
   private scanTextEl!: HTMLElement;
   private scanIconEl!: HTMLElement;
   private scanProgressEl!: HTMLElement;
@@ -302,6 +304,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       el.disabled = otherTagEditor || Boolean(this.reason(isTagFilter ? "filter" :
         el.classList.contains("ex-add-tag") ? "tag" : "page"));
     }
+    this.refreshRecoveryHint();
     if (broadcast) this.plugin.notifyActivityChange(this);
   }
   /** Register the exact path before vault.create can emit a create event. */
@@ -476,21 +479,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.scanStatusEl.dataset.state = status;
     this.calendarView?.setStatus(this.calendarStatus());
     this.scanTextEl.textContent = labels[status];
-    const hint = this.homeInvalid
-      ? this.homeInvalidCause === "configuration"
-        ? "筛选配置已变化，当前页面无法继续操作。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
-        : this.workspace.kind === "folder"
-          ? "文件夹摘录视图已失效。如有未保存的草稿，请先复制，再从文件夹右键菜单重新打开摘录。"
-          : "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
-      : this.scanStatus === "blocked"
-        ? "因其他摘录页正在操作，本页未扫描。待操作结束后，请从页面选项手动刷新。"
-        : "";
-    this.scanStatusEl.title = hint;
-    if (this.pageHintEl) {
-      this.pageHintEl.textContent = hint;
-      this.pageHintEl.dataset.state = status;
-      this.pageHintEl.hidden = !hint;
-    }
+    this.refreshRecoveryHint();
     setIcon(this.scanIconEl, status === "scanning" ? "loader-circle" :
       status === "done" ? "check" : status === "stale" ? "refresh-cw" :
       status === "error" || status === "invalid" ? "alert-circle" :
@@ -500,6 +489,56 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.scanProgressEl.setAttribute("aria-valuenow", String(this.scanDone));
       this.scanProgressEl.setAttribute("aria-valuemax", String(this.scanTotal));
       this.scanFillEl.style.width = (this.scanTotal ? this.scanDone / this.scanTotal * 100 : 0) + "%";
+    }
+  }
+  /**
+   * Keep a visible recovery path beside the existing scan state. This is a
+   * presentation of the authoritative operation guard, never a second lock.
+   */
+  private refreshRecoveryHint(): void {
+    if (!this.pageHintEl || !this.pageHintTextEl || !this.pageHintActionEl) return;
+    const status = this.homeInvalid ? "invalid" : this.scanStatus;
+    let message = "";
+    let action: "refresh" | "clear-search" | null = null;
+    if (status === "invalid") {
+      message = this.homeInvalidCause === "configuration"
+        ? "筛选配置已变化，当前页面无法继续操作。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。"
+        : this.workspace.kind === "folder"
+          ? "文件夹摘录视图已失效。如有未保存的草稿，请先复制，再从文件夹右键菜单重新打开摘录。"
+          : "当前页面已失效。如有未保存的草稿，请先复制，再从文件列表重新打开摘录页。";
+    } else if (status === "blocked" || status === "stale" || status === "error") {
+      message = status === "blocked"
+        ? "因其他摘录页正在操作，本页未扫描。待操作结束后，请手动刷新。"
+        : status === "stale"
+          ? "摘录内容已变化，索引需要手动刷新。"
+          : "扫描失败，索引可能不是最新。请检查后重试。";
+      const blocker = this.reason("refresh");
+      if (!blocker) {
+        action = "refresh";
+      } else if (this.searchText && this.canClearSearch() &&
+          (blocker === "请先清除搜索条件，再进行此操作" ||
+           blocker === "正在搜索，请先清除搜索条件")) {
+        message += " 请先清除搜索条件。";
+        action = "clear-search";
+      } else if (!(status === "blocked" && blocker.includes("另一个摘录页面"))) {
+        message += " " + blocker + (blocker.endsWith("。") ? "" : "。");
+      }
+    } else if (status === "done") {
+      // A valid index can still be temporarily guarded by another operation.
+      if (this.plugin.isBusy(this)) message = "另一个摘录页面正在操作，请在该操作完成后继续。";
+      else if (this.plugin.isNavigating()) message = "正在打开摘录页，请完成后再进行其他操作。";
+      else if (this.pendingTags.size) message = "正在保存标签，完成后可继续筛选与刷新。";
+      else if (this.openTagEditors.size) message = "正在编辑卡片标签，请先完成或取消编辑，再使用筛选与刷新。";
+      else if (this.selectionMode === "selecting") message = "正在批量选择，请先点击「完成」或「取消」，再使用其他操作。";
+    }
+    this.scanStatusEl.title = message;
+    if (this.pageHintTextEl.textContent !== message) this.pageHintTextEl.textContent = message;
+    this.pageHintEl.dataset.state = status;
+    this.pageHintEl.hidden = !message;
+    this.pageHintActionEl.hidden = action === null;
+    if (action) {
+      this.pageHintActionEl.dataset.action = action;
+      this.pageHintActionEl.textContent = action === "refresh" ? "刷新摘录" : "清除搜索";
     }
   }
   private announceScan(message: string): void {
@@ -533,6 +572,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     header.append(this.scanStatusEl, this.scanAnnouncementEl);
     this.pageHintEl = node("p", "ex-page-hint");
     this.pageHintEl.setAttribute("role", "status");
+    this.pageHintTextEl = node("span");
+    this.pageHintActionEl = button("刷新摘录", () => {
+      if (this.pageHintActionEl.dataset.action === "clear-search") {
+        if (!this.canClearSearch()) {
+          new Notice(this.reason("refresh") ?? "当前无法清除搜索");
+          return;
+        }
+        this.searchText = "";
+        this.searchInput.value = "";
+        this.scheduleSearch();
+        return;
+      }
+      this.requestRefresh(true);
+    }, "ex-btn-quiet");
+    this.pageHintActionEl.hidden = true;
+    this.pageHintEl.append(this.pageHintTextEl, this.pageHintActionEl);
     root.append(header, this.pageHintEl);
     this.renderScanStatus();
 

@@ -44,6 +44,17 @@ launch an automatic scan. Search runs against the full committed index in cancel
 normalized text reuse has bounded memory. Selection and deletion use the full filtered path
 snapshot, not the virtualized DOM. Editing and destructive-operation guards remain authoritative.
 
+When indexing is blocked, stale or failed, the existing page-status hint presents
+the specific prerequisite and a direct **刷新摘录** action once the operation guard
+permits it. An active search first exposes **清除搜索**; clearing never
+automatically starts a scan. Bulk selection, tag edits and work in another
+Excerpts view still block refresh until their owners finish or explicitly exit.
+The hint also explains tag-editing, bulk-selection and cross-page navigation
+guards while the underlying index is otherwise ready; it never bypasses them.
+The hint updates when the existing owner lock changes, without polling,
+replaying a refused operation or creating a second queue. Invalid views remain
+read-only, with instructions to copy unsaved drafts and reopen the original entry.
+
 ## Verification
 
 `npm run verify` runs unit/UI checks, builds the plugin, smoke-checks the output and verifies
