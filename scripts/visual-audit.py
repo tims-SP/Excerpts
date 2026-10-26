@@ -78,7 +78,7 @@ SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
     "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
-    "card-recovery-menu-scrolled", "card-mutex-feedback", "calendar-stale-warning",
+    "card-recovery-menu-scrolled", "card-recovery-clear-scrolled", "card-mutex-feedback", "calendar-stale-warning",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "recovery-blocked", "recovery-stale",
     "recovery-search-stale", "recovery-tag-stale", "recovery-selection-stale", "scan-progress", "invalid"
@@ -648,7 +648,11 @@ with sync_playwright() as playwright:
               });
               if (!candidate) return false;
               window.__reviewMenuButton = candidate;
-              return !candidate.disabled && candidate.getAttribute('aria-disabled') === 'true';
+              return !candidate.disabled &&
+                candidate.dataset.exReasonOnly === 'true' &&
+                !candidate.hasAttribute('aria-disabled') &&
+                !candidate.hasAttribute('aria-haspopup') &&
+                candidate.getAttribute('aria-label').includes('查看操作受限原因');
             }"""), (key,"locked card must expose reason without file operations")
             screenshot(page, theme, width, "card-mutex-feedback")
             page.evaluate("""() => {
@@ -660,6 +664,32 @@ with sync_playwright() as playwright:
             assert page.locator(".menu").count() == 0, (key,"blocked card exposed unsafe file actions")
             page.evaluate("""() => {
               window.__plugin.releaseScan(window.__lockReviewOwner);
+              const r = window.__pane.renderer;
+              // Trigger a real committed search while keeping the large index.
+              r.searchText = '滚动验收';
+              r.searchInput.value = r.searchText;
+              r.scheduleSearch('results');
+            }""")
+            page.wait_for_function("""() => {
+              const r = window.__pane.renderer;
+              return r.searchReady && r.matches && r.matches.size >= 25;
+            }""", timeout=15000)
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              host.scrollTop = 460;
+              window.__pane.renderer.markStale();
+            }""")
+            before_clear = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
+            assert before_clear >= 300, (key,"cannot review a mid-list search recovery")
+            page.evaluate("() => window.__pane.renderer.clearSearchForRecovery()")
+            after_clear = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
+            assert abs(after_clear - before_clear) <= 2, (
+                key,"clearing a stale search changed the browsing position", before_clear, after_clear)
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
+            screenshot(page, theme, width, "card-recovery-clear-scrolled", "recovery-hint")
+            page.locator(".ex-recovery-action").click()
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
+            page.evaluate("""() => {
               document.querySelector('.excerpts-native-host').style.removeProperty('height');
             }""")
 
