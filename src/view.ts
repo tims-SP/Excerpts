@@ -523,6 +523,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       } else if (!(status === "blocked" && blocker.includes("另一个摘录页面"))) {
         message += " " + blocker + (blocker.endsWith("。") ? "" : "。");
       }
+    } else if (status === "done") {
+      // A valid index can still be temporarily guarded by another operation.
+      if (this.plugin.isBusy(this)) message = "另一个摘录页面正在操作，请在该操作完成后继续。";
+      else if (this.plugin.isNavigating()) message = "正在打开摘录页，请完成后再进行其他操作。";
+      else if (this.pendingTags.size) message = "正在保存标签，完成后可继续筛选与刷新。";
+      else if (this.openTagEditors.size) message = "正在编辑卡片标签，请先完成或取消编辑，再使用筛选与刷新。";
+      else if (this.selectionMode === "selecting") message = "正在批量选择，请先点击「完成」或「取消」，再使用其他操作。";
     }
     this.scanStatusEl.title = message;
     if (this.pageHintTextEl.textContent !== message) this.pageHintTextEl.textContent = message;
