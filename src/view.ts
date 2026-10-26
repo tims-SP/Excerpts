@@ -1440,6 +1440,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         chip.classList.add("ex-active-filter");
         chip.title = "#" + tag;
         chip.setAttribute("aria-label", "当前筛选标签：" + tag);
+        chip.replaceChildren(node("span", "ex-active-filter-label", "#" + tag));
       }
       this.tagBar.append(chip);
     }
