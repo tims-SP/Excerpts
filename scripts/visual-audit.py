@@ -343,6 +343,8 @@ with sync_playwright() as playwright:
                   return r.left>=b.left-1 && r.right<=b.right+1;
                 }""", timeout=4000)
                 assert long_active.get_attribute("title").startswith("#超长筛选标签")
+                assert long_active.evaluate("el=>getComputedStyle(el).textAlign") == "left", (
+                    key,"long active filter must show the tag prefix instead of clipping its start")
                 assert long_active.evaluate("el=>el.getBoundingClientRect().width<=Math.min(200,el.parentElement.clientWidth)+1"), (key,"long filter escapes strip")
                 screenshot(page, theme, width, "filter-long-selected", "list-filter")
                 page.evaluate("""() => {const r=window.__pane.renderer;r.tagFilter="读书笔记";r.renderTagsFilter()}""")
