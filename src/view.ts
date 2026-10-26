@@ -1950,13 +1950,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     mount.classList.toggle("ex-tags-empty", !item.tags.length);
     mount.classList.toggle("ex-tags-editing", editorOpen);
     mount.classList.toggle("ex-tags-expanded", !editorOpen && this.expandedTagRows.has(item.path));
-    if (!editorOpen) for (const tag of item.tags) {
+    // The active filter must be visible even when a card's remaining tags
+    // are collapsed behind +N. Only the display order changes, never item.tags.
+    const displayTags = !editorOpen && this.tagFilter && item.tags.includes(this.tagFilter)
+      ? [this.tagFilter, ...item.tags.filter(tag => tag !== this.tagFilter)]
+      : item.tags;
+    if (!editorOpen) for (const tag of displayTags) {
       const pill = button("", () => {
         if (!this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
         this.renderTagsFilter(); this.drawCards("top");
       }, "ex-tag");
       pill.setAttribute("aria-label", "筛选标签：" + tag);
+      pill.title = "#" + tag;
       pill.replaceChildren(node("span", "ex-tag-label", "#" + tag));
       pill.setAttribute("aria-pressed", String(this.tagFilter === tag));
       if (this.tagFilter === tag) pill.classList.add("ex-selected");
@@ -2130,26 +2136,52 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const overflow = mount.querySelector<HTMLButtonElement>(".ex-tag-overflow");
     const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
     if (!overflow || !add || !mount.clientWidth) return;
-    pills.forEach(pill => { pill.hidden = false; });
+    pills.forEach(pill => {
+      pill.hidden = false;
+      pill.style.removeProperty("max-width");
+    });
     overflow.hidden = true;
     const width = mount.clientWidth;
     const gap = 5;
     const addWidth = add.getBoundingClientRect().width;
-    let used = addWidth;
+    const pillWidths = pills.map(pill => pill.getBoundingClientRect().width);
+    const fullWidth = addWidth + pillWidths.reduce((total, value) => total + value, 0)
+      + gap * pills.length;
+    if (fullWidth <= width) return;
+    // A lone long label has no hidden siblings and needs no +N button.
+    if (pills.length === 1) {
+      pills[0].style.maxWidth = Math.max(1, width - addWidth - gap) + "px";
+      return;
+    }
+
+    // Measure an actual +N control rather than assuming its width is 38px.
+    // +total is an upper bound for the glyph width of the final hidden count.
+    overflow.textContent = "+" + pills.length;
+    overflow.hidden = false;
+    const overflowWidth = overflow.getBoundingClientRect().width;
+    let used = addWidth + gap + overflowWidth;
     let count = 0;
-    for (let i = 0; i < pills.length; i++) {
-      const pillWidth = Math.min(pills[i].getBoundingClientRect().width, width);
-      const reserve = i < pills.length - 1 ? 38 : 0;
-      if (used + gap + pillWidth + (reserve ? gap + reserve : 0) > width) break;
-      used += gap + pillWidth;
+    for (let i = 0; i < pills.length - 1; i++) {
+      const candidate = used + gap + pillWidths[i];
+      if (candidate > width) break;
+      used = candidate;
       count++;
+    }
+    // The selected tag is the first pill after renderTags priority ordering.
+    // Constrain only that pill when its full name does not fit in the remaining
+    // space, preserving +N and the add action at normal usable pane widths.
+    if (!count && pills[0].classList.contains("ex-selected")) {
+      const available = width - addWidth - overflowWidth - gap * 2;
+      if (available > 0) {
+        pills[0].style.maxWidth = available + "px";
+        count = 1;
+      }
     }
     for (let i = count; i < pills.length; i++) pills[i].hidden = true;
     if (count < pills.length) {
       overflow.textContent = "+" + (pills.length - count);
       overflow.setAttribute("aria-label", "展开剩余 " + (pills.length - count) + " 个标签");
-      overflow.hidden = false;
-    }
+    } else overflow.hidden = true;
   }
 
 

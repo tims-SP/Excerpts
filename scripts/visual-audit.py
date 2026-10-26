@@ -73,7 +73,7 @@ REQUIRED = {
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
     "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
-    "filter", "page-menu", "section-open", "card-picker", "card-picker-changed", "card-menu",
+    "filter", "page-menu", "card-filtered-tag", "section-open", "card-picker", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
@@ -293,7 +293,35 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "page-menu", "list-menu")
             page.locator(".menu").evaluate("(el) => el.remove()")
 
+            filter_choice = page.locator('.ex-filter-tags button', has_text="#读书笔记")
+            if filter_choice.count():
+                filter_choice.first.click()
+            else:
+                page.locator('.ex-filter-tags button', has_text="更多标签").click()
+                page.locator('.menu button', has_text="#读书笔记").first.click()
             card = page.locator(".ex-card").first
+            # Selecting from +N leaves this row expanded. Explicitly fold it
+            # before checking the bug the user reported.
+            collapse = card.locator(".ex-tag-collapse")
+            if collapse.count() and collapse.is_visible():
+                collapse.click()
+            assert not card.locator(".ex-chips").evaluate("el => el.classList.contains('ex-tags-expanded')"), (
+                key,"filtered row must be folded")
+            active = card.locator(".ex-tag.ex-selected")
+            assert active.is_visible(), (key,"filtered label was hidden behind +N")
+            assert active.inner_text() == "#读书笔记", (key,"filtered active text")
+            assert card.locator(".ex-chips .ex-tag").first.get_attribute("aria-pressed") == "true", (
+                key,"active tag is not prioritized")
+            more = card.locator(".ex-tag-overflow")
+            if width <= 390:
+                assert more.is_visible(), (key,"narrow filtered card not folded")
+            if more.is_visible():
+                hidden = card.locator(".ex-tag[hidden]").count()
+                assert hidden and more.inner_text() == "+" + str(hidden), (key,"filtered overflow count")
+            screenshot(page, theme, width, "card-filtered-tag", "card-tags", "card-footer")
+            active.click()
+            card = page.locator(".ex-card").first
+            assert card.locator(".ex-tag").first.inner_text() == "#生活", (key,"source order restored")
             card.locator(".ex-group-trigger").first.click()
             assert card.locator(".ex-group-body:not([hidden])").count() == 1
             screenshot(page, theme, width, "section-open", "card-section-open")
