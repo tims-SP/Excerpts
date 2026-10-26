@@ -2344,7 +2344,7 @@ test('opening another excerpt page during scanning requires explicit manual refr
   assert.equal(root.querySelector('.ex-scan-text').textContent,'未扫描 · 请手动刷新');
   assert.match(root.querySelector('.ex-page-hint').textContent,/其他摘录页.*手动刷新/);
   assert.equal(root.querySelector('.ex-page-hint').hidden,false);
-  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'blocked');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'other-busy');
   assert.equal(root.querySelector('.ex-search').disabled,true);
   assert.equal(root.querySelector('.ex-compose-actions .ex-btn-primary').disabled,true);
   assert.equal(scans,1,'the second initial scan is rejected, never queued');
@@ -2353,6 +2353,7 @@ test('opening another excerpt page during scanning requires explicit manual refr
   await waitFor(()=>first.scanStatus==='done','first scan completes');
   assert.equal(scans,1,'finishing another page never replays a blocked scan');
   assert.equal(second.scanStatus,'blocked','the refusal and manual guidance persist');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'blocked','lock release exposes manual refresh');
 
   clickByLabel(root,'页面选项');
   const refresh=Menu.last.items.find(item=>item.title==='刷新摘录');

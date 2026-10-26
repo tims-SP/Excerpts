@@ -67,6 +67,7 @@ REQUIRED = {
     "settings": ".ex-settings-fixture",
     "folder-view": ".ex-folder-fixture .excerpts-root",
     "invalid-page": ".ex-page-hint:not([hidden])",
+    "recovery-action": ".ex-page-hint .ex-recovery-action:not([hidden])",
     "scan-progress": ".ex-scan-progress:not([hidden])",
 }
 # Names deliberately identify states as well as components. New features should
@@ -76,7 +77,7 @@ SCENARIOS = [
     "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "saved-filter-error", "settings", "folder", "scan-complete",
-    "scan-blocked", "scan-error", "stale", "scan-progress", "invalid"
+    "scan-blocked", "scan-error", "stale", "recovery-blocked", "recovery-stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
 WIDTHS = (320, 390, 768, 1280)
@@ -559,6 +560,8 @@ with sync_playwright() as playwright:
             }""")
             assert page.locator(".ex-scan-status").is_visible()
             screenshot(page, theme, width, "scan-blocked", "scan-status")
+            assert page.locator(".ex-recovery-action").is_visible()
+            screenshot(page, theme, width, "recovery-blocked", "recovery-action")
             page.evaluate("""() => {
               const renderer = window.__pane.renderer;
               renderer.scanStatus = 'error';
@@ -574,6 +577,8 @@ with sync_playwright() as playwright:
             }""")
             assert page.locator(".ex-scan-status").get_attribute("data-state") == "stale"
             screenshot(page, theme, width, "stale", "scan-status")
+            assert page.locator(".ex-page-hint").is_visible()
+            screenshot(page, theme, width, "recovery-stale", "recovery-action")
             page.evaluate("""() => {
               const r = window.__pane.renderer;
               r.scanStatus = 'scanning';
