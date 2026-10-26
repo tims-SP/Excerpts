@@ -260,8 +260,7 @@ test('measured heights survive unchanged list rebuilds but invalidate on layout 
   assert.equal(calls,beforeCalls,'scroll batch getter never forces a layout read');
   beforeMount.length=0;
   timeline.setRows(rows,'keep');
-  assert.equal(beforeMount[0],180,'rebuild uses the existing measured height before mounting');
-  beforeMount.length=0;
+  assert.equal(beforeMount.length,0,'unchanged rows keep their mounted Markdown DOM');
   timeline.setRows(rows.map(row=>({...row,layoutKey:'v2'})),'keep');
   assert.equal(beforeMount[0],100,'layout changes invalidate old heights');
   timeline.dispose();dom.window.close();
@@ -329,5 +328,66 @@ test('suspension blocks hidden row replacement and width cache catches up after 
   assert.equal(timeline.lastWidth,856,'resumed layout must use the new width');
   assert.equal(unmounts,0);
   assert.equal(mounts,priorMounts);
+  timeline.dispose();dom.window.close();
+});
+
+
+test('filter result overlap retains card DOM and reindexes date rows',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  let mounts=0,updated=0;const unmounted=[];
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{
+      mounts++;const el=document.createElement('article');el.dataset.path=row.path;
+      el.getBoundingClientRect=()=>({height:100,width:700});return el;},
+    unmount:row=>unmounted.push(row.path),
+    update:()=>{updated++;}
+  });
+  const row=(path,layoutKey='same',contentKey='v1')=>({
+    path,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey,contentKey
+  });
+  timeline.setRows(['A','B','C'].map(path=>row(path)),'keep');
+  const b=host.querySelector('[data-path="B"]'),c=host.querySelector('[data-path="C"]');
+  timeline.setRows([row('B','day-shift'),row('C'),row('D')],'keep');
+  assert.equal(host.querySelector('[data-path="B"]'),b);
+  assert.equal(host.querySelector('[data-path="C"]'),c);
+  assert.deepEqual([...host.querySelectorAll('[data-path]')].map(el=>el.dataset.path),['B','C','D']);
+  assert.deepEqual(unmounted,['A']);
+  assert.equal(mounts,4);
+  assert.ok(updated>=2);
+  timeline.setRows([row('B','day-shift'),row('C','same','v2'),row('D')],'keep');
+  assert.notEqual(host.querySelector('[data-path="C"]'),c,'changed content gets a new renderer');
+  assert.deepEqual(unmounted,['A','C']);
+  timeline.dispose();dom.window.close();
+});
+
+test('fifty identical list commits do not remount Markdown cards',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  let mounts=0,unmounts=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{
+      mounts++;const el=document.createElement('article');el.dataset.path=row.path;
+      el.getBoundingClientRect=()=>({height:100,width:700});return el;},
+    unmount:()=>{unmounts++;}
+  });
+  const rows=Array.from({length:8},(_,i)=>({
+    path:'p-'+i,firstOfDay:false,dayTitle:'',daySubtitle:'',
+    estimatedHeight:100,layoutKey:'v1'
+  }));
+  timeline.setRows(rows,'keep');
+  const el=host.querySelector('[data-path="p-0"]'),initial=mounts;
+  for(let n=0;n<50;n++)timeline.setRows(rows,'keep');
+  assert.equal(mounts,initial);
+  assert.equal(unmounts,0);
+  assert.equal(host.querySelector('[data-path="p-0"]'),el);
   timeline.dispose();dom.window.close();
 });

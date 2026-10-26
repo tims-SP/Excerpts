@@ -14,12 +14,15 @@ export interface TimelineRow {
   estimatedHeight: number;
   /** Invalidate measured heights whenever content, grouping or card layout changes. */
   layoutKey: string;
+  /** Content revision independent from date rail layout, position and active filter. */
+  contentKey?: string;
 }
 
 interface VirtualOptions {
   batchSize: () => number;
   mount: (row: TimelineRow, index: number) => HTMLElement;
   unmount: (row: TimelineRow, element: HTMLElement) => void;
+  update?: (row: TimelineRow, index: number, element: HTMLElement, previous: TimelineRow) => void;
   pinnedPath?: () => string | null;
   onScrollBlocked?: () => void;
   resizeRows?: () => TimelineRow[];
@@ -80,19 +83,51 @@ export class VirtualTimeline {
   setRows(rows: readonly TimelineRow[], policy: ScrollPolicy): void {
     if (this.disposed) return;
     if (this.suspended) throw new Error("不能重绘隐藏的摘录列表");
+    const previous = this.rows;
     const anchor = policy === "anchor" ? this.captureAnchor() : null;
-    const anchorTarget = anchor ? this.resolveAnchorTarget(anchor, this.rows, rows) : null;
+    const anchorTarget = anchor ? this.resolveAnchorTarget(anchor, previous, rows) : null;
     const priorScroll = this.viewport.scrollTop;
-    // Prevent a momentary shrink to empty DOM from clamping the native scroll position.
     const oldHeight = this.heights.total();
-    this.clearMounted();
-    this.host.replaceChildren(this.top, this.window, this.bottom);
+    const nextByPath = new Map(rows.map((row, index) => [row.path, index]));
+    const oldMounted = [...this.mounted];
+
     this.rows = [...rows];
     this.heights = new HeightIndex(rows.map(row => {
       const measured = this.heightCache.get(row.path);
       return measured && measured.layoutKey === row.layoutKey ? measured.height : row.estimatedHeight;
     }));
+    this.mounted.clear();
+    this.mountedHeights.clear();
+    this.mountedHeightSum = 0;
     this.host.style.minHeight = Math.max(oldHeight, this.heights.total()) + "px";
+
+    for (const [oldIndex, element] of oldMounted) {
+      const oldRow = previous[oldIndex];
+      const newIndex = oldRow ? nextByPath.get(oldRow.path) : undefined;
+      const next = newIndex === undefined ? undefined : rows[newIndex];
+      const sameContent = Boolean(next && (
+        oldRow.contentKey !== undefined || next.contentKey !== undefined
+          ? oldRow.contentKey === next.contentKey
+          : oldRow.layoutKey === next.layoutKey
+      ));
+      if (!next || !sameContent ||
+          (oldRow.layoutKey !== next.layoutKey && !this.options.update)) {
+        this.observer?.unobserve(element);
+        if (oldRow) this.options.unmount(oldRow, element);
+        element.remove();
+        continue;
+      }
+      element.dataset.virtualIndex = String(newIndex);
+      this.mounted.set(newIndex!, element);
+      this.options.update?.(next, newIndex!, element, oldRow);
+      const height = element.getBoundingClientRect().height;
+      if (height > 0 && Number.isFinite(height)) this.recordMeasurement(newIndex!, height);
+    }
+    // Empty-state siblings from the previous result must not survive a new commit.
+    for (const child of Array.from(this.host.children)) {
+      if (child !== this.top && child !== this.window && child !== this.bottom)
+        child.remove();
+    }
     this.updateSpacers();
     if (policy === "top" || (policy === "anchor" && !rows.length)) {
       this.viewport.scrollTop = 0;
@@ -306,6 +341,14 @@ export class VirtualTimeline {
         const delta = this.recordMeasurement(index, measured);
         if (index < visibleFirst) precedingDelta += delta;
       }
+    }
+    // Reused rows can now have new indices. Reorder only nodes that moved.
+    let cursor: ChildNode | null = this.window.firstChild;
+    for (let index = start; index < end; index++) {
+      const element = this.mounted.get(index);
+      if (!element) continue;
+      if (element === cursor) cursor = cursor.nextSibling;
+      else this.window.insertBefore(element, cursor);
     }
     if (precedingDelta) this.viewport.scrollTop += precedingDelta;
     this.updateSpacers();

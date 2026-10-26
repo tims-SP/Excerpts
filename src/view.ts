@@ -172,6 +172,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       batchSize: () => this.listBatchSize(viewport),
       mount: (row, index) => this.mountTimelineRow(row, index),
       unmount: (row, element) => this.unmountTimelineRow(row, element),
+      update: (row, index, element, previous) => this.updateTimelineRow(row, index, element, previous),
       pinnedPath: () => this.openTagEditors.values().next().value ?? null,
       onScrollBlocked: () => new Notice("请先完成或取消当前标签编辑，再继续滚动"),
       resizeRows: () => this.timelineRows(this.visibleItems())
@@ -1712,7 +1713,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         daySubtitle: firstOfDay ? label.subtitle : "",
         estimatedHeight: 104 + Math.min(320, Math.max(60, Math.ceil(item.size / 5))) + gap +
           (firstOfDay && compact ? 26 : 0),
-        layoutKey
+        layoutKey,
+        contentKey: [item.mtime, item.size, item.ctime, item.tags.join("\u001f"),
+          item.frontmatterTags.join("\u001f"), item.inlineTags.join("\u001f")].join("\u001e")
       };
     });
   }
@@ -1731,10 +1734,35 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const card = this.createCard(item);
     slot.append(card);
     wrapper.append(rail, slot);
+    wrapper.dataset.tagFilter = this.tagFilter;
     if (this.observer) this.observer.observe(card);
     else this.enqueue(item.path, () => this.hydrate(item, card, this.renderToken));
     this.scheduleTagReflow(card.querySelector<HTMLElement>(".ex-chips")!);
     return wrapper;
+  }
+  /** Update presentation without detaching a surviving Markdown renderer. */
+  private updateTimelineRow(row: TimelineRow, index: number, wrapper: HTMLElement,
+    previous: TimelineRow): void {
+    wrapper.classList.toggle("ex-virtual-day-start", row.firstOfDay);
+    wrapper.classList.toggle("ex-virtual-first-row", index === 0);
+    if (row.firstOfDay !== previous.firstOfDay ||
+        row.dayTitle !== previous.dayTitle || row.daySubtitle !== previous.daySubtitle) {
+      const rail = wrapper.querySelector<HTMLElement>(".ex-day-rail");
+      if (rail) {
+        rail.replaceChildren();
+        if (row.firstOfDay) {
+          rail.append(node("h4", "ex-day-title", row.dayTitle));
+          if (row.daySubtitle) rail.append(node("span", "ex-day-subtitle", row.daySubtitle));
+          rail.removeAttribute("aria-hidden");
+        } else rail.setAttribute("aria-hidden", "true");
+      }
+    }
+    if (wrapper.dataset.tagFilter !== this.tagFilter) {
+      const item = this.itemByPath.get(row.path);
+      const chips = wrapper.querySelector<HTMLElement>(".ex-chips");
+      if (item && chips) this.renderTags(chips, item, this.openTagEditors.has(row.path));
+      wrapper.dataset.tagFilter = this.tagFilter;
+    }
   }
   private unmountTimelineRow(row: TimelineRow, wrapper: HTMLElement): void {
     const card = wrapper.querySelector<HTMLElement>(".ex-card");
@@ -1755,13 +1783,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       else if (policy === "anchor" || this.feedPendingPolicy === "anchor") this.feedPendingPolicy = "anchor";
       return;
     }
-    const token = ++this.renderToken;
-    this.observer?.disconnect();
-    this.mediaObserver?.disconnect();
-    this.observer = null;
-    this.mediaObserver = null;
-    this.queue = [];
-    this.unmountMarkdown();
+    const token = this.renderToken;
     const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
       (this.scanStatus === "stale" || (this.scanStatus === "scanning" && this.scanDirty));
     if (resultsUnavailable) {
@@ -1777,7 +1799,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     const visible = this.visibleItems();
     this.countEl.textContent = this.items.length ? visible.length + " / " + this.items.length : "0 条摘录";
-    if (visible.length && typeof IntersectionObserver !== "undefined") {
+    if (visible.length && !this.observer && typeof IntersectionObserver !== "undefined") {
       const root = this.containerEl.closest(".excerpts-native-host");
       this.mediaObserver = new IntersectionObserver(entries => {
         for (const entry of entries) {
