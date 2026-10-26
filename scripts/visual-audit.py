@@ -679,12 +679,32 @@ with sync_playwright() as playwright:
               host.scrollTop = 460;
               window.__pane.renderer.markStale();
             }""")
-            before_clear = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
-            assert before_clear >= 300, (key,"cannot review a mid-list search recovery")
+            before_clear = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const viewport = host.getBoundingClientRect();
+              const card = [...document.querySelectorAll('.ex-card')].find(el => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.bottom > viewport.top + 25 &&
+                  rect.top < viewport.bottom - 25;
+              });
+              if (!card) return null;
+              const rect = card.getBoundingClientRect();
+              return {path: card.dataset.path, y: rect.top - viewport.top,
+                scrollTop: host.scrollTop};
+            }""")
+            assert before_clear and before_clear["scrollTop"] >= 300, (
+                key,"cannot review a mid-list search recovery",before_clear)
             page.evaluate("() => window.__pane.renderer.clearSearchForRecovery()")
-            after_clear = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
-            assert abs(after_clear - before_clear) <= 2, (
-                key,"clearing a stale search changed the browsing position", before_clear, after_clear)
+            after_clear = page.evaluate("""path => {
+              const host = document.querySelector('.excerpts-native-host');
+              const card = [...document.querySelectorAll('.ex-card')].find(el =>
+                el.dataset.path === path && el.isConnected);
+              return card ? {path:card.dataset.path,
+                y:card.getBoundingClientRect().top - host.getBoundingClientRect().top,
+                scrollTop:host.scrollTop} : null;
+            }""", before_clear["path"])
+            assert after_clear and abs(after_clear["y"] - before_clear["y"]) <= 3, (
+                key,"clearing search lost the visible excerpt anchor",before_clear,after_clear)
             assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
             screenshot(page, theme, width, "card-recovery-clear-scrolled", "recovery-hint")
             page.locator(".ex-recovery-action").click()
