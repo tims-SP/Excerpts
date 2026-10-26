@@ -36,6 +36,7 @@ REQUIRED = {
     "composer-edit-document": ".ex-open-editor",
     "calendar-panel": ".excerpts-root .ex-calendar-shell",
     "calendar-back": ".excerpts-root .ex-calendar-back",
+    "calendar-warning": ".excerpts-root .ex-calendar-warning:not([hidden])",
     "calendar-grid": ".ex-calendar-shell",
     "calendar-months": ".ex-calendar-mobile",
     "calendar-desktop": ".ex-calendar-layout",
@@ -234,7 +235,10 @@ with sync_playwright() as playwright:
             }""")
             assert "返回摘录列表后手动刷新" in page.locator(".ex-calendar-warning").inner_text()
             assert page.locator(".ex-feed-view").is_hidden(), (key,"calendar recovery leaked feed action")
-            screenshot(page, theme, width, "calendar-stale-warning", "calendar-panel")
+            page.evaluate("document.querySelector('.excerpts-native-host').scrollTop = 0")
+            assert page.locator(".ex-calendar-warning").bounding_box()["y"] < 240, (
+                key,"calendar warning outside visible top region")
+            screenshot(page, theme, width, "calendar-stale-warning", "calendar-warning")
             page.evaluate("""() => {
               const r = window.__pane.renderer;
               r.scanStatus = 'done'; r.renderScanStatus();
