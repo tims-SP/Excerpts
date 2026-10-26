@@ -310,11 +310,28 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!this.searchText) return false;
     const blocked = this.reason("search");
     if (blocked && !this.canClearSearch()) { new Notice(blocked); return false; }
+    // Preserve the visible excerpt, not a numeric scroll offset. Expanding
+    // search results can insert many rows above it, while the recovery message
+    // and first-of-day rail can independently change the card's visual inset.
+    const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
+    const rect = viewport?.getBoundingClientRect();
+    const visibleCard = rect && Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+      .find(card => {
+        const box = card.getBoundingClientRect();
+        return box.width > 0 && box.bottom > rect.top + 25 &&
+          box.top < rect.bottom - 25;
+      });
+    const anchorPath = visibleCard?.dataset.path;
+    const anchorTop = visibleCard?.getBoundingClientRect().top;
     this.searchText = "";
     this.searchInput.value = "";
-    // Recovery is not a new search: retain the currently visible excerpt anchor.
     this.scheduleSearch("anchor");
     this.updateAvailability();
+    if (viewport && anchorPath && anchorTop !== undefined) {
+      const next = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
+        .find(card => card.dataset.path === anchorPath);
+      if (next) viewport.scrollTop += next.getBoundingClientRect().top - anchorTop;
+    }
     return true;
   }
   private renderRecoveryHint(): void {
