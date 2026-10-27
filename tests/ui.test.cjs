@@ -422,7 +422,7 @@ test('card filter passes the clicked-card position rather than an unrelated view
   };
   card.querySelector('.ex-tag').click();
   assert.equal(captured.policy,'anchor');
-  assert.deepEqual(captured.target,{path:t.md.path,offset:145});
+  assert.deepEqual(captured.target,{path:t.md.path,offset:145,surface:'card'});
   await t.close();
 });
 
@@ -3048,6 +3048,32 @@ test('dirty scan with saved query shows unavailable results instead of zero matc
   search.click();
   assert.equal(root.querySelector('.ex-search').value,'');
   assert.equal(root.querySelector('.ex-count').textContent,'1 / 1','clearing shows old index without a scan');
+  await t.close();
+});
+
+test('stale-search recovery updates its hint before anchoring the surviving card',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  clickByLabel(root,'搜索');
+  const field=root.querySelector('.ex-search');
+  field.value='测试标题';field.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>renderer.searchReady && renderer.matches?.has(t.md.path),'matching search');
+  renderer.markStale(t.md.path);
+  assert.equal(root.querySelector('.ex-page-hint')?.dataset.state,'search-stale');
+  const viewport=root.closest('.excerpts-native-host');
+  viewport.getBoundingClientRect=()=>({top:100,bottom:700,left:0,right:390,width:390,height:600});
+  const card=root.querySelector('.ex-card');
+  card.getBoundingClientRect=()=>({top:245,bottom:370,width:300,height:125});
+  let observed;
+  const original=renderer.timeline.setRows.bind(renderer.timeline);
+  renderer.timeline.setRows=(rows,policy,target)=>{
+    observed={policy,target,hint:root.querySelector('.ex-page-hint')?.dataset.state};
+    return original(rows,policy,target);
+  };
+  assert.equal(renderer.clearSearchForRecovery(),true);
+  assert.deepEqual(observed,{policy:'anchor',target:{path:t.md.path,offset:145,surface:'card'},
+    hint:'stale'});
+  assert.equal(renderer.searchText,'');
+  assert.equal(renderer.scanStatus,'stale','clearing search must not rescan');
   await t.close();
 });
 

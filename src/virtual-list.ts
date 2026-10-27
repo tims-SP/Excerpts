@@ -3,7 +3,14 @@ import { HeightIndex } from "./height-index";
 /** The caller must explicitly choose which user-visible scroll position to retain. */
 export type ScrollPolicy = "keep" | "top" | "anchor" | "results";
 
-interface ScrollAnchor { path: string; index: number; offset: number; }
+/** Viewport-relative top edge of the selected reading surface. */
+export interface AnchorTarget {
+  path: string;
+  offset: number;
+  /** Omitted for legacy row-based callers. */
+  surface?: "row" | "card";
+}
+interface ScrollAnchor extends AnchorTarget { index: number; }
 
 /** One logical row per excerpt. Date rails are only created for the first row of a day. */
 export interface TimelineRow {
@@ -83,7 +90,7 @@ export class VirtualTimeline {
   }
 
   setRows(rows: readonly TimelineRow[], policy: ScrollPolicy,
-    requestedAnchor?: { path: string; offset: number }): void {
+    requestedAnchor?: AnchorTarget): void {
     if (this.disposed) return;
     if (this.suspended) throw new Error("不能重绘隐藏的摘录列表");
     const previous = this.rows;
@@ -98,6 +105,13 @@ export class VirtualTimeline {
     const anchorTarget = anchor ? requestedAnchor
       ? (nextByPath.get(anchor.path) ?? null)
       : this.resolveAnchorTarget(anchor, previous, rows) : null;
+    // Date rails can move when a filter promotes an excerpt to the first of
+    // its day. The card's top is not necessarily the timeline row's top.
+    const sourceRow = anchor?.surface === "card" ? this.mounted.get(anchor.index) : undefined;
+    const sourceCard = sourceRow?.querySelector<HTMLElement>(".ex-card");
+    const missingCardAnchor = anchor?.surface === "card" && (!sourceCard || !sourceCard.isConnected);
+    const cardInset = sourceCard && sourceRow
+      ? sourceCard.getBoundingClientRect().top - sourceRow.getBoundingClientRect().top : 0;
     const priorScroll = this.viewport.scrollTop;
     const oldHeight = this.heights.total();
     const oldMounted = [...this.mounted];
@@ -147,10 +161,10 @@ export class VirtualTimeline {
     if (policy === "top" || (policy === "anchor" && !rows.length && !requestedAnchor)) {
       this.viewport.scrollTop = 0;
     } else if (policy === "results" ||
-      (policy === "anchor" && requestedAnchor && anchorTarget === null)) {
+      (policy === "anchor" && requestedAnchor && (anchorTarget === null || missingCardAnchor))) {
       this.viewport.scrollTop = Math.max(0, this.options.resultsTop?.() ?? 0);
     } else if (policy === "anchor" && anchor && anchorTarget !== null) {
-      this.restoreAnchor(anchor, anchorTarget);
+      this.restoreAnchor(anchor, anchorTarget, cardInset);
     } else {
       this.viewport.scrollTop = priorScroll;
     }
@@ -158,7 +172,18 @@ export class VirtualTimeline {
     this.firstVisible = 0;
     this.render();
     this.host.style.removeProperty("min-height");
-    if (policy === "anchor" && anchor && anchorTarget !== null) this.restoreAnchor(anchor, anchorTarget);
+    if (policy === "anchor" && anchor && anchorTarget !== null && !missingCardAnchor) {
+      if (anchor.surface === "card") {
+        // Correct once from the mounted card's final date-rail and padding.
+        // No animation frame loop or extra visual refresh is necessary.
+        const current = this.mounted.get(anchorTarget)?.querySelector<HTMLElement>(".ex-card");
+        if (current?.isConnected) {
+          const delta = current.getBoundingClientRect().top -
+            this.viewport.getBoundingClientRect().top - anchor.offset;
+          if (Math.abs(delta) > 0.5) this.viewport.scrollTop += delta;
+        }
+      } else this.restoreAnchor(anchor, anchorTarget);
+    }
     this.lastAllowedScroll = this.viewport.scrollTop;
     this.schedule();
   }
@@ -274,13 +299,13 @@ export class VirtualTimeline {
     return null;
   }
 
-  private restoreAnchor(anchor: ScrollAnchor, resolvedIndex?: number): void {
+  private restoreAnchor(anchor: ScrollAnchor, resolvedIndex?: number, inset = 0): void {
     if (!this.rows.length) { this.viewport.scrollTop = 0; return; }
     const found = this.rows.findIndex(row => row.path === anchor.path);
     const index = resolvedIndex ?? (found >= 0 ? found : null);
     if (index === null) return;
     this.viewport.scrollTop = Math.max(0,
-      this.hostStart() + this.heights.prefix(index) - anchor.offset);
+      this.hostStart() + this.heights.prefix(index) + inset - anchor.offset);
   }
 
   private readonly handleScroll = (): void => { this.schedule(); };

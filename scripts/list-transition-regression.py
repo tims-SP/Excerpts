@@ -66,6 +66,15 @@ INSTRUMENT = """() => {
     window.__capture = false;
     return [...window.__frames];
   };
+  window.__stableCards = () => {
+    const result={};
+    for(const card of document.querySelectorAll('.ex-card')){
+      if(card.classList.contains('ex-card-loading'))continue;
+      if(!window.__ids.has(card))window.__ids.set(card,window.__idNext++);
+      result[card.dataset.path]=window.__ids.get(card);
+    }
+    return result;
+  };
 }"""
 
 def take(page, label, action):
@@ -87,6 +96,14 @@ def take(page, label, action):
                 hydrated_instances.add(identity)
     traces[label] = samples
     return samples
+
+def compare_survivors(page, prior, label):
+    """Only cards still in the virtual window are expected to retain DOM identity."""
+    after=page.evaluate("window.__stableCards()")
+    shared=set(prior)&set(after)
+    assert shared, (label,"no continuously mounted hydrated excerpt",prior,after)
+    for path in shared:
+        assert prior[path]==after[path], (label,"surviving Markdown card remounted",path,prior[path],after[path])
 
 def visible_anchor(page):
     return page.evaluate("""() => {
@@ -147,7 +164,9 @@ with sync_playwright() as playwright:
                     page.wait_for_timeout(35)
                     page.locator('.ex-filter-tags [data-tag-key="all"]').click()
                     page.wait_for_timeout(35)
+            before_tags=page.evaluate("window.__stableCards()")
             take(page,f"{width}-tag-cycles",cycle_tags)
+            compare_survivors(page,before_tags,f"{width}-tag-cycles")
             assert page.evaluate("window.__pane.renderer.tagFilter")==""
             page.get_by_role("button",name="搜索",exact=True).click()
             def run_search():
@@ -178,8 +197,58 @@ with sync_playwright() as playwright:
             def refresh():
                 page.evaluate("window.__pane.renderer.requestRefresh(true)")
                 page.wait_for_function("window.__pane.renderer.scanStatus === 'done'",timeout=25000)
+            before_refresh=page.evaluate("window.__stableCards()")
             take(page,f"{width}-manual-refresh",refresh)
+            compare_survivors(page,before_refresh,f"{width}-manual-refresh")
             compare_anchor(page,before,f"{width}-manual-refresh")
+            # Deep-scrolled card filters must keep the clicked card in place,
+            # even if its date rail changes when other cards are filtered out.
+            clicked=visible_anchor(page)
+            assert clicked is not None,(width,"missing clicked card")
+            def filter_at_card():
+                page.evaluate("""path => {
+                  const card=[...document.querySelectorAll('.ex-card')].find(c=>c.dataset.path===path);
+                  const pill=card?.querySelector('.ex-tag');
+                  if(!pill)throw Error('selected card lacks a tag');
+                  pill.click();
+                }""",clicked["path"])
+            take(page,f"{width}-card-tag-anchor",filter_at_card)
+            if page.locator('.ex-card[data-path="'+clicked["path"]+'"]').count():
+                compare_anchor(page,clicked,f"{width}-card-tag-anchor")
+            else:
+                assert page.evaluate("""() => {
+                  const host=document.querySelector('.excerpts-native-host');
+                  return Math.abs(host.scrollTop-window.__pane.renderer.resultHeaderScrollTop())<=32;
+                }"""),"removed card should navigate to results"
+            # Reset selection before testing search recovery. No hidden auto-rescan.
+            page.evaluate("""() => {
+              const renderer=window.__pane.renderer;
+              renderer.tagFilter='';
+              renderer.renderTagsFilter();
+              renderer.drawCards('results');
+            }""")
+            page.locator(".ex-search").fill("回归正文")
+            page.wait_for_function(
+                "window.__pane.renderer.searchReady && window.__pane.renderer.matches instanceof Set",
+                timeout=25000)
+            page.evaluate("""() => {
+              const renderer=window.__pane.renderer;
+              renderer.markStale('摘录/回归-001.md');
+              const host=document.querySelector('.excerpts-native-host');
+              host.scrollTop=1850;
+              host.dispatchEvent(new Event('scroll'));
+            }""")
+            page.wait_for_timeout(120)
+            assert page.locator(".ex-page-hint[data-state='search-stale']").count()==1
+            recovery_anchor=visible_anchor(page)
+            assert recovery_anchor is not None,(width,"missing recovery card")
+            take(page,f"{width}-stale-recovery",
+                 lambda: page.evaluate("""() => {
+                   document.querySelector('.ex-recovery-action').click();
+                 }"""))
+            compare_anchor(page,recovery_anchor,f"{width}-stale-recovery")
+            assert page.evaluate("window.__pane.renderer.scanStatus")=="stale"
+            assert page.evaluate("window.__pane.renderer.searchText")==""
             def resize_height():
                 page.evaluate("""() => {
                   const host=document.querySelector('.excerpts-native-host');

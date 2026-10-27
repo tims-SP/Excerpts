@@ -7,7 +7,7 @@ import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath } from "./model";
 import { PageFilter, isFiltered } from "./page-config";
 import { classifyPreview, previewAction, previewPolicy } from "./card-preview";
-import { ScrollPolicy, TimelineRow, VirtualTimeline } from "./virtual-list";
+import { AnchorTarget, ScrollPolicy, TimelineRow, VirtualTimeline } from "./virtual-list";
 import { SavePageModal } from "./page-modal";
 import { ExcerptsCalendarView } from "./calendar-view";
 
@@ -333,23 +333,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           box.top < rect.bottom - 25;
       });
     const anchorPath = visibleCard?.dataset.path;
-    const anchorTop = visibleCard?.getBoundingClientRect().top;
-    // The viewport may still show the composer, so captureAnchor() can return
-    // null even when a search-result card is partially visible. Request its
-    // virtual row explicitly BEFORE expansion, while it is still mounted.
-    const visibleRow = visibleCard?.closest<HTMLElement>(".ex-virtual-row");
-    const anchorOffset = rect && visibleRow
-      ? visibleRow.getBoundingClientRect().top - rect.top : null;
+    const anchorOffset = rect && visibleCard
+      ? visibleCard.getBoundingClientRect().top - rect.top : null;
     this.searchText = "";
     this.searchInput.value = "";
+    // The recovery hint can change its height when search is cleared.
+    // Settle it before anchoring the expanded results.
+    this.renderRecoveryHint();
     this.scheduleSearch("anchor", anchorPath && anchorOffset !== null
-      ? { path: anchorPath, offset: anchorOffset } : undefined);
+      ? { path: anchorPath, offset: anchorOffset, surface: "card" } : undefined);
     this.updateAvailability();
-    if (viewport && anchorPath && anchorTop !== undefined) {
-      const next = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
-        .find(card => card.dataset.path === anchorPath);
-      if (next) viewport.scrollTop += next.getBoundingClientRect().top - anchorTop;
-    }
     return true;
   }
   private renderRecoveryHint(): void {
@@ -1588,7 +1581,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
   }
   private scheduleSearch(policy: ScrollPolicy = "results",
-    target?: { path: string; offset: number }): void {
+    target?: AnchorTarget): void {
     this.searchFailed = false;
     this.searchScrollPolicy = policy;
     if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -1921,7 +1914,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.queue = this.queue.filter(task => task.path !== row.path);
     this.unmountMarkdown(row.path);
   }
-  private drawCards(policy: ScrollPolicy, target?: { path: string; offset: number }): void {
+  private drawCards(policy: ScrollPolicy, target?: AnchorTarget): void {
     if (this.pageMode === "calendar") {
       // A hidden list has no reliable dimensions. Coalesce background changes rather
       // than unmounting the Markdown renderers or measuring zero-height rows.
@@ -2449,8 +2442,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
         const origin = card?.getBoundingClientRect();
         const viewportRect = viewport?.getBoundingClientRect();
-        const target = origin && viewportRect ? {path: item.path,
-          offset: origin.top - viewportRect.top} : undefined;
+        const target: AnchorTarget | undefined = origin && viewportRect ? {path: item.path,
+          offset: origin.top - viewportRect.top, surface: "card"} : undefined;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
         this.renderTagsFilter(); this.drawCards("anchor", target);
       }, "ex-tag");

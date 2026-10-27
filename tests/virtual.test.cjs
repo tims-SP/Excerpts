@@ -565,6 +565,72 @@ test('repeated reorders retain card focus and mounted identity across fifty comm
   timeline.dispose();dom.window.close();
 });
 
+
+test('card-level anchor survives promotion to first-of-day without remounting Markdown',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:400});
+  viewport.getBoundingClientRect=()=>({top:0,left:0,height:400,width:700});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,left:0,height:0,width:700});
+  let timeline,mounts=0,unmounts=0;
+  const row=(path,firstOfDay=false)=>({path,firstOfDay,dayTitle:firstOfDay?'Today':'',daySubtitle:'',
+    estimatedHeight:firstOfDay?160:110,layoutKey:path+(firstOfDay?'-day':'-ordinary'),contentKey:path});
+  const renderRow=(el,entry)=>{
+    el.dataset.height=String(entry.estimatedHeight);
+    el.dataset.inset=String(entry.firstOfDay?50:12);
+  };
+  timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,resultsTop:()=>225,
+    mount:entry=>{
+      mounts++;const el=document.createElement('section');el.dataset.path=entry.path;
+      const card=document.createElement('article');card.className='ex-card';el.append(card);
+      renderRow(el,entry);
+      el.getBoundingClientRect=()=>({top:300+
+        timeline.heights.prefix(Number(el.dataset.virtualIndex))-viewport.scrollTop,
+        height:Number(el.dataset.height),width:700});
+      card.getBoundingClientRect=()=>({top:el.getBoundingClientRect().top+
+        Number(el.dataset.inset),height:80,width:600});
+      return el;
+    },
+    unmount:()=>{unmounts++;},
+    update:(entry,index,el)=>renderRow(el,entry)
+  });
+  const before=[row('A',true),row('B'),row('C')];
+  timeline.setRows(before,'keep');
+  viewport.scrollTop=350;
+  const card=host.querySelector('[data-path="B"] .ex-card');
+  const position=card.getBoundingClientRect().top;
+  timeline.setRows([row('B',true),row('C')],'anchor',
+    {path:'B',offset:position,surface:'card'});
+  assert.equal(host.querySelector('[data-path="B"] .ex-card'),card);
+  assert.ok(Math.abs(card.getBoundingClientRect().top-position)<1,'date rail cannot move the card');
+  assert.equal(unmounts,1);
+  assert.equal(mounts,3,'unchanged card Markdown must not be remounted');
+  timeline.setRows([row('A',true),row('C')],'anchor',
+    {path:'B',offset:position,surface:'card'});
+  assert.equal(viewport.scrollTop,225,'missing clicked card returns to result header');
+  timeline.dispose();dom.window.close();
+});
+
+test('card anchor with missing DOM falls back to results rather than guessing row inset',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:400});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,left:0,height:0,width:700});
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,resultsTop:()=>180,
+    mount:()=>{const el=document.createElement('section');el.getBoundingClientRect=()=>({height:100});return el;},
+    unmount:()=>{}
+  });
+  const row={path:'A',firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey:'A'};
+  timeline.setRows([row],'keep');
+  timeline.setRows([row],'anchor',{path:'A',offset:40,surface:'card'});
+  assert.equal(viewport.scrollTop,180);
+  timeline.dispose();dom.window.close();
+});
+
 test('explicit clicked-card anchor takes precedence over viewport top and falls back to results',()=>{
   const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
   global.document=dom.window.document;
