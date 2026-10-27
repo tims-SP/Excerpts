@@ -28,6 +28,13 @@ class Setting {
   addToggle(fn){const item={disabled:false,setValue(value){this.value=value;return this;},setDisabled(value){this.disabled=value;return this;},onChange(handler){this.handler=handler;return this;}};fn(item);this.toggle=item;return this;}
   addDropdown(fn){const item={disabled:false,options:{},addOption(key,value){this.options[key]=value;return this;},setValue(value){this.value=value;return this;},setDisabled(value){this.disabled=value;return this;},onChange(handler){this.handler=handler;return this;}};fn(item);this.dropdown=item;return this;}
 }
+class FuzzySuggestModal {
+  static last=null;
+  constructor(app){this.app=app;}
+  setPlaceholder(value){this.placeholder=value;return this;}
+  open(){FuzzySuggestModal.last=this;this.isOpen=true;return this;}
+  close(){this.isOpen=false;}
+}
 class Notice {constructor(message){Notice.last=message;}}
 class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},setWarning(){this.warning=true;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}addSeparator(){}showAtPosition(){Menu.last=this;}}
 class Modal {
@@ -36,7 +43,7 @@ class Modal {
   close(){this.onClose?.();this.modalEl.remove();}
 }
 const renders=[];
-const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,
+const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,FuzzySuggestModal,
   parseYaml(raw){
     const version=raw.match(/^version:\s*(\d+)$/m);
     const tag=raw.match(/^\s*tag:\s*(.+)$/m);
@@ -3986,8 +3993,9 @@ test('tag menu is capped and tag picker reuses the same index between input even
   const more=[...t.pane.contentEl.querySelectorAll('.ex-filter-tags button')]
     .find(button=>button.textContent.startsWith('更多标签'));
   assert.ok(more);more.click();
-  assert.equal(Menu.last.items.length,41,'only 40 selectable tags and one message');
-  assert.equal(Menu.last.items.at(-1).disabled,true);
+  assert.equal(Menu.last.items.length,41,'only 40 direct tags plus native lookup');
+  assert.equal(Menu.last.items.at(-1).title,'查找全部标签…');
+  assert.equal(Menu.last.items.at(-1).disabled,undefined);
   clickByLabel(t.pane.contentEl,'添加标签');
   const input=t.pane.contentEl.querySelector('.ex-tags-input');
   for(const q of ['tag-','tag-标签-1','tag-标签-12']){
@@ -4467,5 +4475,141 @@ test('a vault change after search failure replaces the error panel with stale-in
   assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索结果暂不可用');
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'search-stale');
   assert.equal(root.querySelector('.ex-recovery-action').hidden,false);
+  await t.close();
+});
+
+test('one unreadable necessary body fails the full search without committing partial matches',async()=>{
+  const t=await fixture(),r=t.pane.renderer;
+  const valid=await t.plugin.app.vault.create('摘录/匹配正文.md','真正命中关键字');
+  const broken=await t.plugin.app.vault.create('摘录/不可读取.md','不应被读取');
+  t.plugin.refreshViews(true);await waitFor(()=>r.scanStatus==='done'&&r.items.length===3,'three indexed files');
+  const original=t.plugin.repo.read.bind(t.plugin.repo);
+  let readBroken=0;
+  t.plugin.repo.read=async path=>{
+    if(path===broken.path){readBroken++;throw Error('磁盘暂时不可用');}
+    return original(path);
+  };
+  r.searchText='关键字';r.searchInput.value=r.searchText;
+  r.scheduleSearch();
+  await waitFor(()=>r.searchFailed,'strict partial search failure');
+  assert.ok(readBroken>0);
+  assert.equal(r.matches,null);
+  assert.equal(r.searchReady,true);
+  assert.equal(r.isBusy(),false,'failure releases search busy state');
+  assert.equal(t.pane.contentEl.querySelector('.ex-empty-title').textContent,'搜索未完成');
+  assert.match(t.pane.contentEl.querySelector('.ex-empty-description').textContent,/无法确认完整结果/);
+  assert.equal(t.pane.contentEl.querySelectorAll('.ex-card').length,0);
+  t.plugin.repo.read=original;
+  r.searchText='真正命中';r.searchInput.value=r.searchText;r.scheduleSearch();
+  await waitFor(()=>r.searchReady&&!r.searchFailed&&r.matches?.has(valid.path),'complete retry');
+  await t.close();
+});
+
+test('indexed filename or tag hit does not demand body read even if that file is inaccessible',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const original=repo.read.bind(repo);
+  let reads=0;
+  repo.read=async path=>{if(path===t.md.path){reads++;throw Error('not readable');}return original(path);};
+  const matches=await repo.search(t.pane.renderer.items,'测试',()=>false);
+  assert.equal(reads,0,'filename hit is definitive without reading body');
+  assert.equal(matches.has(t.md.path),true);
+  await t.close();
+});
+
+test('cancellation supersedes unreadable files and cannot replace a newer search result',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const original=repo.read.bind(repo);
+  let cancelled=false;
+  repo.read=async path=>{cancelled=true;throw Error('old cancelled read');};
+  const oldResults=await repo.search(t.pane.renderer.items,'unmatched',()=>cancelled);
+  assert.equal(oldResults.size,0,'a cancelled query does not report a read failure');
+  repo.read=original;
+  const next=await repo.search(t.pane.renderer.items,'测试',()=>false);
+  assert.ok(next.has(t.md.path));
+  await t.close();
+});
+
+test('twenty background card read failures remain inline and never flood Notice',async()=>{
+  const t=await fixture(),r=t.pane.renderer;
+  const prior=t.plugin.repo.read;
+  t.plugin.repo.read=async()=>{throw Error('read unavailable');};
+  Notice.last='sentinel';
+  const cards=Array.from({length:20},()=>{
+    const card=document.createElement('article');
+    card.className='ex-card ex-card-loading';
+    card.append(document.createElement('div'));
+    card.firstChild.className='ex-quote';
+    document.body.append(card);return card;
+  });
+  await Promise.all(cards.map(card=>r.hydrate(r.items[0],card,r.renderToken)));
+  assert.equal(Notice.last,'sentinel');
+  for(const card of cards){
+    assert.match(card.querySelector('.ex-preview-error').textContent,/摘录加载失败/);
+    assert.equal(card.classList.contains('ex-card-loading'),false);
+    card.remove();
+  }
+  t.plugin.repo.read=prior;
+  await t.close();
+});
+
+test('unhandled Markdown render errors still reject the background hydration task',async()=>{
+  const t=await fixture(),r=t.pane.renderer;
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  const original=r.renderContent;
+  r.renderContent=()=>{throw Error('unexpected render failure');};
+  await assert.rejects(r.hydrate(r.items[0],card,r.renderToken),/unexpected render failure/);
+  r.renderContent=original;
+  await t.close();
+});
+
+test('native full-tag lookup selects distant exact tags without changing filter on cancellation',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  r.availableTags=Array.from({length:5000},(_,i)=>'词条'+String(i).padStart(4,'0'));
+  clickByLabel(root,'筛选标签');
+  const more=[...root.querySelectorAll('.ex-filter-tags button')]
+    .find(button=>button.textContent.startsWith('更多标签'));
+  more.click();
+  const lookup=Menu.last.items.at(-1);
+  assert.equal(lookup.title,'查找全部标签…');
+  lookup.handler();
+  const modal=FuzzySuggestModal.last;
+  assert.equal(modal.isOpen,true);
+  assert.equal(modal.getItems().length,5000);
+  assert.equal(modal.getItemText('词条4999'),'#词条4999');
+  assert.match(modal.placeholder,/查找已有标签/);
+  modal.close();
+  assert.equal(r.tagFilter,'','cancel must leave filter unchanged');
+  more.click();Menu.last.items.at(-1).handler();
+  FuzzySuggestModal.last.onChooseItem('词条4999');
+  assert.equal(r.tagFilter,'词条4999');
+  assert.match(root.querySelector('.ex-active-filter').textContent,/词条4999/);
+  await t.close();
+});
+
+test('full-tag lookup refuses removed tag or cross-view mutex at choose-time',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  r.availableTags=Array.from({length:55},(_,i)=>'tag'+i);
+  clickByLabel(root,'筛选标签');
+  const more=[...root.querySelectorAll('.ex-filter-tags button')]
+    .find(button=>button.textContent.startsWith('更多标签'));
+  more.click();Menu.last.items.at(-1).handler();
+  const modal=FuzzySuggestModal.last;
+  r.availableTags=r.availableTags.filter(t=>t!=='tag54');
+  Notice.last='';
+  modal.onChooseItem('tag54');
+  assert.match(Notice.last,/标签列表已变化/);
+  assert.equal(r.tagFilter,'');
+  const owner={};
+  assert.equal(t.plugin.tryAcquireScan(owner),true);
+  Notice.last='';
+  modal.onChooseItem('tag53');
+  assert.match(Notice.last,/另一个摘录页面正在操作/);
+  assert.equal(r.tagFilter,'');
+  t.plugin.releaseScan(owner);
+  r.markStale();
+  Notice.last='';
+  modal.onChooseItem('tag53');
+  assert.match(Notice.last,/索引需要刷新/);
+  assert.equal(r.tagFilter,'');
   await t.close();
 });
