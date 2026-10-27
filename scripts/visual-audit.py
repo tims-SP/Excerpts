@@ -82,7 +82,7 @@ SCENARIOS = [
     "card-recovery-menu-scrolled", "card-recovery-clear-scrolled", "card-mutex-feedback", "calendar-stale-warning",
     "saved-filter-error", "settings", "folder", "scan-complete",
     "scan-blocked", "scan-error", "stale", "recovery-blocked", "recovery-stale",
-    "recovery-search-stale", "recovery-tag-stale", "recovery-selection-stale", "scan-progress", "invalid"
+    "recovery-search-stale", "recovery-tag-stale", "recovery-tag-pending", "recovery-selection-stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
 WIDTHS = (320, 390, 768, 1280)
@@ -529,6 +529,38 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
             page.locator(".ex-recovery-action").click()
             page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
+            # A pending native tag write cannot be cancelled: the warning must not
+            # instruct the user to press a disabled Cancel button.
+            card.locator(".ex-add-tag").click()
+            card.locator(".ex-tag-choice:not([disabled])").first.click()
+            page.evaluate("""() => {
+              const r = window.__pane.renderer;
+              const native = r.repo.setFrontmatterTags.bind(r.repo);
+              r.repo.setFrontmatterTags = async (...args) => {
+                await new Promise((resolve,reject) => { window.__tagWriteReject = reject; });
+                return native(...args);
+              };
+              window.__restoreTagWrite = () => { r.repo.setFrontmatterTags = native; };
+            }""")
+            card.locator(".ex-tag-done").click()
+            page.wait_for_function("window.__pane.renderer.pendingTags.size > 0 && !!window.__tagWriteReject")
+            page.evaluate("() => window.__pane.renderer.markStale()")
+            assert "保存中" in card.locator(".ex-tag-editor-count").inner_text()
+            assert card.locator(".ex-tag-done").is_disabled()
+            assert card.locator(".ex-tag-cancel").is_disabled()
+            assert card.locator(".ex-tag-edit-warning").is_hidden(), (key,"unavailable cancel instruction")
+            screenshot(page, theme, width, "recovery-tag-pending", "card-tag-editor", "card-tag-actions")
+            page.evaluate("""() => {
+              window.__tagWriteReject(new Error('forced visual-fixture failure'));
+              window.__restoreTagWrite();
+            }""")
+            page.wait_for_function("window.__pane.renderer.pendingTags.size === 0")
+            assert card.locator(".ex-tag-edit-warning").is_visible(), (key,"stale recovery missing after write failure")
+            assert card.locator(".ex-tag-cancel").is_enabled()
+            card.locator(".ex-tag-cancel").click()
+            assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
+            page.locator(".ex-recovery-action").click()
+            page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)
             card.locator(".ex-card-options").click()
             page.wait_for_selector(".menu button", timeout=8000)
             screenshot(page, theme, width, "card-menu", "list-menu")
@@ -552,9 +584,11 @@ with sync_playwright() as playwright:
             page.evaluate("() => window.__pane.renderer.markStale()")
             assert page.locator(".ex-selection-footer-count").inner_text() == "请退出选择后刷新"
             assert page.locator(".ex-delete-selected").is_disabled()
-            assert page.locator(".ex-page-hint").get_attribute("data-state") == "selection-stale"
+            assert page.locator(".ex-page-hint").is_hidden(), (key,"selection duplicates local recovery")
+            assert "列表已变化" in page.locator(".ex-selection-count").inner_text()
+            assert page.locator(".ex-select-cancel").is_enabled(), (key,"selection exit locked")
             screenshot(page, theme, width, "recovery-selection-stale",
-                       "selection-footer", "selection-toolbar", "recovery-hint")
+                       "selection-footer", "selection-toolbar")
             page.locator(".ex-select-cancel").click()
             assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
             page.locator(".ex-recovery-action").click()
