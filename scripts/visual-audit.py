@@ -816,7 +816,8 @@ with sync_playwright() as playwright:
               await r.hydrate(r.items.find(x=>x.path===card.dataset.path),card,r.renderToken);
             }""")
             assert "摘录加载失败" in page.locator(".ex-card .ex-preview-error").first.inner_text()
-            assert page.locator(".ex-card.ex-card-loading").count() == 0
+            assert page.locator(".ex-card:has(.ex-preview-error).ex-card-loading").count() == 0, (
+                key,"the failed card retained its own loading skeleton")
             assert page.evaluate("(window.__notices||[]).length===window.__initialNoticeCount"), (
                 key,"background card failure flooded Notice")
             screenshot(page, theme, width, "card-unreadable", "card-content")
