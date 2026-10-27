@@ -115,6 +115,7 @@ with sync_playwright() as playwright:
         options["executable_path"]=os.environ["EXCERPTS_CHROMIUM"]
     browser=playwright.chromium.launch(**options)
     for width in (390,1280):
+        hydrated_instances.clear()  # Each Chromium page has its own DOM identity space.
         page=browser.new_page(viewport={"width":width,"height":900},has_touch=width==390,is_mobile=width==390)
         errors=[]
         page.on("pageerror",lambda error: errors.append(str(error)))
