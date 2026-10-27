@@ -21,6 +21,10 @@ jobs:
       - run: npm install --no-audit --no-fund && npm run build
       - run: python -m pip install playwright
       - run: python -m playwright install --with-deps chromium
+      - name: Focus stability during virtual row reorder
+        run: python scripts/focus-reorder-regression.py
+      - name: Continuous-frame list transition regressions
+        run: python scripts/list-transition-regression.py
       - name: Existing layout constraints
         run: python scripts/spacing-check.py
       - name: Existing screenshot and interaction coverage
@@ -31,10 +35,6 @@ jobs:
         run: python scripts/calendar-scroll-regression.py
       - name: Native video playback continuity on virtual row reorder
         run: python scripts/media-reorder-regression.py
-      - name: Focus stability during virtual row reorder
-        run: python scripts/focus-reorder-regression.py
-      - name: Continuous-frame list transition regressions
-        run: python scripts/list-transition-regression.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
