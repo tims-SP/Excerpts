@@ -322,6 +322,31 @@ test('a card filter toggles selected tag without recreating its chips or Markdow
   await t.close();
 });
 
+test('successive active card tags restore original order while retaining every pill',async()=>{
+  const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card'),mount=card.querySelector('.ex-chips');
+  const item=renderer.items[0];
+  const source=['文学','历史','人物','读书'];
+  item.tags=[...source];
+  renderer.tagFilter='';
+  renderer.renderTags(mount,item);
+  const refs=new Map([...mount.querySelectorAll('.ex-tag')].map(pill=>
+    [pill.getAttribute('aria-label').slice('筛选标签：'.length),pill]));
+  const order=()=>[...mount.querySelectorAll('.ex-tag')].map(pill=>
+    pill.getAttribute('aria-label').slice('筛选标签：'.length));
+  for(const selected of ['读书','历史','人物','文学','']){
+    renderer.tagFilter=selected;
+    renderer.syncCardFilterPresentation(mount,item);
+    const expected=selected?[selected,...source.filter(t=>t!==selected)]:source;
+    assert.deepEqual(order(),expected);
+    for(const [tag,pill] of refs)
+      assert.equal([...mount.querySelectorAll('.ex-tag')].find(current=>
+        current.getAttribute('aria-label')==='筛选标签：'+tag),pill,
+        'unchanged tag should retain DOM identity');
+  }
+  await t.close();
+});
+
 test('card filter passes the clicked-card position rather than an unrelated viewport row',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const host=root.closest('.excerpts-native-host');

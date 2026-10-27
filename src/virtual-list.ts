@@ -92,10 +92,14 @@ export class VirtualTimeline {
         ? { ...requestedAnchor, index: previous.findIndex(row => row.path === requestedAnchor.path) }
         : this.captureAnchor()
       : null;
-    const anchorTarget = anchor ? this.resolveAnchorTarget(anchor, previous, rows) : null;
+    const nextByPath = new Map(rows.map((row, index) => [row.path, index]));
+    // A clicked-card anchor has no substitute: do not silently jump to a
+    // surviving neighbour if the clicked card disappeared from the results.
+    const anchorTarget = anchor ? requestedAnchor
+      ? (nextByPath.get(anchor.path) ?? null)
+      : this.resolveAnchorTarget(anchor, previous, rows) : null;
     const priorScroll = this.viewport.scrollTop;
     const oldHeight = this.heights.total();
-    const nextByPath = new Map(rows.map((row, index) => [row.path, index]));
     const oldMounted = [...this.mounted];
 
     this.rows = [...rows];

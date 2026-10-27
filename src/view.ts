@@ -2358,22 +2358,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       pill.classList.toggle("ex-selected", active);
       pill.setAttribute("aria-pressed", String(active));
     }
-    if (selected) {
-      const activePill = pills.find(pill =>
-        pill.getAttribute("aria-label") === "筛选标签：" + selected);
-      if (activePill && mount.firstElementChild !== activePill)
-        mount.insertBefore(activePill, mount.firstElementChild);
-    } else {
-      // Restore the source order when the filter is cleared.
-      const ordered = [...item.tags];
-      let cursor: ChildNode | null = mount.firstChild;
-      for (const tag of ordered) {
-        const pill = pills.find(button =>
-          button.getAttribute("aria-label") === "筛选标签：" + tag);
-        if (!pill) continue;
-        if (cursor === pill) cursor = cursor.nextSibling;
-        else mount.insertBefore(pill, cursor);
-      }
+    // Restore the source order on every selection, not only when clearing it.
+    // Otherwise selecting A, then B would leave A ahead of the remaining tags.
+    // Reordering existing nodes keeps their focus and event handlers intact.
+    const ordered = selected
+      ? [selected, ...item.tags.filter(tag => tag !== selected)]
+      : item.tags;
+    const byTag = new Map(pills.map(pill => [
+      pill.getAttribute("aria-label")?.slice("筛选标签：".length), pill
+    ] as const));
+    let cursor: ChildNode | null = mount.firstChild;
+    for (const tag of ordered) {
+      const pill = byTag.get(tag);
+      if (!pill) continue;
+      if (cursor === pill) cursor = cursor.nextSibling;
+      else mount.insertBefore(pill, cursor);
     }
     // The reused pills may still be hidden by the previous +N clamp. Reflow now,
     // while this retained card is connected, so the active tag is never hidden

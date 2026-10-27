@@ -412,6 +412,26 @@ test('explicit result navigation targets result header instead of composer',()=>
   timeline.dispose();dom.window.close();
 });
 
+test('clicked anchor missing with surviving neighbours falls back to results, not adjacent card',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:400});
+  host.getBoundingClientRect=()=>({top:300-viewport.scrollTop,left:0,width:700,height:0});
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,resultsTop:()=>220,
+    mount:()=>{const el=document.createElement('article');
+      el.getBoundingClientRect=()=>({height:100,width:700,top:0});return el;},
+    unmount:()=>{}
+  });
+  const row=path=>({path,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,layoutKey:'v1'});
+  const rows=Array.from({length:20},(_,i)=>row('x'+i));
+  timeline.setRows(rows,'keep');
+  timeline.setRows(rows.filter(item=>item.path!=='x10'),'anchor',{path:'x10',offset:65});
+  assert.equal(viewport.scrollTop,220,'surviving x9 and x11 do not replace clicked x10');
+  timeline.dispose();dom.window.close();
+});
+
 // Reusing identical rows must not trigger repeated expensive geometry reads.
 test('unchanged result commits reuse measured heights without rereading geometry',()=>{
   const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
