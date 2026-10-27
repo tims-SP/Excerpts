@@ -4399,3 +4399,21 @@ test('an outdated failing search cannot overwrite a successful newer search',asy
   assert.equal(r.searchReady,true);
   await t.close();
 });
+
+test('a vault change after search failure replaces the error panel with stale-index recovery',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  t.plugin.repo.search=async()=>{throw Error('搜索读取失败');};
+  const input=root.querySelector('.ex-search');
+  input.value='失败关键词';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchFailed,'failed search');
+  assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索未完成');
+  r.markStale(t.md.path);
+  assert.equal(r.searchFailed,false);
+  assert.equal(r.scanStatus,'stale');
+  assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索结果暂不可用');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'search-stale');
+  assert.equal(root.querySelector('.ex-recovery-action').hidden,false);
+  await t.close();
+});
