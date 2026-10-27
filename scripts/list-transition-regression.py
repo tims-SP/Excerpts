@@ -15,6 +15,9 @@ css = (ROOT/"styles.css").read_text(encoding="utf-8")
 bundle = (ROOT/"main.js").read_text(encoding="utf-8")
 html = fixture.replace("/*__EXCERPTS_CSS__*/",css).replace("/*__EXCERPTS_BUNDLE__*/",bundle)
 traces = {}
+# Only a hydrated instance that stays mounted is forbidden to re-enter skeleton state.
+# A newly mounted card after clearing a restrictive search may load normally.
+hydrated_instances = set()
 
 INSTRUMENT = """() => {
   const host = document.querySelector('.excerpts-native-host');
@@ -76,9 +79,12 @@ def take(page, label, action):
     for index, sample in enumerate(samples):
         if sample["results"] > 0:
             assert sample["count"] > 0, (label,index,"blank feed frame",sample)
-        assert not any(card["loading"] for card in sample["visible"]
-                       if card["path"] == "摘录/第一段.md"), (
-                           label,index,"retained first card became loading skeleton",sample)
+        for card in sample["visible"]:
+            identity = (card["path"], card["id"])
+            assert not (card["loading"] and identity in hydrated_instances), (
+                label,index,"already hydrated DOM instance re-entered skeleton",sample)
+            if not card["loading"]:
+                hydrated_instances.add(identity)
     traces[label] = samples
     return samples
 
