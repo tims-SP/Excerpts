@@ -84,6 +84,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private tagFilter = "";
   private filterOpen = false;
   private matches: Set<string> | null = null;
+  /** Failed search results must never be mistaken for a completed query. */
+  private searchFailed = false;
   private searchToken = 0;
   private searchScrollPolicy: ScrollPolicy = "results";
   private scanStatus: "idle" | "blocked" | "scanning" | "done" | "stale" | "error" = "idle";
@@ -246,6 +248,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.pendingTags.size) return "正在保存标签，请完成后再操作";
     if (this.openTagEditors.size && action !== "tag") return "请先完成或取消标签编辑";
     if (!this.searchReady) return "正在搜索，请先清除搜索条件";
+    if (this.searchFailed && ["filter", "tag", "select", "delete", "page"].includes(action))
+      return "搜索未完成，请修改关键词或清除搜索条件";
     // A blocked page has no index yet. Its persisted search is applied after manual scanning.
     if (action === "refresh" && this.scanStatus === "blocked") return null;
     if (this.searchText && ["select", "refresh", "tag", "delete", "filter"].includes(action))
@@ -410,7 +414,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private canClearSearch(): boolean {
     return Boolean(this.searchText) &&
-      (!this.searchReady || this.scanStatus === "stale" || this.scanStatus === "error") &&
+      (!this.searchReady || this.searchFailed || this.scanStatus === "stale" || this.scanStatus === "error") &&
       !this.disposed && !this.homeInvalid && this.scanStatus !== "scanning" &&
       !this.plugin.isBusy(this) && !this.plugin.isNavigating() && !this.saveBusy && !this.deleteBusy &&
       this.selectionMode === "normal" && !this.pendingTags.size && !this.openTagEditors.size;
@@ -584,6 +588,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.scanStatus === "scanning") this.scanDirty = true;
     // A page without a committed index remains unscanned, even when Vault files change.
     else if (this.scanStatus !== "blocked" && this.scanStatus !== "idle") this.scanStatus = "stale";
+    this.searchFailed = false;
     if (!this.searchReady) {
       this.searchToken++;
       if (this.searchTimer) clearTimeout(this.searchTimer);
@@ -615,6 +620,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.searchTimer = null;
     this.scanStatus = "stale";
     this.searchReady = true;
+    this.searchFailed = false;
     if (!this.deleteBusy) {
       this.selectionMode = "normal";
       this.selectionScope.clear(); this.selectedPaths.clear(); this.selectedCandidates.clear();
@@ -1109,6 +1115,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = null;
     this.matches = null;
+    this.searchFailed = false;
     this.searchReady = !filter.query;
     this.tagFilter = filter.tag;
     this.searchText = filter.query;
@@ -1500,6 +1507,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.searchTimer = null;
       this.searchReady = !this.searchText;
       this.matches = null;
+      this.searchFailed = false;
       this.clearScanCompletion();
       this.scanDirty = false;
       this.scanStatus = "scanning";
@@ -1563,6 +1571,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
   }
   private scheduleSearch(policy: ScrollPolicy = "results"): void {
+    this.searchFailed = false;
     this.searchScrollPolicy = policy;
     if (this.searchTimer) clearTimeout(this.searchTimer);
     const token = ++this.searchToken;
@@ -1584,14 +1593,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         done => { if (token === this.searchToken) this.countEl.textContent = "搜索中 " + done + "/" + this.items.length + " · 保留当前列表"; });
       if (this.disposed || token !== this.searchToken) return;
       this.matches = matches;
+      this.searchFailed = false;
       this.searchReady = true;
       this.drawCards(this.searchScrollPolicy);
       this.updateAvailability();
     } catch (error) {
       if (!this.disposed && token === this.searchToken) {
+        // A settled failure must not retain the previous query\u0027s matches or lock other views.
+        this.matches = null;
+        this.searchFailed = true;
         this.searchReady = true;
-        this.countEl.textContent = "搜索失败，请重试";
-        this.updateAvailability();
+        this.drawCards("keep");
         notify(error);
       }
     }
@@ -1871,6 +1883,17 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       return;
     }
     const token = this.renderToken;
+    if (this.searchFailed && this.searchText) {
+      this.timeline?.setRows([], "keep");
+      this.countEl.textContent = "搜索失败";
+      const empty = node("section", "ex-empty");
+      empty.append(node("div", "ex-empty-title", "搜索未完成"));
+      empty.append(node("p", "ex-empty-description",
+        "本次搜索失败，当前结果不可用。请修改关键词或清除搜索。"));
+      this.listEl.append(empty);
+      this.updateAvailability();
+      return;
+    }
     const resultsUnavailable = Boolean(this.searchText) && this.matches === null &&
       (this.scanStatus === "stale" || (this.scanStatus === "scanning" && this.scanDirty));
     if (resultsUnavailable) {
@@ -1971,27 +1994,30 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.paintCardSelection(card, item.path);
     return card;
   }
+  /** Recovery actions are independent of Markdown reads and always recheck state. */
+  private showCardRecoveryMenu(anchor: HTMLButtonElement): boolean {
+    if (this.disposed || !anchor.isConnected) return false;
+    const recovery = this.getRecoveryInfo();
+    const canRefresh = recovery?.action === "refresh" && this.reason("refresh") === null;
+    const canClear = recovery?.action === "clear-search" && this.canClearSearch();
+    if (!canRefresh && !canClear) return false;
+    const menu = new Menu();
+    if (canRefresh) {
+      menu.addItem(entry => entry.setTitle(recovery!.actionLabel ?? "刷新摘录")
+        .setIcon("refresh-cw")
+        .onClick(() => this.runRecoveryAction("refresh")));
+    } else {
+      menu.addItem(entry => entry.setTitle("清除搜索")
+        .setIcon("search-x")
+        .onClick(() => this.runRecoveryAction("clear-search")));
+    }
+    const rect = anchor.getBoundingClientRect();
+    menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
+    return true;
+  }
   private async showCardMenu(item: CardIndex, anchor: HTMLButtonElement): Promise<void> {
     if (!this.guard("page")) return;
-    const recovery = this.getRecoveryInfo();
-    if (recovery?.action === "refresh" && this.reason("refresh") === null ||
-        recovery?.action === "clear-search" && this.canClearSearch()) {
-      // A recovery action needs only the committed index, never the (possibly
-      // missing or slow) Markdown body. Hide file actions until recovery.
-      const menu = new Menu();
-      if (recovery.action === "refresh") {
-        menu.addItem(entry => entry.setTitle(recovery.actionLabel ?? "刷新摘录")
-          .setIcon("refresh-cw")
-          .onClick(() => this.runRecoveryAction("refresh")));
-      } else {
-        menu.addItem(entry => entry.setTitle("清除搜索")
-          .setIcon("search-x")
-          .onClick(() => this.runRecoveryAction("clear-search")));
-      }
-      const rect = anchor.getBoundingClientRect();
-      menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
-      return;
-    }
+    if (this.showCardRecoveryMenu(anchor)) return;
     // Do not display read/edit/delete commands for a stale card whose file
     // has disappeared. A new manual scan is the only supported recovery.
     if (!(this.plugin.app.vault.getAbstractFileByPath(item.path) instanceof TFile)) {
@@ -2002,7 +2028,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     let parsed: ParsedMarkdown | null = null;
     try { parsed = await this.repo.read(item.path); }
     catch { /* If the file still exists, retain the original preview/edit affordances. */ }
-    if (this.disposed || !anchor.isConnected || !this.guard("page")) return;
+    if (this.disposed || !anchor.isConnected) return;
+    // The scan may have become stale while repo.read() was pending.
+    // Never fall through to file actions with a newly invalid index.
+    if (this.showCardRecoveryMenu(anchor)) return;
+    if (!this.guard("page")) return;
+    if (this.scanStatus !== "done") {
+      new Notice("摘录索引需要刷新，请先手动刷新");
+      return;
+    }
     if (!(this.plugin.app.vault.getAbstractFileByPath(item.path) instanceof TFile)) {
       this.markStale(item.path);
       new Notice("该摘录文件已移动或删除，请刷新索引");
@@ -2010,11 +2044,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     const menu = new Menu();
     menu.addItem(entry => entry.setTitle("阅读原文").setIcon("book-open").onClick(() => {
-      if (!this.guard("page")) return;
+      if (!this.guard("page") || this.scanStatus !== "done") { if (this.scanStatus !== "done") new Notice("摘录索引需要刷新"); return; }
       void this.plugin.openMarkdownPreview(item.path).catch(notify);
     }));
     menu.addItem(entry => entry.setTitle("编辑原文").onClick(() => {
-      if (!this.guard("page")) return;
+      if (!this.guard("page") || this.scanStatus !== "done") { if (this.scanStatus !== "done") new Notice("摘录索引需要刷新"); return; }
       void this.plugin.openMarkdown(item.path).catch(notify);
     }));
     // The card itself refuses per-section preview above 24 H2 headings.
@@ -2031,7 +2065,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         const suffix = (totals.get(section.name) ?? 0) > 1 ? "（第 " + count + " 个）" : "";
         menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() => {
           if (!this.guard("page")) return;
-          void this.openSection(item.path, index).catch(notify);
+          void this.openSection(item.path, index, sections).catch(notify);
         }));
       }
     }
@@ -2046,8 +2080,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const rect = anchor.getBoundingClientRect();
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
   }
-  private async openSection(path: string, index: number): Promise<void> {
+  private async openSection(path: string, index: number,
+    snapshot: readonly ParsedMarkdown["sections"][number][]): Promise<void> {
+    if (!this.guard("page") || this.scanStatus !== "done") {
+      throw new Error("摘录索引已变化，请刷新后重新打开卡片菜单");
+    }
+    const source = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!(source instanceof TFile)) throw new Error("原摘录文件已移动或删除");
     const raw = await this.repo.readRaw(path);
+    if (this.disposed || this.scanStatus !== "done" || this.plugin.app.vault.getAbstractFileByPath(path) !== source ||
+        this.reason("page") !== null) throw new Error("摘录状态已变化，请重新打开卡片菜单");
+    const current = parseMarkdown(raw).sections;
+    if (current.length !== snapshot.length ||
+      current.some((section, i) => section.name !== snapshot[i].name ||
+        section.markdown !== snapshot[i].markdown))
+      throw new Error("原文分组已变化，请重新打开卡片菜单");
     const line = findSectionHeadingLine(raw, index);
     if (line === null) throw new Error("无法定位该分组，请重新打开卡片选项");
     await this.plugin.openMarkdown(path, line);
