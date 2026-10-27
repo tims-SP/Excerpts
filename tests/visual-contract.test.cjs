@@ -41,7 +41,7 @@ test('screenshot suite covers runtime states and records component crops for rev
                       'recovery-action','recovery-hint']) {
     assert.ok(suite.includes('"' + name + '"'), 'missing screenshot selector: ' + name);
   }
-  for (const state of ['home','composer-picker','composer-draft','search-empty','filter',
+  for (const state of ['home','composer-picker','composer-draft','search-empty','search-failed','filter',
                        'page-menu','section-open','card-picker','card-menu',
                        'single-delete','selection','bulk-delete','saved-filter',
                        'saved-filter-error','settings','folder','scan-complete',
