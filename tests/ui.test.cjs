@@ -859,6 +859,7 @@ test('oversized H2 files never create hundreds of per-section menu actions',asyn
     const markdown='# 标题\n\n正文\n\n'+Array.from({length:count},(_,i)=>
       '## 分组'+i+'\n\n第'+i+'段内容').join('\n\n');
     const t=await fixture(false,markdown);
+    Menu.last=null;
     clickByLabel(t.pane.contentEl,'卡片选项');
     await waitFor(()=>Menu.last?.items?.some(item=>item.title==='删除摘录'),
       'H2 options menu '+count);
@@ -4430,6 +4431,7 @@ test('a menu opened before a file change refuses to open old file actions after 
 test('section menu rejects an inserted H2 before its intended section',async()=>{
   const source='# 标题\n\n## 来源\n甲\n\n## 批注\n乙';
   const t=await fixture(false,source),root=t.pane.contentEl;
+  Menu.last=null;
   clickByLabel(root,'卡片选项');
   await waitFor(()=>Menu.last?.items.some(x=>x.title==='编辑分组：来源'),'H2 menu ready');
   const item=Menu.last.items.find(x=>x.title==='编辑分组：来源');
@@ -4448,6 +4450,7 @@ test('section menu rejects changed body and reordered repeated H2 headings',asyn
     '# 标题\n\n## 来源\n乙\n\n## 来源\n甲'
   ]){
     const t=await fixture(false,source),root=t.pane.contentEl;
+    Menu.last=null;
     clickByLabel(root,'卡片选项');
     await waitFor(()=>Menu.last?.items.filter(x=>x.title?.startsWith('编辑分组：')).length===2,'repeated H2');
     const item=Menu.last.items.find(x=>x.title==='编辑分组：来源（第 2 个）');
@@ -4828,7 +4831,7 @@ test('fixture navigation leaf detaches a failed newly requested folder tab',asyn
 });
 
 test('forced refresh detects equal-stat text edits without recycling unrelated cards',async()=>{
-  const originalText=['# 标题','','正文 AAA'].join('\\n');
+  const originalText=['# 标题','','正文 AAA'].join('\n');
   const t=await fixture(false,originalText),r=t.pane.renderer,root=t.pane.contentEl;
   await t.plugin.app.vault.create('摘录/另一条.md','始终保持不变');
   r.requestRefresh(true);
@@ -4854,7 +4857,7 @@ test('forced refresh detects equal-stat text edits without recycling unrelated c
 });
 
 test('unchanged mounted card keeps identity and renderer after repeated explicit refreshes',async()=>{
-  const t=await fixture(false,['# 标题','','正文未变'].join('\\n'));
+  const t=await fixture(false,['# 标题','','正文未变'].join('\n'));
   const r=t.pane.renderer,root=t.pane.contentEl;
   const card=root.querySelector('.ex-card'),renderCount=renders.length;
   let reads=0;
@@ -4871,7 +4874,7 @@ test('unchanged mounted card keeps identity and renderer after repeated explicit
 });
 
 test('delayed Markdown render leaves existing skeleton until the body is ready',async()=>{
-  const t=await fixture(false,['# 标题','','异步渲染的内容'].join('\\n'));
+  const t=await fixture(false,['# 标题','','异步渲染的内容'].join('\n'));
   const r=t.pane.renderer,card=r.createCard(r.items[0]);
   r.containerEl.append(card);
   const original=mocks.MarkdownRenderer.render;
@@ -4895,7 +4898,7 @@ test('delayed Markdown render leaves existing skeleton until the body is ready',
 });
 
 test('unreadable mounted source refuses to claim successful manual refresh',async()=>{
-  const t=await fixture(false,['# 标题','','正文'].join('\\n'));
+  const t=await fixture(false,['# 标题','','正文'].join('\n'));
   const r=t.pane.renderer,root=t.pane.contentEl,initial=root.querySelector('.ex-card');
   const original=t.plugin.app.vault.read.bind(t.plugin.app.vault);
   t.plugin.app.vault.read=async file=>{if(file===t.md)throw Error('inaccessible');return original(file);};
