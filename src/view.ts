@@ -308,10 +308,19 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private canCancelTagEdit(path: string): boolean {
     return !this.disposed && this.openTagEditors.has(path) && !this.pendingTags.has(path);
   }
-  private clearSearchForRecovery(): boolean {
+  private clearSearchForRecovery(policy: "anchor" | "results" = "anchor"): boolean {
     if (!this.searchText) return false;
     const blocked = this.reason("search");
     if (blocked && !this.canClearSearch()) { new Notice(blocked); return false; }
+    // Clearing inside the input edits the query; recovery from stale state
+    // continues preserving the existing reading anchor instead.
+    if (policy === "results") {
+      this.searchText = "";
+      this.searchInput.value = "";
+      this.scheduleSearch("results");
+      this.updateAvailability();
+      return true;
+    }
     // Preserve the visible excerpt, not a numeric scroll offset. Expanding
     // search results can insert many rows above it, while the recovery message
     // and first-of-day rail can independently change the card's visual inset.
@@ -999,7 +1008,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     // A native search input with one accessible clear action. The trailing
     // control sits in reserved input padding, never above entered text.
     this.searchClearButton = iconButton("x", "清空搜索", () => {
-      if (this.clearSearchForRecovery()) this.searchInput.focus();
+      if (this.clearSearchForRecovery("results")) this.searchInput.focus({ preventScroll: true });
     }, "ex-search-clear");
     this.searchWrap.append(this.searchInput, this.searchClearButton);
     const searchButton = iconButton("search", "搜索", () => {

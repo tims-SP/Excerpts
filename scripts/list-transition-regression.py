@@ -157,12 +157,15 @@ with sync_playwright() as playwright:
                     timeout=25000)
             take(page,f"{width}-search",run_search)
             assert page.locator(".ex-card").count()>0
-            # Clearing the current search restores visible identity by anchor,
-            # not by reusing the old numerical scroll position.
-            prior=visible_anchor(page)
+            # Clearing inside the search input is query editing. Recovery
+            # actions elsewhere still use the original reading anchor policy.
             take(page,f"{width}-clear-search",
                  lambda: page.locator(".ex-search-clear").click())
-            compare_anchor(page,prior,f"{width}-clear-search")
+            assert page.evaluate("""() => {
+              const host=document.querySelector('.excerpts-native-host');
+              const renderer=window.__pane.renderer;
+              return Math.abs(host.scrollTop-renderer.resultHeaderScrollTop()) <= 32;
+            }"""), "inline clear must remain near the results toolbar"
             assert page.evaluate("window.__pane.renderer.searchText")==""
             # Refresh does not discard existing Markdown/scroll state.
             page.evaluate("""() => {
