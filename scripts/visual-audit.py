@@ -812,9 +812,13 @@ with sync_playwright() as playwright:
               const card=document.querySelector('.ex-card');
               window.__initialNoticeCount=(window.__notices||[]).length;
               window.__readBeforeFailure=repo.read.bind(repo);
-              repo.read=async()=>{throw Error('unreadable fixture card')};
+              repo.read=async path => path === card.dataset.path
+                ? Promise.reject(Error('unreadable fixture card'))
+                : window.__readBeforeFailure(path);
               await r.hydrate(r.items.find(x=>x.path===card.dataset.path),card,r.renderToken);
             }""")
+            assert page.locator(".ex-card .ex-preview-error").count() == 1, (
+                key,"targeted read failure changed unrelated cards")
             assert "摘录加载失败" in page.locator(".ex-card .ex-preview-error").first.inner_text()
             assert page.locator(".ex-card:has(.ex-preview-error).ex-card-loading").count() == 0, (
                 key,"the failed card retained its own loading skeleton")
