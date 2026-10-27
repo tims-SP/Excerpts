@@ -1,4 +1,4 @@
-import { MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
+import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
 import { findSectionHeadingLine, parseMarkdown } from "./codec";
 import type ExcerptsPlugin from "./main";
 import { DeleteCandidate, DeleteProgress, EntryRepository } from "./repository";
@@ -1627,6 +1627,28 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       .sort((a, b) => a.localeCompare(b, "zh"));
   }
   /** Reconcile a small filter strip by tag identity; never replace unchanged buttons. */
+  private openAllTagFilterPicker(): void {
+    if (!this.guard("filter")) return;
+    const owner = this;
+    const candidates = [...this.availableTags];
+    class TagFilterPicker extends FuzzySuggestModal<string> {
+      getItems(): string[] { return candidates; }
+      getItemText(item: string): string { return "#" + item; }
+      onChooseItem(item: string): void {
+        if (!owner.guard("filter")) return;
+        if (!owner.availableTags.includes(item)) {
+          new Notice("标签列表已变化，请刷新索引后重试");
+          return;
+        }
+        owner.tagFilter = item;
+        owner.renderTagsFilter();
+        owner.drawCards("results");
+      }
+    }
+    const picker = new TagFilterPicker(this.plugin.app);
+    picker.setPlaceholder("查找已有标签…");
+    picker.open();
+  }
   private renderTagsFilter(): void {
     const strip = this.tagBar;
     strip.hidden = !this.filterOpen && !this.tagFilter;
@@ -1698,7 +1720,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
             this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("results");
           }));
         if (current.length > limit + 40) menu.addItem(item =>
-          item.setTitle("其余 " + (current.length - limit - 40) + " 个标签，请使用搜索").setDisabled(true));
+          item.setTitle("查找全部标签…").setIcon("search")
+            .onClick(() => this.openAllTagFilterPicker()));
         const rect = more.getBoundingClientRect();
         menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet"));
@@ -1899,7 +1922,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", "搜索未完成"));
       empty.append(node("p", "ex-empty-description",
-        "本次搜索失败，当前结果不可用。请修改关键词或清除搜索。"));
+        "搜索未完成或部分摘录文件无法读取，无法确认完整结果。请检查文件后重新搜索，或清除关键词。"));
       this.listEl.append(empty);
       this.updateAvailability();
       return;
@@ -2110,13 +2133,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     await this.plugin.openMarkdown(path, line);
   }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
+    let parsed: ParsedMarkdown;
     try {
-      const parsed = await this.repo.read(item.path);
-      if (this.disposed || token !== this.renderToken || !card.isConnected) return;
-      this.renderContent(card, item, parsed);
-      this.mediaObserver?.observe(card);
-      card.classList.remove("ex-card-loading");
-    } catch (error) {
+      parsed = await this.repo.read(item.path);
+    } catch {
+      // A file read failure is already represented by this card. Do not
+      // produce a second Notice per card from the background work queue.
       if (!this.disposed && token === this.renderToken && card.isConnected) {
         const quote = card.querySelector<HTMLElement>(".ex-quote");
         if (quote) {
@@ -2127,8 +2149,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
         card.classList.remove("ex-card-loading");
       }
-      throw error;
+      return;
     }
+    if (this.disposed || token !== this.renderToken || !card.isConnected) return;
+    // Unexpected rendering failures still propagate to the existing queue
+    // error handler instead of being silently reported as file read failures.
+    this.renderContent(card, item, parsed);
+    this.mediaObserver?.observe(card);
+    card.classList.remove("ex-card-loading");
   }
   private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
