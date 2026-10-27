@@ -156,7 +156,7 @@ with sync_playwright() as playwright:
             take(page,f"{width}-clear-search",
                  lambda: page.locator(".ex-search-clear").click())
             compare_anchor(page,prior,f"{width}-clear-search")
-            assert page.evaluate("window.__pane.renderer.searchText")===""
+            assert page.evaluate("window.__pane.renderer.searchText")==""
             # Refresh does not discard existing Markdown/scroll state.
             page.evaluate("""() => {
               const host=document.querySelector('.excerpts-native-host');
