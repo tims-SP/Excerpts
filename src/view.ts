@@ -426,23 +426,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       !this.plugin.isBusy(this) && !this.plugin.isNavigating() && !this.saveBusy && !this.deleteBusy &&
       this.selectionMode === "normal" && !this.pendingTags.size && !this.openTagEditors.size;
   }
-  private updateAvailability(broadcast = true): void {
-    if (this.disposed || !this.searchButton) return;
-    const searching = !this.searchReady;
-    const searchBlock = this.searchQueryBlockReason();
-    this.searchInput.disabled = Boolean(searchBlock);
-    const canClear = this.canClearSearch();
-    this.searchClearButton.disabled = Boolean(searchBlock) && !canClear;
-    const canCloseEmpty = this.canCloseEmptySearch();
-    this.searchButton.disabled = !canClear && !canCloseEmpty && Boolean(this.reason("search"));
-    this.searchButton.title = canCloseEmpty ? "关闭搜索" :
-      canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
-    this.filterButton.disabled = Boolean(this.reason("filter"));
-    this.updateComposerControls();
-    for (const button of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(".ex-filter-tags button")))
-      button.disabled = Boolean(this.reason("filter"));
-    for (const el of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(
-      ".ex-card .ex-card-options, .ex-card .ex-add-tag, .ex-card .ex-tag"))) {
+  /** Synchronize one card, including cards mounted after the last page-level state change. */
+  private syncCardControls(card: HTMLElement): void {
+    for (const el of Array.from(card.querySelectorAll<HTMLButtonElement>(
+      ".ex-card-options, .ex-add-tag, .ex-tag"))) {
       const pageBlock = this.reason("page");
       if (el.classList.contains("ex-card-options")) {
         const safeExplanation = this.selectionMode === "normal" &&
@@ -469,13 +456,31 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
       const isTagFilter = el.classList.contains("ex-tag");
       const otherTagEditor = el.classList.contains("ex-add-tag") &&
-        this.openTagEditors.size > 0 && !this.openTagEditors.has(el.closest<HTMLElement>(".ex-card")?.dataset.path ?? "");
-      const path = el.closest<HTMLElement>(".ex-card")?.dataset.path ?? "";
+        this.openTagEditors.size > 0 && !this.openTagEditors.has(card.dataset.path ?? "");
+      const path = card.dataset.path ?? "";
       el.disabled = el.classList.contains("ex-add-tag") && this.openTagEditors.has(path)
         ? !this.canCancelTagEdit(path)
         : otherTagEditor || Boolean(this.reason(isTagFilter ? "filter" :
           el.classList.contains("ex-add-tag") ? "tag" : "page"));
     }
+  }
+  private updateAvailability(broadcast = true): void {
+    if (this.disposed || !this.searchButton) return;
+    const searching = !this.searchReady;
+    const searchBlock = this.searchQueryBlockReason();
+    this.searchInput.disabled = Boolean(searchBlock);
+    const canClear = this.canClearSearch();
+    this.searchClearButton.disabled = Boolean(searchBlock) && !canClear;
+    const canCloseEmpty = this.canCloseEmptySearch();
+    this.searchButton.disabled = !canClear && !canCloseEmpty && Boolean(this.reason("search"));
+    this.searchButton.title = canCloseEmpty ? "关闭搜索" :
+      canClear ? "清除搜索条件" : (this.reason("search") ?? "搜索");
+    this.filterButton.disabled = Boolean(this.reason("filter"));
+    this.updateComposerControls();
+    for (const button of Array.from(this.containerEl.querySelectorAll<HTMLButtonElement>(".ex-filter-tags button")))
+      button.disabled = Boolean(this.reason("filter"));
+    for (const card of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".ex-card")))
+      this.syncCardControls(card);
     for (const editor of Array.from(this.containerEl.querySelectorAll<HTMLElement>(".ex-tag-editor:not([hidden])"))) {
       const path = editor.closest<HTMLElement>(".ex-card")?.dataset.path ?? "";
       const pending = this.pendingTags.has(path);
@@ -2511,6 +2516,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toggle.title = editorOpen ? "取消标签编辑" : "添加标签";
     toggle.setAttribute("aria-expanded", String(editorOpen));
     mount.append(toggle);
+    if (card) this.syncCardControls(card);
     this.scheduleTagReflow(mount);
   }
 
