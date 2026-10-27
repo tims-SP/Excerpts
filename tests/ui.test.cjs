@@ -4077,9 +4077,14 @@ test('stale selection describes how to recover without losing count',async()=>{
   const t=await fixture(),root=t.pane.contentEl,r=[...t.plugin.rendered][0];
   clickByLabel(root,'页面选项');
   Menu.last.items.find(i=>i.title==='批量选择').handler();
+  Notice.last='';
   r.markStale(t.md.path);
-  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0/);
+  assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0.*列表已变化/);
   assert.match(root.querySelector('.ex-selection-footer-count').textContent,/退出选择后刷新/);
+  assert.equal(root.querySelector('.ex-page-hint').hidden,true,'selection footer owns recovery');
+  assert.equal(Notice.last,'','no duplicate transient notification');
+  assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
+  assert.equal(root.querySelector('.ex-select-cancel').disabled,false);
   root.querySelector('.ex-select-done').click();
   assert.equal(r.selectionMode,'normal');
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
@@ -4640,5 +4645,63 @@ test('full-tag lookup refuses removed tag or cross-view mutex at choose-time',as
   modal.onChooseItem('tag53');
   assert.match(Notice.last,/索引需要刷新/);
   assert.equal(r.tagFilter,'');
+  await t.close();
+});
+
+test('pending tag save hides stale cancellation instructions until a successful write settles',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const selected=[...card.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent==='哲学');
+  assert.ok(selected);selected.click();
+  let release;
+  const original=t.plugin.app.fileManager.processFrontMatter;
+  t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
+    await new Promise(resolve=>{release=resolve;});
+    return original(file,fn);
+  };
+  card.querySelector('.ex-tag-done').click();
+  await waitFor(()=>typeof release==='function'&&r.pendingTags.has(t.md.path),'tag save in progress');
+  r.markStale(t.md.path);
+  assert.match(card.querySelector('.ex-tag-editor-count').textContent,/保存中/);
+  assert.equal(card.querySelector('.ex-tag-edit-warning').hidden,true,'cancel is not offered while write is locked');
+  assert.equal(card.querySelector('.ex-tag-cancel').disabled,true);
+  assert.equal(card.querySelector('.ex-tag-done').disabled,true);
+  assert.equal(root.querySelector('.ex-page-hint').hidden,true);
+  release();
+  await waitFor(()=>!r.pendingTags.has(t.md.path),'tag write finished');
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,true);
+  assert.equal(t.getTagWrites(),1);
+  assert.equal(r.scanStatus,'stale');
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  await t.close();
+});
+
+test('failed pending tag write reveals the correct stale recovery after the lock releases',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const selected=[...card.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent==='哲学');
+  assert.ok(selected);selected.click();
+  let release;
+  t.plugin.app.fileManager.processFrontMatter=async()=>{
+    await new Promise(resolve=>{release=resolve;});
+    throw new Error('forced tag write failure');
+  };
+  card.querySelector('.ex-tag-done').click();
+  await waitFor(()=>typeof release==='function'&&r.pendingTags.has(t.md.path),'tag write in progress');
+  r.markStale(t.md.path);
+  assert.equal(card.querySelector('.ex-tag-edit-warning').hidden,true);
+  release();
+  await waitFor(()=>!r.pendingTags.has(t.md.path),'failed tag write settled');
+  const warning=card.querySelector('.ex-tag-edit-warning');
+  assert.equal(warning.hidden,false);
+  assert.match(warning.textContent,/取消标签编辑后刷新/);
+  assert.equal(card.querySelector('.ex-tag-done').disabled,true,'stale write cannot retry without refresh');
+  assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
+  assert.equal(t.getTagWrites(),0);
+  card.querySelector('.ex-tag-cancel').click();
+  assert.equal(r.openTagEditors.size,0);
+  assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
   await t.close();
 });
