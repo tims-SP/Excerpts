@@ -35,14 +35,14 @@ test('screenshot suite covers runtime states and records component crops for rev
   const fixture = read('tests/fixtures/preview-template.html');
   for (const name of ['page-header','composer','composer-tag-picker','calendar-panel','calendar-grid','calendar-back','calendar-warning','card',
                       'card-tag-editor','card-section-open','list-search','list-filter',
-                      'list-menu','selection-toolbar','delete-single-dialog',
+                      'list-menu','native-tag-picker','selection-toolbar','delete-single-dialog',
                       'delete-bulk-dialog','saved-filter-dialog','saved-filter-error',
                       'empty-results','settings','folder-view','scan-progress','invalid-page',
                       'recovery-action','recovery-hint']) {
     assert.ok(suite.includes('"' + name + '"'), 'missing screenshot selector: ' + name);
   }
-  for (const state of ['home','composer-picker','composer-draft','search-empty','search-failed','filter',
-                       'page-menu','section-open','card-picker','card-menu',
+  for (const state of ['home','composer-picker','composer-draft','search-empty','search-failed','search-unreadable','filter','filter-fuzzy-picker','filter-fuzzy-selected',
+                       'page-menu','section-open','card-unreadable','card-picker','card-menu',
                        'single-delete','selection','bulk-delete','saved-filter',
                        'saved-filter-error','settings','folder','scan-complete',
                        'scan-blocked','scan-error','stale','scan-progress','invalid',
