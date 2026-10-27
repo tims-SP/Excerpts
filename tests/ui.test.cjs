@@ -2829,10 +2829,13 @@ test('stale bulk selection disables deletion immediately and denies old callback
   root.querySelector('.ex-select-all').click();
   const renderer=[...t.plugin.rendered][0];
   assert.equal(root.querySelector('.ex-delete-selected').disabled,false);
+  Notice.last='';
   t.plugin.onFileChange(t.md.path);
   assert.equal(renderer.scanStatus,'stale');
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
-  assert.match(Notice.last,/退出批量选择后刷新/);
+  assert.equal(root.querySelector('.ex-page-hint').hidden,true,'selection footer owns stale guidance');
+  assert.match(root.querySelector('.ex-selection-footer-count').textContent,/退出选择后刷新/);
+  assert.equal(Notice.last,'','no duplicate notification when selection becomes stale');
   renderer.confirmBulkDelete();
   assert.match(Notice.last,/退出批量选择后刷新/);
   assert.equal(document.querySelector('.ex-delete-modal'),null);
