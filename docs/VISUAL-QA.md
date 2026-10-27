@@ -54,3 +54,12 @@ Actions 名称：**Screenshot QA**。PR 和 main 推送自动运行，无路径�
 - 文件夹右键入口与切换分栏、极长正文、万级文档的真实滚动和性能。
 
 **模拟器检查通过不等于以上场景通过。** 如无法运行真机测试，PR 应明确标记这些项为未验证，而不是修改产品功能来迁就模拟器。
+
+## 列表无闪烁与焦点连续性专项（2026-10）
+
+- `tests/virtual.test.cjs` / `tests/ui.test.cjs`：验证行内容身份复用、重排焦点、移除焦点边界和 50 轮无重建。
+- `scripts/focus-reorder-regression.py`：运行真实 Chromium 的 `insertBefore`/焦点/键盘回归；不得用 jsdom 模拟结论替代浏览器行为。
+- `scripts/list-transition-regression.py`：在 390/1280px 下用 `requestAnimationFrame` 记录正常筛选、搜索、清空和刷新过程中的卡片身份、加载状态、scrollTop 与可视卡片；失败时上传采样 JSON/截图。
+- 用户主动筛选或新搜索可导航至结果栏；卡片内筛选、搜索清除和静默更新应遵循原有锚点语义，不把合法导航当作跳动。
+- 只以实际存在、仍属于虚拟列表且可用的控件恢复焦点，不拦截列表外输入、不恢复已卸载控件。
+- Chromium 模拟不等于 Android/iOS Obsidian 实机验证：软键盘变化、媒体/WebKit 重排和真机滚动合成保留为未验收项目，不允许宣称已通过。

@@ -486,6 +486,85 @@ test('filter overlap leaves surviving native media nodes connected without movin
   timeline.dispose();dom.window.close();
 });
 
+
+test('reordering a retained card preserves its focused control without stealing toolbar focus',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><button id="outside">search</button><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  let mounts=0,unmounts=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{
+      mounts++;
+      const wrapper=document.createElement('article');
+      wrapper.dataset.path=row.path;
+      const control=document.createElement('button');
+      control.textContent='action-'+row.path;
+      wrapper.append(control);
+      wrapper.getBoundingClientRect=()=>({height:100,width:700,top:0});
+      return wrapper;
+    },
+    unmount:()=>{unmounts++;}
+  });
+  const row=path=>({path,firstOfDay:false,dayTitle:'',daySubtitle:'',
+    estimatedHeight:100,layoutKey:'stable',contentKey:'stable'});
+  const original=['A','B','C'].map(row);
+  timeline.setRows(original,'keep');
+  const control=host.querySelector('[data-path="B"] button');
+  control.focus();
+  const before=viewport.scrollTop;
+  timeline.setRows([original[1],original[0],original[2]],'keep');
+  assert.equal(document.activeElement,control,'moving a retained row must keep its focused action');
+  assert.equal(host.querySelector('[data-path="B"] button'),control,'focus must not require a remount');
+  assert.equal(viewport.scrollTop,before,'focus recovery cannot scroll the feed');
+  assert.equal(mounts,3);assert.equal(unmounts,0);
+  const outside=document.getElementById('outside');
+  outside.focus();
+  timeline.setRows(original,'keep');
+  assert.equal(document.activeElement,outside,'reorder must not capture an external search control');
+  control.focus();
+  timeline.setRows(['A','C'].map(row),'keep');
+  assert.equal(control.isConnected,false,'removed card must be destroyed');
+  assert.notEqual(document.activeElement,control,'removed controls must never be resurrected');
+  timeline.dispose();dom.window.close();
+});
+
+test('repeated reorders retain card focus and mounted identity across fifty commits',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:600});
+  host.getBoundingClientRect=()=>({top:-viewport.scrollTop,left:0,width:700,height:0});
+  let mounts=0,unmounts=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{
+      mounts++;
+      const wrapper=document.createElement('article');wrapper.dataset.path=row.path;
+      wrapper.append(document.createElement('button'));
+      wrapper.getBoundingClientRect=()=>({height:100,width:700,top:0});
+      return wrapper;
+    },
+    unmount:()=>{unmounts++;}
+  });
+  const row=path=>({path,firstOfDay:false,dayTitle:'',daySubtitle:'',estimatedHeight:100,
+    layoutKey:'stable',contentKey:'stable'});
+  const normal=['A','B','C'].map(row),swapped=[normal[1],normal[0],normal[2]];
+  timeline.setRows(normal,'keep');
+  const target=host.querySelector('[data-path="B"] button');
+  target.focus();
+  for(let n=0;n<50;n++){
+    timeline.setRows(n%2===0?swapped:normal,'keep');
+    assert.equal(document.activeElement,target,'focused button survives update '+n);
+    assert.equal(host.querySelector('[data-path="B"] button'),target);
+  }
+  assert.equal(mounts,3);
+  assert.equal(unmounts,0);
+  timeline.dispose();dom.window.close();
+});
+
 test('explicit clicked-card anchor takes precedence over viewport top and falls back to results',()=>{
   const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
   global.document=dom.window.document;

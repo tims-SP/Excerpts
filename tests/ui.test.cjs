@@ -312,6 +312,26 @@ test('top filter controls survive selection changes and retain keyboard focus',a
   await t.close();
 });
 
+
+test('native card action keeps focus when surviving list rows change order',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  const timeline=renderer.timeline;
+  const before=[...timeline.rows];
+  assert.ok(before.length>=2);
+  const card=root.querySelector('.ex-card[data-path="'+before[1].path+'"]');
+  const option=card?.querySelector('.ex-card-options');
+  assert.ok(option,'second card menu action is available');
+  option.focus();
+  const previous=renderer.renderToken;
+  timeline.setRows([before[1],before[0],...before.slice(2)],'keep');
+  assert.equal(document.activeElement,option,'existing menu button keeps focus during reorder');
+  assert.equal(root.querySelector('.ex-card[data-path="'+before[1].path+'"] .ex-card-options'),option);
+  assert.equal(renderer.renderToken,previous,'card reordering cannot invalidate Markdown renderers');
+  timeline.setRows(before,'keep');
+  assert.equal(document.activeElement,option);
+  await t.close();
+});
+
 test('stale active-tag visibility frame cannot undo a newer clear selection',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   clickByLabel(root,'筛选标签');

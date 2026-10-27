@@ -360,16 +360,32 @@ export class VirtualTimeline {
         if (index < visibleFirst) precedingDelta += delta;
       }
     }
-    // Reused rows can now have new indices. Reorder only nodes that moved.
+    // Reused rows can now have new indices. A native insertBefore of a
+    // connected row can blur its focused descendant (Chromium/WebView).
+    // Preserve focus only when an actual retained row moves; never hijack
+    // focus from the search box or resurrect an unmounted/disabled control.
+    const active = this.window.ownerDocument.activeElement;
+    const focused = active && this.window.contains(active) &&
+      typeof (active as HTMLElement).focus === "function" ? active as HTMLElement : null;
+    let movedRetainedRow = false;
     let cursor: ChildNode | null = this.window.firstChild;
     for (let index = start; index < end; index++) {
       const element = this.mounted.get(index);
       if (!element) continue;
       if (element === cursor) cursor = cursor.nextSibling;
-      else this.window.insertBefore(element, cursor);
+      else {
+        if (element.isConnected) movedRetainedRow = true;
+        this.window.insertBefore(element, cursor);
+      }
     }
     if (precedingDelta) this.viewport.scrollTop += precedingDelta;
     this.updateSpacers();
+    if (movedRetainedRow && focused && focused.isConnected &&
+        this.window.contains(focused) && !focused.closest("[hidden], [inert]") &&
+        !("disabled" in focused && focused.disabled) &&
+        this.window.ownerDocument.activeElement !== focused) {
+      focused.focus({ preventScroll: true });
+    }
   }
 
   private updateSpacers(): void {
