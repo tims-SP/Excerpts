@@ -4260,3 +4260,142 @@ test('page menu labels clearing as clearing and not as an automatic refresh',asy
   assert.equal(r.scanStatus,'stale');
   await t.close();
 });
+
+test('card menu switches to recovery when index becomes stale during asynchronous Markdown read',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const read=t.plugin.repo.read.bind(t.plugin.repo);
+  const parsed=await read(t.md.path);
+  let release;
+  t.plugin.repo.read=()=>new Promise(resolve=>{release=()=>resolve(parsed);});
+  Menu.last=null;
+  clickByLabel(root,'卡片选项');
+  await waitFor(()=>Boolean(release),'pending menu read');
+  r.markStale(t.md.path);
+  release();
+  await waitFor(()=>Menu.last?.items.some(item=>item.title==='刷新摘录'),'recovery after read');
+  assert.deepEqual(Menu.last.items.map(item=>item.title),['刷新摘录']);
+  await t.close();
+});
+
+test('card menu pending read refuses normal file commands when another view acquires the mutex',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  const parsed=await t.plugin.repo.read(t.md.path);
+  let release;
+  t.plugin.repo.read=()=>new Promise(resolve=>{release=()=>resolve(parsed);});
+  Menu.last=null;Notice.last='';
+  clickByLabel(root,'卡片选项');
+  await waitFor(()=>Boolean(release),'pending read');
+  const owner={};assert.equal(t.plugin.tryAcquireScan(owner),true);
+  release();
+  await waitFor(()=>/另一个摘录页面正在操作/.test(Notice.last),'mutex rejection');
+  assert.equal(Menu.last,null);
+  t.plugin.releaseScan(owner);
+  await t.close();
+});
+
+test('a menu opened before a file change refuses to open old file actions after invalidation',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'卡片选项');
+  await waitFor(()=>Menu.last?.items.some(item=>item.title==='编辑原文'),'menu ready');
+  const edit=Menu.last.items.find(item=>item.title==='编辑原文');
+  r.markStale(t.md.path);Notice.last='';
+  edit.handler();
+  assert.match(Notice.last,/索引需要刷新/);
+  assert.equal(t.leaf.lastFile,null);
+  await t.close();
+});
+
+test('section menu rejects an inserted H2 before its intended section',async()=>{
+  const source='# 标题\n\n## 来源\n甲\n\n## 批注\n乙';
+  const t=await fixture(false,source),root=t.pane.contentEl;
+  clickByLabel(root,'卡片选项');
+  await waitFor(()=>Menu.last?.items.some(x=>x.title==='编辑分组：来源'),'H2 menu ready');
+  const item=Menu.last.items.find(x=>x.title==='编辑分组：来源');
+  t.files.get(t.md.path).data='# 标题\n\n## 新增\n零\n\n'+source.slice('# 标题\n\n'.length);
+  Notice.last='';
+  item.handler();
+  await waitFor(()=>/原文分组已变化/.test(Notice.last),'changed structure rejected');
+  assert.equal(t.leaf.lastFile,null,'wrong H2 was never opened');
+  await t.close();
+});
+
+test('section menu rejects changed body and reordered repeated H2 headings',async()=>{
+  const source='# 标题\n\n## 来源\n甲\n\n## 来源\n乙';
+  for(const updated of [
+    source.replace('甲','已改动'),
+    '# 标题\n\n## 来源\n乙\n\n## 来源\n甲'
+  ]){
+    const t=await fixture(false,source),root=t.pane.contentEl;
+    clickByLabel(root,'卡片选项');
+    await waitFor(()=>Menu.last?.items.filter(x=>x.title?.startsWith('编辑分组：')).length===2,'repeated H2');
+    const item=Menu.last.items.find(x=>x.title==='编辑分组：来源（第 2 个）');
+    t.files.get(t.md.path).data=updated;
+    Notice.last='';item.handler();
+    await waitFor(()=>/原文分组已变化/.test(Notice.last),'changed H2 denied');
+    assert.equal(t.leaf.lastFile,null);
+    await t.close();
+  }
+});
+
+test('failed search removes old matches, shows error distinct from no results, and permits clearing',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  input.value='测试标题';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchReady&&r.matches?.has(t.md.path),'first search success');
+  const original=t.plugin.repo.search.bind(t.plugin.repo);
+  t.plugin.repo.search=async()=>{throw Error('模拟搜索错误');};
+  input.value='不存在的关键词';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchFailed,'search failed');
+  assert.equal(r.searchReady,true,'a failed search must not hold the plugin-wide busy lock');
+  assert.equal(r.matches,null,'old matches cannot be used by the new query');
+  assert.equal(root.querySelectorAll('.ex-card').length,0);
+  assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索未完成');
+  assert.equal(root.querySelector('.ex-empty-description')?.textContent.includes('当前结果不可用'),true);
+  assert.equal(r.isBusy(),false);
+  assert.equal(input.disabled,false);
+  assert.equal(root.querySelector('.ex-search-clear').disabled,false);
+  t.plugin.repo.search=original;
+  root.querySelector('.ex-search-clear').click();
+  assert.equal(r.searchFailed,false);
+  assert.equal(r.searchText,'');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  await t.close();
+});
+
+test('retry after a search failure commits only the latest query results',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'搜索');
+  const input=root.querySelector('.ex-search');
+  t.plugin.repo.search=async()=>{throw Error('first search fails');};
+  input.value='错误查询';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>r.searchFailed,'search failed');
+  let release;
+  t.plugin.repo.search=()=>new Promise(resolve=>{release=resolve;});
+  input.value='恢复查询';input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  await waitFor(()=>Boolean(release),'retry started');
+  assert.equal(r.searchFailed,false);
+  release(new Set([t.md.path]));
+  await waitFor(()=>r.searchReady&&r.matches?.has(t.md.path),'retry done');
+  assert.equal(root.querySelectorAll('.ex-card').length,1);
+  assert.equal(r.searchFailed,false);
+  await t.close();
+});
+
+test('an outdated failing search cannot overwrite a successful newer search',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  let rejectOld;
+  t.plugin.repo.search=async(_items, query)=>query==='旧查询'
+    ? new Promise((_resolve,reject)=>{rejectOld=reject;})
+    : new Set([t.md.path]);
+  r.searchText='旧查询';r.searchToken++;
+  const oldRun=r.search(r.searchToken);
+  await waitFor(()=>Boolean(rejectOld),'old search started');
+  r.searchText='新查询';r.searchToken++;
+  await r.search(r.searchToken);
+  rejectOld(Error('outdated rejection'));await oldRun;
+  assert.equal(r.searchFailed,false);
+  assert.equal(r.matches?.has(t.md.path),true);
+  assert.equal(r.searchReady,true);
+  await t.close();
+});
