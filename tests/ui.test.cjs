@@ -315,9 +315,16 @@ test('top filter controls survive selection changes and retain keyboard focus',a
 
 test('native card action keeps focus when surviving list rows change order',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  // The default UI fixture contains only one excerpt. Index a second actual
+  // fixture file instead of changing product virtualization for this test.
+  const extra=new TFile('摘录/第二条.md');
+  t.files.set(extra.path,{file:extra,data:'第二条摘录的测试正文'});
+  renderer.requestRefresh(true);
+  await waitForIndex(t,2);
+  await waitFor(()=>root.querySelectorAll('.ex-card').length>=2,'two virtual cards');
   const timeline=renderer.timeline;
   const before=[...timeline.rows];
-  assert.ok(before.length>=2);
+  assert.equal(before.length,2);
   const card=root.querySelector('.ex-card[data-path="'+before[1].path+'"]');
   const option=card?.querySelector('.ex-card-options');
   assert.ok(option,'second card menu action is available');
