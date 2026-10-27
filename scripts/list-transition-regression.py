@@ -132,7 +132,7 @@ with sync_playwright() as playwright:
             page.evaluate(INSTRUMENT)
             # Normal tag switching is intentionally allowed to navigate to the
             # result header; never require a fixed numeric scrollTop here.
-            page.get_by_role("button",name="筛选标签").click()
+            page.get_by_role("button",name="筛选标签",exact=True).click()
             assert page.locator('.ex-filter-tags [data-tag-key="tag:生活"]').count()>0
             def cycle_tags():
                 for _ in range(8):
@@ -142,7 +142,7 @@ with sync_playwright() as playwright:
                     page.wait_for_timeout(35)
             take(page,f"{width}-tag-cycles",cycle_tags)
             assert page.evaluate("window.__pane.renderer.tagFilter")==""
-            page.get_by_role("button",name="搜索").click()
+            page.get_by_role("button",name="搜索",exact=True).click()
             def run_search():
                 page.locator(".ex-search").fill("回归正文")
                 page.wait_for_function(
