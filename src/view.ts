@@ -279,12 +279,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.pendingTags.size) return null; // Tag editor shows its pending write.
     if (this.selectionBusy) return null; // Selection toolbar already shows progress.
     if (this.selectionMode === "deleting") return null;
-    if (this.selectionMode === "selecting" && this.scanStatus !== "done")
-      return info("selection-stale", "当前选择已过期",
-        "摘录列表已变化。请退出批量选择，再刷新索引。", "exit-selection", "退出选择");
+
     if (this.openTagEditors.size && this.scanStatus !== "done")
       return null; // The active tag editor owns the explanation and cancel action.
-    if (this.selectionMode === "selecting") return null; // Normal selection is not an exception.
+    if (this.selectionMode === "selecting") return null; // Selection toolbar and footer own recovery.
     if (this.openTagEditors.size) return null; // The inline editor already has exit controls.
     if (this.scanStatus === "scanning") return null; // Existing progress is sufficient.
     if (this.plugin.isNavigating()) return info("navigating", "正在打开摘录页", "请等待页面打开完成。");
@@ -479,7 +477,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const warning = editor.querySelector<HTMLElement>(".ex-tag-edit-warning");
       if (warning) {
         const blocked = this.reason("tag");
-        const explanation = this.scanStatus !== "done"
+        const explanation = pending ? "" : this.scanStatus !== "done"
           ? "摘录内容已变化，请取消标签编辑后刷新。"
           : (blocked ?? "");
         if (warning.hidden !== !explanation) warning.hidden = !explanation;
@@ -583,7 +581,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         return;
       }
     }
-    const staleSelection = this.scanStatus === "done" && this.selectionMode === "selecting";
     if (this.scanStatus === "done") this.clearScanCompletion();
     if (this.scanStatus === "scanning") this.scanDirty = true;
     // A page without a committed index remains unscanned, even when Vault files change.
@@ -605,7 +602,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.renderScanStatus();
     if (this.selectionMode !== "normal") this.updateSelectionControls();
     this.updateAvailability();
-    if (staleSelection) new Notice("摘录内容已变化，请退出批量选择后刷新");
   }
   requestRefresh(force = false): void {
     if (this.pageMode === "calendar") { new Notice("请返回摘录列表后刷新"); return; }
