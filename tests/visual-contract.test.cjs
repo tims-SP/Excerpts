@@ -46,7 +46,7 @@ test('screenshot suite covers runtime states and records component crops for rev
                        'single-delete','selection','bulk-delete','saved-filter',
                        'saved-filter-error','settings','folder','scan-complete',
                        'scan-blocked','scan-error','stale','scan-progress','invalid',
-                       'recovery-search-stale','recovery-tag-stale','recovery-selection-stale',
+                       'recovery-search-stale','recovery-tag-stale','recovery-tag-pending','recovery-selection-stale',
                        'calendar-stale-warning','card-recovery-menu-scrolled',
                        'card-recovery-clear-scrolled','card-mutex-feedback']) {
     assert.ok(suite.includes('"' + state + '"'), 'missing screenshot scenario: ' + state);
