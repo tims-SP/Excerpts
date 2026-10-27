@@ -184,6 +184,7 @@ export class EntryRepository {
       const batch = files.slice(offset, offset + stride);
       for (let p = 0; p < batch.length; p += 4) {
         if (shouldCancel()) return matches;
+        let unreadable = false;
         await Promise.all(batch.slice(p, p+4).map(async card => {
           if (card.basename.toLocaleLowerCase().includes(q) ||
               card.tags.some(tag => tag.toLocaleLowerCase().includes(q))) {
@@ -192,8 +193,15 @@ export class EntryRepository {
           }
           try {
             if ((await this.searchText(card)).includes(q)) matches.add(card.path);
-          } catch { /* A deleted or inaccessible file cannot match. */ }
+          } catch {
+            unreadable = true;
+          }
         }));
+        // Complete the bounded batch before failing; an obsolete search must
+        // never replace a newer query's success with its own read error.
+        if (shouldCancel()) return matches;
+        if (unreadable)
+          throw new Error("部分摘录文件无法读取，无法确认完整搜索结果。请检查文件后重新搜索，或清除关键词。");
       }
       onProgress?.(Math.min(files.length, offset + batch.length));
       await new Promise<void>(resolve => setTimeout(resolve, 0));
