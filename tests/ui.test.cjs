@@ -4411,7 +4411,7 @@ test('failed search removes old matches, shows error distinct from no results, a
   assert.equal(r.matches,null,'old matches cannot be used by the new query');
   assert.equal(root.querySelectorAll('.ex-card').length,0);
   assert.equal(root.querySelector('.ex-empty-title')?.textContent,'搜索未完成');
-  assert.equal(root.querySelector('.ex-empty-description')?.textContent.includes('当前结果不可用'),true);
+  assert.match(root.querySelector('.ex-empty-description')?.textContent ?? '',/无法确认完整结果/);
   assert.equal(r.isBusy(),false);
   assert.equal(input.disabled,false);
   assert.equal(root.querySelector('.ex-search-clear').disabled,false);
