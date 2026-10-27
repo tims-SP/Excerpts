@@ -1714,14 +1714,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           ? [active, ...this.availableTags.filter(tag => tag !== active)]
           : this.availableTags;
         const menu = new Menu();
+        // Keep the complete lookup reachable without scrolling a tall native
+        // menu, especially on narrow mobile viewports.
+        if (current.length > limit + 40) menu.addItem(item =>
+          item.setTitle("查找全部标签…").setIcon("search")
+            .onClick(() => this.openAllTagFilterPicker()));
         for (const tag of current.slice(limit, limit + 40)) menu.addItem(item =>
           item.setTitle("#" + tag).onClick(() => {
             if (!this.guard("filter")) return;
             this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("results");
           }));
-        if (current.length > limit + 40) menu.addItem(item =>
-          item.setTitle("查找全部标签…").setIcon("search")
-            .onClick(() => this.openAllTagFilterPicker()));
         const rect = more.getBoundingClientRect();
         menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet"));
