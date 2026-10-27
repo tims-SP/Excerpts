@@ -4925,3 +4925,111 @@ test('manual refresh retries an errored card even when source bytes are identica
   assert.match(root.querySelector('.ex-card .ex-native-markdown').textContent,/正文/);
   await t.close();
 });
+
+test('H2 close/reopen ignores obsolete native render success and failure',async()=>{
+  const t=await fixture(false,'正文\\n\\n## 来源\\n\\n分组异步内容'.replace(/\\n/g,'\n'));
+  const card=t.pane.contentEl.querySelector('.ex-card');
+  const trigger=card.querySelector('.ex-group-trigger');
+  const original=mocks.MarkdownRenderer.render;
+  const pending=[];
+  mocks.MarkdownRenderer.render=(app,content,target,path)=>{
+    if(!content.includes('分组异步内容'))return original(app,content,target,path);
+    return new Promise((resolve,reject)=>pending.push({resolve,reject,target}));
+  };
+  try{
+    for(const lateResult of ['failure','success']){
+      trigger.click();
+      await waitFor(()=>pending.length===1,'first section render');
+      const obsolete=pending[0];
+      trigger.click();
+      assert.equal(trigger.getAttribute('aria-expanded'),'false');
+      assert.equal(obsolete.target.isConnected,false);
+      trigger.click();
+      await waitFor(()=>pending.length===2,'new section render');
+      const current=pending[1];
+      current.target.append(document.createTextNode('本次有效的分组内容'));
+      current.resolve();
+      await waitFor(()=>card.querySelector('.ex-group-body')?.textContent.includes('本次有效的分组内容'),
+        'current section rendered');
+      if(lateResult==='failure')obsolete.reject(new Error('过期分组渲染失败'));
+      else {obsolete.target.append(document.createTextNode('过期内容'));obsolete.resolve();}
+      await wait();
+      const region=card.querySelector('.ex-group-body');
+      assert.equal(trigger.getAttribute('aria-expanded'),'true');
+      assert.equal(region.hidden,false);
+      assert.ok(current.target.isConnected);
+      assert.match(region.textContent,/本次有效的分组内容/);
+      assert.doesNotMatch(region.textContent,/过期内容/);
+      assert.equal(card.querySelectorAll('.ex-preview-error').length,0,
+        'obsolete callback must not replace the current section with a failure');
+      pending.length=0;
+      trigger.click();
+    }
+  }finally{
+    for(const render of pending)render.resolve();
+    mocks.MarkdownRenderer.render=original;
+    await t.close();
+  }
+});
+
+test('a restored expanded H2 keeps card loading until both body and section finish',async()=>{
+  const t=await fixture(false,'正文段落\\n\\n## 来源\\n\\n分组延迟渲染'.replace(/\\n/g,'\n'));
+  const r=t.pane.renderer,item=r.items[0];
+  const original=mocks.MarkdownRenderer.render;
+  const card=r.createCard(item);
+  r.containerEl.append(card);
+  r.sectionsShown.set(item.path,new Set([0]));
+  let release,started=false;
+  mocks.MarkdownRenderer.render=(app,content,target,path)=>{
+    if(!content.includes('分组延迟渲染'))return original(app,content,target,path);
+    started=true;
+    return new Promise(resolve=>{release=()=>{target.append(document.createTextNode(content));resolve();};});
+  };
+  try{
+    const rendering=r.hydrate(item,card,r.renderToken);
+    await waitFor(()=>started && typeof release==='function','restored H2 native render started');
+    assert.equal(card.classList.contains('ex-card-loading'),true,
+      'body readiness alone must not reveal a partially rendered restored H2');
+    assert.equal(card.querySelector('.ex-card-placeholder')?.isConnected,true);
+    release();
+    await rendering;
+    assert.equal(card.classList.contains('ex-card-loading'),false);
+    assert.equal(card.querySelector('.ex-card-placeholder'),null);
+    assert.match(card.querySelector('.ex-group-body').textContent,/分组延迟渲染/);
+  }finally{
+    if(release)release();
+    mocks.MarkdownRenderer.render=original;
+    card.remove();
+    await t.close();
+  }
+});
+
+test('a failed restored H2 settles loading and offers native reading without retry loops',async()=>{
+  const t=await fixture(false,'普通正文\\n\\n## 来源\\n\\n分组失败'.replace(/\\n/g,'\n'));
+  const r=t.pane.renderer,item=r.items[0],original=mocks.MarkdownRenderer.render;
+  const card=r.createCard(item);
+  r.containerEl.append(card);
+  r.sectionsShown.set(item.path,new Set([0]));
+  let release,started=false;
+  mocks.MarkdownRenderer.render=(app,content,target,path)=>{
+    if(!content.includes('分组失败'))return original(app,content,target,path);
+    started=true;
+    return new Promise((resolve,reject)=>{release=()=>reject(Error('模拟分组失败'));});
+  };
+  try{
+    const rendering=r.hydrate(item,card,r.renderToken);
+    await waitFor(()=>started&&typeof release==='function','restored failing section started');
+    assert.equal(card.classList.contains('ex-card-loading'),true);
+    release();
+    await rendering;
+    assert.equal(card.classList.contains('ex-card-loading'),false);
+    assert.match(card.querySelector('.ex-preview-error')?.textContent??'',/分组预览失败/);
+    assert.equal(card.querySelector('.ex-group-read').hidden,false);
+    assert.equal(card.querySelector('.ex-group-trigger').getAttribute('aria-expanded'),'false');
+  }finally{
+    if(release)release();
+    mocks.MarkdownRenderer.render=original;
+    card.remove();
+    await t.close();
+  }
+});

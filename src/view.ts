@@ -2311,8 +2311,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     }
     if (!parsed.body && !parsed.title && !parsed.sections.length)
       body.append(node("span", "ex-empty-card", "（空白摘录）"));
-    this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
-    return bodyReady;
+    // A restored, already-open H2 section is part of the card's first paint.
+    // User-opened sections after hydration remain independently asynchronous.
+    const sectionsReady = this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
+    return Promise.all([bodyReady, sectionsReady]).then(() => {});
   }
 
   private renderMarkdown(container: HTMLElement, markdown: string, path: string):
@@ -2330,9 +2332,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       .catch(error => ({ ok: false as const,
         error: error instanceof Error ? error.message : String(error) }));
   }
-  private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
+  private renderSections(mount: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): Promise<void> {
     mount.replaceChildren();
-    if (!parsed.sections.length) return;
+    if (!parsed.sections.length) return Promise.resolve();
+    const initiallyExpanded: Promise<void>[] = [];
     const readOriginal = () => {
       if (!this.guard("page")) return;
       void this.plugin.openMarkdownPreview(item.path).catch(notify);
@@ -2342,7 +2345,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       mount.append(node("p", "ex-long-content-hint",
         "包含 " + parsed.sections.length + " 个分组，请在阅读模式查看。"));
       mount.append(button("阅读原文 ↗", readOriginal, "ex-group-read"));
-      return;
+      return Promise.resolve();
     }
     const shown = this.sectionsShown.get(item.path) ?? new Set<number>();
     const card = mount.closest<HTMLElement>(".ex-card");
@@ -2364,7 +2367,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         setIcon(chevron, opening ? "chevron-down" : "chevron-right");
         if (opening) {
           shown.add(index);
-          mountSection();
+          void mountSection();
         } else {
           shown.delete(index);
           this.sectionObservers.get(item.path)?.get(index)?.disconnect();
@@ -2399,11 +2402,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         read.hidden = false;
         new Notice("分组超过卡片阅读上限，请在阅读模式查看");
       };
-      let mountSection: () => void = () => {};
+      let mountSection: () => Promise<void> = () => Promise.resolve();
       // Declaration is intentionally outside the click callback so restored sections
       // and newly opened sections use the same bounded native renderer.
-      const renderSection = () => {
-        if (!section.markdown || region.childElementCount) return;
+      const renderSection = (): Promise<void> => {
+        if (!section.markdown || region.childElementCount) return Promise.resolve();
         if (section.markdown.length > 50000) {
           exceeded = true;
           shown.delete(index);
@@ -2412,10 +2415,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           trigger.setAttribute("aria-label", "阅读原文：" + section.name);
           setIcon(chevron, "arrow-up-right");
           read.hidden = false;
-          return;
+          return Promise.resolve();
         }
-        void this.renderMarkdown(region, section.markdown, item.path).then(result => {
-          if (this.disposed || !region.isConnected || region.hidden) return;
+        const rendering = this.renderMarkdown(region, section.markdown, item.path);
+        // A closed/reopened section reuses its region but NOT its native mount.
+        // Old success/failure callbacks must not act on the new render session.
+        const renderMount = region.querySelector<HTMLElement>(".ex-native-markdown");
+        return rendering.then(result => {
+          if (this.disposed || !region.isConnected || region.hidden ||
+              !renderMount?.isConnected || !region.contains(renderMount)) return;
           if (!result.ok) {
             exceeded = true;
             shown.delete(index);
@@ -2445,8 +2453,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const checks = this.sectionHeightChecks.get(item.path) ?? new Map<number, () => void>();
       checks.set(index, enforceSafeHeight);
       this.sectionHeightChecks.set(item.path, checks);
-      if (expanded) renderSection();
+      if (expanded) initiallyExpanded.push(renderSection());
     });
+    return Promise.all(initiallyExpanded).then(() => {});
   }
 
   /** Selection-only changes do not destroy chip buttons or the tag editor action. */
