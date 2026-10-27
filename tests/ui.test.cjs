@@ -4481,8 +4481,10 @@ test('a vault change after search failure replaces the error panel with stale-in
 test('one unreadable necessary body fails the full search without committing partial matches',async()=>{
   const t=await fixture(),r=t.pane.renderer;
   const valid=await t.plugin.app.vault.create('摘录/匹配正文.md','真正命中关键字');
+  for(let i=0;i<97;i++)
+    await t.plugin.app.vault.create('摘录/其他档案-'+i+'.md','其他普通内容');
   const broken=await t.plugin.app.vault.create('摘录/不可读取.md','不应被读取');
-  t.plugin.refreshViews(true);await waitFor(()=>r.scanStatus==='done'&&r.items.length===3,'three indexed files');
+  t.plugin.refreshViews(true);await waitFor(()=>r.scanStatus==='done'&&r.items.length===100,'one hundred indexed files');
   const original=t.plugin.repo.read.bind(t.plugin.repo);
   let readBroken=0;
   t.plugin.repo.read=async path=>{
