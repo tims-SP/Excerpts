@@ -9,6 +9,7 @@ body{margin:0;background:var(--background-primary);color:var(--text-normal);font
 @media(max-width:480px){.setting-item{flex-direction:column;align-items:stretch;gap:8px}.setting-item-control{justify-content:flex-start}.setting-item-control input,.setting-item-control select{min-width:0}}
 button,input,textarea{font:inherit}button{cursor:pointer}
 .ex-native-markdown p{margin:0 0 12px}.ex-native-markdown blockquote{margin:0 0 12px;padding-left:12px;border-left:2px solid var(--background-modifier-border)}
+.native-fuzzy input{box-sizing:border-box;width:100%;padding:10px 12px;border:1px solid var(--background-modifier-border);border-radius:8px;background:var(--background-secondary);color:var(--text-normal)}.native-fuzzy-results{max-height:45vh;overflow:auto;padding-top:8px}.native-fuzzy-results button{display:block;width:100%;padding:10px 12px;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--text-normal)}.native-fuzzy-results button:focus-visible{outline:2px solid var(--interactive-accent)}
 /*__EXCERPTS_CSS__*/
 </style></head><body><div id="mount"></div>
 <script>
@@ -32,6 +33,31 @@ addToggle(cb){const el=document.createElement("input");el.type="checkbox";this.c
 addDropdown(cb){const el=document.createElement("select");this.control.append(el);const o={addOption(value,label){const option=document.createElement("option");option.value=value;option.textContent=label;el.append(option);return o},setValue(v){el.value=v;return o},onChange(fn){el.addEventListener("change",()=>fn(el.value));return o},setDisabled(v){el.disabled=v;return o}};cb(o);return this}
 }
 class Modal{constructor(app){this.app=app;this.modalEl=document.createElement("div");this.modalEl.className="modal";this.contentEl=document.createElement("div");this.contentEl.className="modal-content";this.modalEl.append(this.contentEl)}open(){document.body.append(this.modalEl);this.onOpen?.()}close(){this.onClose?.();this.modalEl.remove()}}
+class FuzzySuggestModal extends Modal{
+setPlaceholder(text){this.placeholder=text;return this}
+onOpen(){
+this.contentEl.classList.add("native-fuzzy");
+const input=document.createElement("input");input.type="search";input.placeholder=this.placeholder||"Search";
+input.setAttribute("aria-label","查找已有标签");
+const list=document.createElement("div");list.className="native-fuzzy-results";
+this.contentEl.append(input,list);
+let composing=false;
+const refresh=()=>{
+if(composing)return;
+const q=input.value.toLocaleLowerCase();list.replaceChildren();
+for(const item of this.getItems().filter(v=>this.getItemText(v).toLocaleLowerCase().includes(q)).slice(0,8)){
+const b=document.createElement("button");b.textContent=this.getItemText(item);
+b.addEventListener("click",()=>{this.onChooseItem(item,new MouseEvent("click"));this.close()});
+list.append(b);
+}
+};
+input.addEventListener("compositionstart",()=>{composing=true});
+input.addEventListener("compositionend",()=>{composing=false;refresh()});
+input.addEventListener("input",refresh);
+input.addEventListener("keydown",event=>{if(event.key==="Escape"){event.preventDefault();this.close();}});
+refresh();input.focus();window.__fuzzy=this;
+}
+}
 class Notice{constructor(message){(window.__notices||=[]).push(String(message))}}
 class Menu{constructor(){this.items=[]}addItem(fn){let item={title:"",disabled:false,setTitle(s){this.title=s;return this},setIcon(){return this},setDisabled(v){this.disabled=Boolean(v);return this},onClick(fn){this.action=fn;return this}};fn(item);this.items.push(item);return this}addSeparator(){this.items.push(null);return this}showAtPosition(){document.querySelectorAll(".menu").forEach(el=>el.remove());const el=document.createElement("div");el.className="menu";for(const entry of this.items){if(!entry){el.append(document.createElement("hr"));continue}const b=document.createElement("button");b.textContent=entry.title;b.disabled=entry.disabled;b.addEventListener("click",()=>{el.remove();entry.action?.()});el.append(b)}document.body.append(el);window.__menu=this}}
 function setIcon(el,name){const d={search:"M11 4a7 7 0 1 0 0 14a7 7 0 0 0 0-14 M16 16l5 5",hash:"M4 9h16 M4 15h16 M10 3L8 21 M16 3l-2 18",tags:"M3 3h8l10 10-8 8L3 11V3z",pencil:"M4 20l4-1 12-12-3-3L5 16l-1 4","file-pen-line":"M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7 M12 14l7.5-7.5a2 2 0 0 0-2.8-2.8L9.2 11.2 9 15z",ellipsis:"M5 12h.01 M12 12h.01 M19 12h.01",check:"M20 6L9 17l-5-5",x:"M18 6L6 18 M6 6l12 12",plus:"M12 5v14 M5 12h14","chevron-right":"M9 6l6 6-6 6","chevron-down":"M6 9l6 6 6-6"};const svg=document.createElementNS("http://www.w3.org/2000/svg","svg"),p=document.createElementNS("http://www.w3.org/2000/svg","path");svg.setAttribute("viewBox","0 0 24 24");svg.setAttribute("width","18");svg.setAttribute("height","18");svg.setAttribute("fill","none");svg.setAttribute("stroke","currentColor");svg.setAttribute("stroke-width","2");svg.setAttribute("stroke-linecap","round");p.setAttribute("d",d[name]||"M4 12h16");svg.append(p);el.replaceChildren(svg)}
@@ -44,7 +70,7 @@ add("摘录/第二段.md","长句子也应有充足的呼吸感和清晰的段�
 add("摘录/无标签.md","没有标签的卡片也应该保持安静，不应强制增加一行无意义的附属信息。",[],3);
 const vault={getAbstractFileByPath:p=>p==="摘录"?folder:(files.get(p)?.file??null),getFiles:()=>[...files.values()].map(x=>x.file),getAllLoadedFiles:()=>[...files.values()].map(x=>x.file),getMarkdownFiles:()=>[...files.values()].map(x=>x.file).filter(x=>x.extension==="md"),cachedRead:async f=>files.get(f.path).data,process:async(f,fn)=>{const entry=files.get(f.path);entry.data=fn(entry.data);return entry.data},create:async(p,v)=>add(p,v,[],0),createFolder:async()=>{},on:()=>({})};
 function renderMarkdown(markdown,target){for(const part of markdown.split(/\n\s*\n/)){if(!part.trim())continue;let p=document.createElement(part.startsWith("> ")?"blockquote":"p");p.textContent=part.replace(/^> /,"");target.append(p)}}
-const obsidian={TAbstractFile,TFile,TFolder,ItemView,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Modal,Notice,Menu,setIcon,getAllTags(cache){return [...(cache.tags||[]).map(v=>v.tag),...(cache.frontmatter?.tags||[]).map(t=>"#"+t)]},MarkdownRenderer:{async render(app,md,target){renderMarkdown(md,target)}}};
+const obsidian={TAbstractFile,TFile,TFolder,ItemView,FileView,MarkdownRenderChild,Plugin,PluginSettingTab,Setting,Modal,FuzzySuggestModal,Notice,Menu,setIcon,getAllTags(cache){return [...(cache.tags||[]).map(v=>v.tag),...(cache.frontmatter?.tags||[]).map(t=>"#"+t)]},MarkdownRenderer:{async render(app,md,target){renderMarkdown(md,target)}}};
 HTMLElement.prototype.empty=function(){this.replaceChildren()};HTMLElement.prototype.addClass=function(n){this.classList.add(n)};HTMLElement.prototype.createDiv=function(){const el=document.createElement("div");this.append(el);return el};HTMLElement.prototype.createEl=function(tag,options={}){const el=document.createElement(tag);if(options.text!==undefined)el.textContent=options.text;this.append(el);return el};
 const app={vault,metadataCache:{getFileCache:f=>({tags:[],frontmatter:{tags:files.get(f.path)?.tags||[]}}),on:()=>({})},fileManager:{async processFrontMatter(file,callback){const entry=files.get(file.path),frontmatter={tags:entry.tags};callback(frontmatter);entry.tags=frontmatter.tags||[]}},workspace:{on:()=>({}),getLeaf(){return {async openFile(){}}},async revealLeaf(){}}};
 </script><script>/*__EXCERPTS_BUNDLE__*/</script><script>
