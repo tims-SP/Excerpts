@@ -75,7 +75,7 @@ REQUIRED = {
 # Names deliberately identify states as well as components. New features should
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
-    "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty",
+    "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty", "search-failed",
     "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "card-recovery-menu-scrolled", "card-recovery-clear-scrolled", "card-mutex-feedback", "calendar-stale-warning",
@@ -300,6 +300,33 @@ with sync_playwright() as playwright:
             page.wait_for_selector(".ex-empty", timeout=15000)
             screenshot(page, theme, width, "search-empty", "list-search", "empty-results")
             assert not page.locator(".ex-page-hint").is_visible(), (key,"normal search shows intrusive recovery hint")
+            # Fail a real search on the compiled plugin. No previous matching
+            # cards may appear under the failed query or permit stale actions.
+            page.evaluate("""() => {
+              const repo = window.__plugin.repo, r = window.__pane.renderer;
+              window.__originalVisualSearch = repo.search.bind(repo);
+              repo.search = async () => { throw Error('visual search failure'); };
+              r.searchText = '强制失败搜索';
+              r.searchInput.value = r.searchText;
+              r.scheduleSearch('results');
+            }""")
+            page.wait_for_function("window.__pane.renderer.searchFailed === true", timeout=15000)
+            assert page.locator(".ex-empty-title").inner_text() == "搜索未完成", (key,"failed search looks successful")
+            assert page.locator(".ex-card").count() == 0, (key,"old result remained operable")
+            assert page.locator(".ex-search-clear").is_enabled(), (key,"failed search cannot be cleared")
+            assert not page.locator(".ex-page-hint").is_visible(), (key,"search failure created global warning")
+            screenshot(page, theme, width, "search-failed", "list-search", "empty-results")
+            page.evaluate("""() => {
+              const repo = window.__plugin.repo, r = window.__pane.renderer;
+              repo.search = window.__originalVisualSearch;
+              r.searchText = '不存在的测试查询零结果';
+              r.searchInput.value = r.searchText;
+              r.scheduleSearch('results');
+            }""")
+            page.wait_for_function("""() => {
+              const r = window.__pane.renderer;
+              return r.searchReady && !r.searchFailed && r.matches instanceof Set;
+            }""", timeout=15000)
             page.evaluate("() => window.__pane.renderer.markStale()")
             assert page.locator(".ex-page-hint").get_attribute("data-state") == "search-stale"
             assert page.locator(".ex-recovery-action").is_visible()
