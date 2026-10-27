@@ -159,14 +159,18 @@ with sync_playwright() as playwright:
             page.get_by_role("button",name="筛选标签",exact=True).click()
             assert page.locator('.ex-filter-tags [data-tag-key="tag:生活"]').count()>0
             def cycle_tags():
-                for _ in range(8):
+                for n in range(8):
+                    # Disappearing filtered-out cards may legitimately be recycled.
+                    # Only the intersection at EACH individual commit is retained.
+                    prior=page.evaluate("window.__stableCards()")
                     page.locator('.ex-filter-tags [data-tag-key="tag:生活"]').click()
                     page.wait_for_timeout(35)
+                    compare_survivors(page,prior,f"{width}-filter-{n}")
+                    prior=page.evaluate("window.__stableCards()")
                     page.locator('.ex-filter-tags [data-tag-key="all"]').click()
                     page.wait_for_timeout(35)
-            before_tags=page.evaluate("window.__stableCards()")
+                    compare_survivors(page,prior,f"{width}-all-{n}")
             take(page,f"{width}-tag-cycles",cycle_tags)
-            compare_survivors(page,before_tags,f"{width}-tag-cycles")
             assert page.evaluate("window.__pane.renderer.tagFilter")==""
             page.get_by_role("button",name="搜索",exact=True).click()
             def run_search():
