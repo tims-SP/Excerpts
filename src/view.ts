@@ -588,6 +588,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.scanStatus === "scanning") this.scanDirty = true;
     // A page without a committed index remains unscanned, even when Vault files change.
     else if (this.scanStatus !== "blocked" && this.scanStatus !== "idle") this.scanStatus = "stale";
+    const failedSearch = this.searchFailed;
     this.searchFailed = false;
     if (!this.searchReady) {
       this.searchToken++;
@@ -596,6 +597,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       this.searchReady = true;
       this.matches = null;
       if (this.listEl) this.drawCards("keep");
+    } else if (failedSearch && this.searchText && this.listEl) {
+      // The index is now stale; replace the old search-failure surface with
+      // the actionable stale-index explanation.
+      this.drawCards("keep");
     }
     this.renderScanStatus();
     if (this.selectionMode !== "normal") this.updateSelectionControls();
