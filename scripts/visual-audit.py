@@ -788,7 +788,9 @@ with sync_playwright() as playwright:
             }""")
             page.locator(".ex-filter-tags button", has_text="更多标签").click()
             assert page.locator(".menu button").count() == 41, (key,"tag menu overflowed")
-            page.locator(".menu button", has_text="查找全部标签").click()
+            assert page.locator(".menu button").first.inner_text() == "查找全部标签…", (
+                key,"native lookup must be immediately reachable in the capped menu")
+            page.locator(".menu button").first.click()
             assert page.locator(".native-fuzzy").is_visible(), (key,"native fuzzy modal absent")
             page.locator(".native-fuzzy input").fill("查找标签069")
             assert page.locator(".native-fuzzy-results button").count() == 1
