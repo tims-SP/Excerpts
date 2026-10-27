@@ -86,7 +86,8 @@ async function fixture(noTags=false,markdown='# 测试标题\n\n![[图片.png]]\
     async cachedRead(file){return files.get(file.path).data;},async read(file){return files.get(file.path).data;},
     async process(file,update){const entry=files.get(file.path);entry.data=update(entry.data);file.stat.mtime++;file.stat.size=entry.data.length;return entry.data;},async createFolder(path){files.set(path,{file:new TFolder(path)});},async create(path,content){if(files.has(path))throw Error('exists');const f=new TFile(path);files.set(path,{file:f,data:content});return f;},on(name,handler){vaultEvents.set(name,handler);return {};}};
   const plugin=new Excerpts();
-  const leaf={lastFile:null,view:null,async openFile(file){this.lastFile=file;this.view=new MarkdownView();this.view.file=file;},async setViewState(state){
+  const leaf={lastFile:null,view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){this.lastFile=file;this.view=new MarkdownView();this.view.file=file;},async setViewState(state){
     this.state=state;
     if(!this.view)this.view=new MarkdownView();
     this.view.mode=state.state.mode;
@@ -4732,5 +4733,93 @@ test('failed pending tag write reveals the correct stale recovery after the lock
   card.querySelector('.ex-tag-cancel').click();
   assert.equal(r.openTagEditors.size,0);
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
+  await t.close();
+});
+
+test('a card created after an existing mutex synchronizes every action without a global refresh',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const item=r.items[0],owner={};
+  assert.equal(t.plugin.tryAcquireScan(owner),true);
+  r.syncControls();
+  const newCard=r.createCard(item);
+  root.append(newCard); // Models a newly mounted virtual row after the last broadcast.
+  const more=newCard.querySelector('.ex-card-options');
+  const tag=newCard.querySelector('.ex-tag');
+  const add=newCard.querySelector('.ex-add-tag');
+  assert.equal(more.disabled,false,'reason-only menu remains a real, reachable control');
+  assert.equal(more.dataset.exReasonOnly,'true');
+  assert.match(more.getAttribute('aria-label'),/查看操作受限原因/);
+  assert.equal(more.hasAttribute('aria-haspopup'),false);
+  assert.equal(tag.disabled,true);
+  assert.equal(add.disabled,true);
+  r.renderTags(newCard.querySelector('.ex-chips'),item,false);
+  assert.equal(newCard.querySelector('.ex-tag').disabled,true,
+    'rebuilding tags under the lock must not revive their click targets');
+  assert.equal(newCard.querySelector('.ex-add-tag').disabled,true);
+  t.plugin.releaseScan(owner);
+  r.syncControls();
+  assert.equal(more.disabled,false);
+  assert.equal(more.hasAttribute('data-ex-reason-only'),false);
+  assert.equal(more.getAttribute('aria-haspopup'),'menu');
+  assert.equal(more.getAttribute('aria-label'),'卡片选项');
+  assert.equal(newCard.querySelector('.ex-tag').disabled,false);
+  assert.equal(newCard.querySelector('.ex-add-tag').disabled,false);
+  newCard.remove();
+  await t.close();
+});
+
+test('new card tag cancellation remains available until its own tag write starts',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const item=r.items[0],card=r.createCard(item);
+  root.append(card);
+  r.openTagEditors.add(item.path);
+  r.renderTags(card.querySelector('.ex-chips'),item,true);
+  assert.equal(card.querySelector('.ex-add-tag').disabled,false,'existing edit can be canceled');
+  const other={};assert.equal(t.plugin.tryAcquireScan(other),true);
+  r.syncControls();
+  assert.equal(card.querySelector('.ex-add-tag').disabled,false,'cross-view lock does not prevent cancel');
+  r.pendingTags.add(item.path);
+  r.syncControls();
+  assert.equal(card.querySelector('.ex-add-tag').disabled,true,'pending write locks cancel');
+  r.pendingTags.delete(item.path);
+  r.openTagEditors.delete(item.path);
+  t.plugin.releaseScan(other);
+  card.remove();
+  await t.close();
+});
+
+test('calendar repeats no live warning mutation for an unchanged scan status',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,r=t.pane.renderer;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='摘录日历').handler();
+  r.markStale(t.md.path);
+  const warning=root.querySelector('.ex-calendar-warning');
+  assert.match(warning.textContent,/返回摘录列表后手动刷新/);
+  const observer=new dom.window.MutationObserver(()=>{});
+  observer.observe(warning,{attributes:true,childList:true,characterData:true,subtree:true});
+  observer.takeRecords();
+  r.renderScanStatus();
+  r.calendarView.setStatus('stale');
+  assert.equal(observer.takeRecords().length,0,'identical warning is not rewritten');
+  r.calendarView.setStatus('error');
+  assert.match(warning.textContent,/扫描失败/);
+  assert.ok(observer.takeRecords().length>0,'transition changes the live region once');
+  r.calendarView.setStatus('error');
+  assert.equal(observer.takeRecords().length,0,'repeated error is silent');
+  r.calendarView.setStatus('done');
+  assert.equal(warning.hidden,true);
+  assert.equal(warning.textContent,'');
+  observer.disconnect();
+  await t.close();
+});
+
+test('fixture navigation leaf detaches a failed newly requested folder tab',async()=>{
+  const t=await fixture(),folder=t.files.get('摘录').file;
+  const real=t.leaf.setViewState;
+  t.leaf.setViewState=async()=>{throw Error('native view state failed');};
+  await assert.rejects(t.plugin.openFolder(folder),/native view state failed/);
+  assert.equal(t.leaf.detachCalls,1,'the default fixture leaf implements native cleanup');
+  assert.equal(t.plugin.homeNavigationBusy,false);
+  t.leaf.setViewState=real;
   await t.close();
 });
