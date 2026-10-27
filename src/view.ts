@@ -1730,9 +1730,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private scheduleActiveFilterVisibility(): void {
     const strip = this.tagBar;
     const chip = strip.querySelector<HTMLButtonElement>(".ex-active-filter");
-    if (!chip) return;
+    const expectedTag = this.tagFilter.trim();
+    if (!chip || !expectedTag) return;
     const reveal = () => {
-      if (this.disposed || !strip.isConnected || !chip.isConnected || strip.hidden) return;
+      // A previous animation frame must not undo a later filter choice or reset.
+      if (this.disposed || this.tagFilter.trim() !== expectedTag ||
+          !strip.isConnected || !chip.isConnected || strip.hidden ||
+          !chip.classList.contains("ex-active-filter") ||
+          chip.getAttribute("aria-label") !== "当前筛选标签：" + expectedTag) return;
       const bounds = strip.getBoundingClientRect();
       const selected = chip.getBoundingClientRect();
       if (!bounds.width || !selected.width) return;

@@ -305,6 +305,33 @@ test('top filter controls survive selection changes and retain keyboard focus',a
   await t.close();
 });
 
+test('stale active-tag visibility frame cannot undo a newer clear selection',async()=>{
+  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+  clickByLabel(root,'筛选标签');
+  const strip=root.querySelector('.ex-filter-tags');
+  const previous=global.requestAnimationFrame;
+  const tasks=[];
+  try{
+    global.requestAnimationFrame=fn=>{tasks.push(fn);return tasks.length;};
+    strip.getBoundingClientRect=()=>({left:0,right:100,width:100});
+    renderer.tagFilter='哲学';
+    renderer.renderTagsFilter();
+    const old=strip.querySelector('.ex-active-filter');
+    assert.ok(old,'selected tag exists before the queued frame');
+    old.getBoundingClientRect=()=>({left:300,right:400,width:100});
+    assert.ok(tasks.length>0);
+    renderer.tagFilter='';
+    renderer.renderTagsFilter();
+    assert.equal(strip.scrollLeft,0);
+    for(const task of tasks)task();
+    assert.equal(strip.scrollLeft,0,'outdated frame cannot scroll toward an old active chip');
+  }finally{
+    if(previous===undefined)delete global.requestAnimationFrame;
+    else global.requestAnimationFrame=previous;
+  }
+  await t.close();
+});
+
 test('a card filter toggles selected tag without recreating its chips or Markdown body',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const card=root.querySelector('.ex-card'),tag=card.querySelector('.ex-tag');
