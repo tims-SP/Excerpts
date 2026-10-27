@@ -325,9 +325,16 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       });
     const anchorPath = visibleCard?.dataset.path;
     const anchorTop = visibleCard?.getBoundingClientRect().top;
+    // The viewport may still show the composer, so captureAnchor() can return
+    // null even when a search-result card is partially visible. Request its
+    // virtual row explicitly BEFORE expansion, while it is still mounted.
+    const visibleRow = visibleCard?.closest<HTMLElement>(".ex-virtual-row");
+    const anchorOffset = rect && visibleRow
+      ? visibleRow.getBoundingClientRect().top - rect.top : null;
     this.searchText = "";
     this.searchInput.value = "";
-    this.scheduleSearch("anchor");
+    this.scheduleSearch("anchor", anchorPath && anchorOffset !== null
+      ? { path: anchorPath, offset: anchorOffset } : undefined);
     this.updateAvailability();
     if (viewport && anchorPath && anchorTop !== undefined) {
       const next = Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))
@@ -1571,14 +1578,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       }
     }
   }
-  private scheduleSearch(policy: ScrollPolicy = "results"): void {
+  private scheduleSearch(policy: ScrollPolicy = "results",
+    target?: { path: string; offset: number }): void {
     this.searchFailed = false;
     this.searchScrollPolicy = policy;
     if (this.searchTimer) clearTimeout(this.searchTimer);
     const token = ++this.searchToken;
     // Search only against a committed index; keep the latest query for scan completion.
     if (!this.searchText) {
-      this.searchReady = true; this.matches = null; this.drawCards(policy);
+      this.searchReady = true; this.matches = null; this.drawCards(policy, target);
       this.updateAvailability(); return;
     }
     if (this.scanStatus !== "done" || this.plugin.isBusy(this)) return;
