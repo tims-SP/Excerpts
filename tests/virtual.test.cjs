@@ -652,3 +652,30 @@ test('explicit clicked-card anchor takes precedence over viewport top and falls 
   assert.equal(viewport.scrollTop,225,'a removed interaction card returns to the result header');
   timeline.dispose();dom.window.close();
 });
+
+test('explicit same-key invalidation remounts only the requested path',()=>{
+  const dom=new JSDOM('<!doctype html><html><body><main><section></section></main></body></html>');
+  global.document=dom.window.document;
+  const viewport=document.querySelector('main'),host=document.querySelector('section');
+  Object.defineProperty(viewport,'clientHeight',{configurable:true,value:800});
+  host.getBoundingClientRect=()=>({top:0,left:0,width:700,height:0});
+  let mounts=0,unmounts=0;
+  const timeline=new VirtualTimeline(host,viewport,{
+    batchSize:()=>16,
+    mount:row=>{mounts++;const el=document.createElement('article');el.dataset.path=row.path;
+      el.getBoundingClientRect=()=>({height:120,width:700});return el;},
+    unmount:()=>{unmounts++;}
+  });
+  const rows=['A','B','C'].map(path=>({path,firstOfDay:false,dayTitle:'',
+    daySubtitle:'',estimatedHeight:120,layoutKey:'same-stamp',contentKey:'same-stamp'}));
+  timeline.setRows(rows,'keep');
+  const retainedA=host.querySelector('[data-path="A"]'),oldB=host.querySelector('[data-path="B"]');
+  const retainedC=host.querySelector('[data-path="C"]');
+  timeline.setRows(rows,'keep',undefined,new Set(['B']));
+  assert.equal(mounts,4);
+  assert.equal(unmounts,1);
+  assert.equal(host.querySelector('[data-path="A"]'),retainedA);
+  assert.notEqual(host.querySelector('[data-path="B"]'),oldB);
+  assert.equal(host.querySelector('[data-path="C"]'),retainedC);
+  timeline.dispose();dom.window.close();
+});

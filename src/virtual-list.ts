@@ -90,7 +90,7 @@ export class VirtualTimeline {
   }
 
   setRows(rows: readonly TimelineRow[], policy: ScrollPolicy,
-    requestedAnchor?: AnchorTarget): void {
+    requestedAnchor?: AnchorTarget, invalidatePaths?: ReadonlySet<string>): void {
     if (this.disposed) return;
     if (this.suspended) throw new Error("不能重绘隐藏的摘录列表");
     const previous = this.rows;
@@ -135,7 +135,7 @@ export class VirtualTimeline {
           ? oldRow.contentKey === next.contentKey
           : oldRow.layoutKey === next.layoutKey
       ));
-      if (!next || !sameContent ||
+      if (!next || !sameContent || invalidatePaths?.has(oldRow.path) ||
           (oldRow.layoutKey !== next.layoutKey && !this.options.update)) {
         this.observer?.unobserve(element);
         if (oldRow) this.options.unmount(oldRow, element);

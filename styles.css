@@ -401,6 +401,9 @@
   display: block; max-width: 100%; border-radius: var(--ex-radius-input);
 }
 .excerpts-root .ex-card-placeholder { display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 52px; }
+/* Native Markdown can take several frames; keep the pre-existing skeleton until settled. */
+.excerpts-root .ex-card-loading .ex-quote > :not(.ex-card-placeholder),
+.excerpts-root .ex-card-loading .ex-extras { display: none !important; }
 .excerpts-root .ex-placeholder-line { display: block; height: 8px; width: 86%; border-radius: 999px; background: var(--background-modifier-hover); }
 .excerpts-root .ex-placeholder-short { width: 48%; opacity: .68; }
 .excerpts-root .ex-quote {

@@ -4616,13 +4616,16 @@ test('twenty background card read failures remain inline and never flood Notice'
   await t.close();
 });
 
-test('unhandled Markdown render errors still reject the background hydration task',async()=>{
+test('unexpected Markdown rendering errors settle as an inline card failure',async()=>{
   const t=await fixture(),r=t.pane.renderer;
   const card=t.pane.contentEl.querySelector('.ex-card');
   const original=r.renderContent;
   r.renderContent=()=>{throw Error('unexpected render failure');};
-  await assert.rejects(r.hydrate(r.items[0],card,r.renderToken),/unexpected render failure/);
-  r.renderContent=original;
+  const oldError=console.error;console.error=()=>{};
+  try { await r.hydrate(r.items[0],card,r.renderToken); }
+  finally { console.error=oldError;r.renderContent=original; }
+  assert.equal(card.classList.contains('ex-card-loading'),false);
+  assert.match(card.querySelector('.ex-preview-error').textContent,/内容预览失败/);
   await t.close();
 });
 
@@ -4821,5 +4824,85 @@ test('fixture navigation leaf detaches a failed newly requested folder tab',asyn
   assert.equal(t.leaf.detachCalls,1,'the default fixture leaf implements native cleanup');
   assert.equal(t.plugin.homeNavigationBusy,false);
   t.leaf.setViewState=real;
+  await t.close();
+});
+
+test('forced refresh detects equal-stat text edits without recycling unrelated cards',async()=>{
+  const originalText=['# 标题','','正文 AAA'].join('\\n');
+  const t=await fixture(false,originalText),r=t.pane.renderer,root=t.pane.contentEl;
+  await t.plugin.app.vault.create('摘录/另一条.md','始终保持不变');
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && root.querySelectorAll('.ex-card').length===2 &&
+    [...root.querySelectorAll('.ex-card')].every(card=>!card.classList.contains('ex-card-loading')),
+    'two hydrated cards');
+  const oldCard=root.querySelector('.ex-card[data-path="摘录/测试.md"]');
+  const keptCard=root.querySelector('.ex-card[data-path="摘录/另一条.md"]');
+  assert.ok(oldCard&&keptCard);
+  const oldStat={...t.md.stat};
+  t.files.get(t.md.path).data=originalText.replace('AAA','BBB');
+  t.plugin.onFileChange(t.md.path);
+  assert.equal(r.scanStatus,'stale');
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' &&
+    root.querySelector('.ex-card[data-path="摘录/测试.md"]')!==oldCard &&
+    root.querySelector('.ex-card[data-path="摘录/测试.md"]')?.textContent.includes('BBB') &&
+    !root.querySelector('.ex-card[data-path="摘录/测试.md"]').classList.contains('ex-card-loading'),
+    'only changed source was replaced');
+  assert.deepEqual(t.md.stat,oldStat);
+  assert.equal(root.querySelector('.ex-card[data-path="摘录/另一条.md"]'),keptCard);
+  await t.close();
+});
+
+test('unchanged mounted card keeps identity and renderer after repeated explicit refreshes',async()=>{
+  const t=await fixture(false,['# 标题','','正文未变'].join('\\n'));
+  const r=t.pane.renderer,root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card'),renderCount=renders.length;
+  let reads=0;
+  const original=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  t.plugin.app.vault.read=async file=>{if(file===t.md)reads++;return original(file);};
+  for(let i=0;i<3;i++){
+    r.requestRefresh(true);
+    await waitFor(()=>r.scanStatus==='done','refresh '+i);
+    assert.equal(root.querySelector('.ex-card'),card);
+  }
+  assert.equal(reads,3,'only one direct read per explicit refresh');
+  assert.equal(renders.length,renderCount,'unchanged Markdown is never rerendered');
+  await t.close();
+});
+
+test('delayed Markdown render leaves existing skeleton until the body is ready',async()=>{
+  const t=await fixture(false,['# 标题','','异步渲染的内容'].join('\\n'));
+  const r=t.pane.renderer,card=r.createCard(r.items[0]);
+  r.containerEl.append(card);
+  const original=mocks.MarkdownRenderer.render;
+  let release,started=false;
+  mocks.MarkdownRenderer.render=async(app,content,target)=>{
+    started=true;
+    await new Promise(resolve=>{release=resolve;});
+    target.append(document.createTextNode(content));
+  };
+  try {
+    const rendering=r.hydrate(r.items[0],card,r.renderToken);
+    await waitFor(()=>started,'native Markdown request started');
+    assert.equal(card.classList.contains('ex-card-loading'),true);
+    assert.equal(card.querySelector('.ex-quote > .ex-card-placeholder')?.isConnected,true);
+    release();
+    await rendering;
+    assert.equal(card.classList.contains('ex-card-loading'),false);
+    assert.equal(card.querySelector('.ex-card-placeholder'),null);
+    assert.match(card.querySelector('.ex-native-markdown').textContent,/异步渲染/);
+  } finally { mocks.MarkdownRenderer.render=original;card.remove();await t.close(); }
+});
+
+test('unreadable mounted source refuses to claim successful manual refresh',async()=>{
+  const t=await fixture(false,['# 标题','','正文'].join('\\n'));
+  const r=t.pane.renderer,root=t.pane.contentEl,initial=root.querySelector('.ex-card');
+  const original=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  t.plugin.app.vault.read=async file=>{if(file===t.md)throw Error('inaccessible');return original(file);};
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='error','refresh source verification failure');
+  assert.equal(root.querySelector('.ex-card'),initial);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'error');
+  t.plugin.app.vault.read=original;
   await t.close();
 });

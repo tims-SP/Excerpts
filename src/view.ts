@@ -118,6 +118,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }>();
   private updateComposerControls: () => void = () => {};
   private renderToken = 0;
+  /** An exact source snapshot belongs to its mounted card; it cannot grow with browsing. */
+  private readonly rawByCard = new WeakMap<HTMLElement, string>();
+  private readonly invalidatedCardPaths = new Set<string>();
   private timeline: VirtualTimeline | null = null;
   private itemByPath = new Map<string, CardIndex>();
   private availableTags: string[] = [];
@@ -1540,6 +1543,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }, cancelled);
       if (cancelled() || !cards) return;
       cards.sort((a, b) => b.ctime - a.ctime);
+      if (force && !this.scanDirty) {
+        const changed = await this.verifyMountedCardSources(cards, cancelled);
+        if (cancelled()) return;
+        for (const path of changed) this.invalidatedCardPaths.add(path);
+      }
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
       this.itemByPath = new Map(cards.map(card => [card.path, card]));
@@ -1832,6 +1840,35 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.adaptiveBatch = Math.max(16, Math.min(96, suggested));
     return this.adaptiveBatch;
   }
+  private cardContentKey(item: CardIndex): string {
+    return [item.mtime, item.size, item.ctime, item.tags.join("\u001f"),
+      item.frontmatterTags.join("\u001f"), item.inlineTags.join("\u001f")].join("\u001e");
+  }
+  /** Compare only mounted unchanged-stamp cards; scanning never reads all Markdown. */
+  private async verifyMountedCardSources(next: readonly CardIndex[],
+    cancelled: () => boolean): Promise<Set<string>> {
+    const changed = new Set<string>();
+    const byPath = new Map(next.map(item => [item.path, item]));
+    const candidates: Array<{ path: string; raw: string }> = [];
+    for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))) {
+      const path = card.dataset.path;
+      if (!path) continue;
+      const previous = this.itemByPath.get(path);
+      const current = byPath.get(path);
+      if (!previous || !current || this.cardContentKey(previous) !== this.cardContentKey(current))
+        continue;
+      const raw = this.rawByCard.get(card);
+      if (raw === undefined || raw.length > 50000) changed.add(path);
+      else candidates.push({ path, raw });
+    }
+    for (let i = 0; i < candidates.length && !cancelled() && !this.scanDirty; i += 4) {
+      await Promise.all(candidates.slice(i, i + 4).map(async ({ path, raw }) => {
+        const latest = await this.repo.readSnapshot(path, true);
+        if (latest.raw !== raw) changed.add(path);
+      }));
+    }
+    return changed;
+  }
   private timelineRows(items: CardIndex[]): TimelineRow[] {
     let previous = "";
     const compact = this.compactLayout();
@@ -1859,8 +1896,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         estimatedHeight: 104 + Math.min(320, Math.max(60, Math.ceil(item.size / 5))) + gap +
           (firstOfDay && compact ? 26 : 0),
         layoutKey,
-        contentKey: [item.mtime, item.size, item.ctime, item.tags.join("\u001f"),
-          item.frontmatterTags.join("\u001f"), item.inlineTags.join("\u001f")].join("\u001e")
+        contentKey: this.cardContentKey(item)
       };
     });
   }
@@ -1975,7 +2011,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
       }, { root, rootMargin: "350px 0px" });
     }
-    this.timeline?.setRows(this.timelineRows(visible), policy, target);
+    this.timeline?.setRows(this.timelineRows(visible), policy, target, this.invalidatedCardPaths);
+    this.invalidatedCardPaths.clear();
     if (!visible.length) {
       const empty = node("section", "ex-empty");
       empty.append(node("div", "ex-empty-title", this.items.length ? "没有匹配的摘录" : "从第一段文字开始"));
@@ -2165,15 +2202,33 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       return;
     }
     if (this.disposed || token !== this.renderToken || !card.isConnected) return;
-    // Unexpected rendering failures still propagate to the existing queue
-    // error handler instead of being silently reported as file read failures.
-    this.renderContent(card, item, parsed);
+    try {
+      // Markdown completion, not read completion, is the boundary for clearing Loading.
+      await this.renderContent(card, item, parsed);
+    } catch (error) {
+      if (!this.disposed && token === this.renderToken && card.isConnected) {
+        this.unmountMarkdown(item.path);
+        const quote = card.querySelector<HTMLElement>(".ex-quote");
+        quote?.replaceChildren(node("p", "ex-preview-error", "内容预览失败，请在阅读模式查看。"),
+          button("阅读原文 ↗", () => {
+            if (this.guard("page")) void this.plugin.openMarkdownPreview(item.path).catch(notify);
+          }, "ex-expand-body"));
+      }
+      console.error("Excerpts: card Markdown rendering failed", error);
+    }
+    if (this.disposed || token !== this.renderToken || !card.isConnected) return;
+    const raw = this.repo.rawFor(parsed);
+    if (raw !== undefined && raw.length <= 50000) this.rawByCard.set(card, raw);
     this.mediaObserver?.observe(card);
     card.classList.remove("ex-card-loading");
+    card.querySelector(".ex-card-placeholder")?.remove();
   }
-  private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): void {
+  private renderContent(card: HTMLElement, item: CardIndex, parsed: ParsedMarkdown): Promise<void> {
     const body = card.querySelector<HTMLElement>(".ex-quote")!;
+    const placeholder = body.querySelector(".ex-card-placeholder");
     body.replaceChildren();
+    if (placeholder) body.append(placeholder);
+    let bodyReady: Promise<void> = Promise.resolve();
     const mediaFirst = !parsed.title &&
       /^\s*(?:!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>|<video\b[^>]*>)(?:\s*\n\s*\n|\s*$)/.test(parsed.body);
     card.classList.toggle("ex-media-first", mediaFirst);
@@ -2238,7 +2293,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       expand.textContent = "阅读原文 ↗";
       expand.setAttribute("aria-expanded", "false");
     } else if (parsed.body) {
-      void this.renderMarkdown(content, parsed.body, item.path).then(result => {
+      bodyReady = this.renderMarkdown(content, parsed.body, item.path).then(result => {
         if (!content.isConnected || this.disposed) return;
         if (!result.ok) { showPreviewFailure(); return; }
         updatePreview();
@@ -2255,6 +2310,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!parsed.body && !parsed.title && !parsed.sections.length)
       body.append(node("span", "ex-empty-card", "（空白摘录）"));
     this.renderSections(card.querySelector<HTMLElement>(".ex-extras")!, item, parsed);
+    return bodyReady;
   }
 
   private renderMarkdown(container: HTMLElement, markdown: string, path: string):

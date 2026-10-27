@@ -23,6 +23,10 @@ export interface DeleteProgress {
 
 export class EntryRepository {
   private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
+  /** Exact original text for a returned parse, retained only while the parse is referenced. */
+  private readonly rawByParsed = new WeakMap<ParsedMarkdown, string>();
+  private readonly fileEpochs = new WeakMap<TFile, number>();
+  private globalEpoch = 0;
   /** Reusable full-text search material, bounded independently from parsed Markdown. */
   private searchCache = new Map<string, { stamp: string; lowerText: string; bytes: number }>();
   private searchCacheBytes = 0;
@@ -109,18 +113,30 @@ export class EntryRepository {
     return file;
   }
   async read(path: string): Promise<ParsedMarkdown> {
+    return (await this.readSnapshot(path)).parsed;
+  }
+  rawFor(parsed: ParsedMarkdown): string | undefined { return this.rawByParsed.get(parsed); }
+  /** Explicit refresh bypasses stamp-based and Obsidian cached reads. */
+  async readSnapshot(path: string, fresh = false): Promise<{ raw: string; parsed: ParsedMarkdown }> {
     const file = this.file(path);
     const stamp = String(file.stat?.mtime ?? 0) + ":" + String(file.stat?.size ?? 0);
     const prior = this.cache.get(path);
-    if (prior?.stamp === stamp) {
+    if (!fresh && prior?.stamp === stamp) {
       this.cache.delete(path); this.cache.set(path, prior);
-      return prior.parsed;
+      return { raw: prior.raw, parsed: prior.parsed };
     }
-    const raw = await this.app.vault.cachedRead(file);
+    const fileEpoch = this.fileEpochs.get(file) ?? 0;
+    const globalEpoch = this.globalEpoch;
+    const raw = fresh ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
+    if (globalEpoch !== this.globalEpoch || fileEpoch !== (this.fileEpochs.get(file) ?? 0) ||
+        this.app.vault.getAbstractFileByPath(path) !== file ||
+        stamp !== String(file.stat?.mtime ?? 0) + ":" + String(file.stat?.size ?? 0))
+      throw new Error("摘录在读取期间发生变化，请手动刷新");
     const parsed = parseMarkdown(raw);
+    this.rawByParsed.set(parsed, raw);
     this.cache.set(path, { stamp, raw, parsed });
     this.trim();
-    return parsed;
+    return { raw, parsed };
   }
   private trim(): void {
     // Cap retained raw Markdown and parsed content, including on mobile.
@@ -135,9 +151,12 @@ export class EntryRepository {
   }
   invalidate(path?: string): void {
     if (path) {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) this.fileEpochs.set(file, (this.fileEpochs.get(file) ?? 0) + 1);
       this.cache.delete(path);
       this.forgetSearchText(path);
     } else {
+      this.globalEpoch++;
       this.cache.clear();
       this.searchCache.clear();
       this.searchCacheBytes = 0;
