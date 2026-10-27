@@ -4909,3 +4909,19 @@ test('unreadable mounted source refuses to claim successful manual refresh',asyn
   t.plugin.app.vault.read=original;
   await t.close();
 });
+
+test('manual refresh retries an errored card even when source bytes are identical',async()=>{
+  const t=await fixture(false,'# 标题'+String.fromCharCode(10,10)+'正文');
+  const r=t.pane.renderer,root=t.pane.contentEl;
+  const before=root.querySelector('.ex-card');
+  const quote=before.querySelector('.ex-quote');
+  const failure=document.createElement('p');failure.className='ex-preview-error';
+  failure.textContent='内容预览失败，请在阅读模式查看。';
+  quote.replaceChildren(failure);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && root.querySelector('.ex-card')!==before &&
+    !root.querySelector('.ex-card').classList.contains('ex-card-loading'),
+    'failed preview replaced after explicit refresh');
+  assert.match(root.querySelector('.ex-card .ex-native-markdown').textContent,/正文/);
+  await t.close();
+});

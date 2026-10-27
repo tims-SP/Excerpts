@@ -1858,7 +1858,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!previous || !current || this.cardContentKey(previous) !== this.cardContentKey(current))
         continue;
       const raw = this.rawByCard.get(card);
-      if (raw === undefined || raw.length > 50000) changed.add(path);
+      // A failed native preview is not a reusable success, even if its source is unchanged.
+      if (card.querySelector(".ex-preview-error") || raw === undefined || raw.length > 50000)
+        changed.add(path);
       else candidates.push({ path, raw });
     }
     for (let i = 0; i < candidates.length && !cancelled() && !this.scanDirty; i += 4) {
