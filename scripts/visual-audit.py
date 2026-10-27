@@ -45,6 +45,7 @@ REQUIRED = {
     "list-search": ".ex-search-wrap",
     "list-filter": ".ex-filter-tags",
     "list-menu": ".menu",
+    "native-tag-picker": ".native-fuzzy",
     "date-rail": ".ex-day-rail",
     "card": ".ex-card",
     "card-content": ".ex-card .ex-quote",
@@ -75,8 +76,8 @@ REQUIRED = {
 # Names deliberately identify states as well as components. New features should
 # add inventory entries; otherwise they have no visual review evidence.
 SCENARIOS = [
-    "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty", "search-failed",
-    "filter", "filter-selected-scroll", "filter-long-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
+    "home", "calendar", "calendar-date", "composer-picker", "composer-picker-selected", "composer-draft", "search-idle", "search-empty", "search-failed", "search-unreadable",
+    "filter", "filter-selected-scroll", "filter-long-selected", "filter-fuzzy-picker", "filter-fuzzy-selected", "page-menu", "card-filtered-tag", "card-filter-extreme", "card-filter-no-actions", "card-unreadable", "section-open", "card-expanded-narrow", "card-picker", "card-edit-compact", "card-picker-changed", "card-menu",
     "single-delete", "selection", "bulk-delete", "saved-filter",
     "card-recovery-menu-scrolled", "card-recovery-clear-scrolled", "card-mutex-feedback", "calendar-stale-warning",
     "saved-filter-error", "settings", "folder", "scan-complete",
@@ -316,6 +317,28 @@ with sync_playwright() as playwright:
             assert page.locator(".ex-search-clear").is_enabled(), (key,"failed search cannot be cleared")
             assert not page.locator(".ex-page-hint").is_visible(), (key,"search failure created global warning")
             screenshot(page, theme, width, "search-failed", "list-search", "empty-results")
+            # One unreadable Markdown is not a valid zero-result search.
+            # Exercise the real repository search rather than throwing from repo.search.
+            page.evaluate("""() => {
+              const repo = window.__plugin.repo, r = window.__pane.renderer;
+              repo.search = window.__originalVisualSearch;
+              repo.invalidate();
+              window.__originalVisualRead = repo.read.bind(repo);
+              repo.read = async path => path === '摘录/第二段.md'
+                ? Promise.reject(Error('unreadable body'))
+                : window.__originalVisualRead(path);
+              r.searchText = '理解世界';
+              r.searchInput.value = r.searchText;
+              r.scheduleSearch('results');
+            }""")
+            page.wait_for_function("window.__pane.renderer.searchFailed === true", timeout=15000)
+            assert page.locator(".ex-card").count() == 0, (key,"partial read showed incomplete search matches")
+            assert "无法确认完整结果" in page.locator(".ex-empty-description").inner_text()
+            screenshot(page, theme, width, "search-unreadable", "list-search", "empty-results")
+            page.evaluate("""() => {
+              const repo = window.__plugin.repo;
+              repo.read = window.__originalVisualRead; repo.invalidate();
+            }""")
             page.evaluate("""() => {
               const repo = window.__plugin.repo, r = window.__pane.renderer;
               repo.search = window.__originalVisualSearch;
@@ -755,6 +778,52 @@ with sync_playwright() as playwright:
               renderer.renderScanStatus();
             }""")
             assert not page.locator(".ex-scan-status").is_visible()
+            # The native Obsidian fuzzy selector remains bounded independently of
+            # an arbitrarily large number of indexed tags.
+            page.evaluate("""() => {
+              const r=window.__pane.renderer;
+              r.availableTags=[...r.availableTags,...Array.from({length:70},(_,i)=>
+                '查找标签'+String(i).padStart(3,'0'))];
+              r.filterOpen=true; r.renderTagsFilter();
+            }""")
+            page.locator(".ex-filter-tags button", has_text="更多标签").click()
+            assert page.locator(".menu button").count() == 41, (key,"tag menu overflowed")
+            page.locator(".menu button", has_text="查找全部标签").click()
+            assert page.locator(".native-fuzzy").is_visible(), (key,"native fuzzy modal absent")
+            page.locator(".native-fuzzy input").fill("查找标签069")
+            assert page.locator(".native-fuzzy-results button").count() == 1
+            screenshot(page, theme, width, "filter-fuzzy-picker", "native-tag-picker")
+            page.locator(".native-fuzzy-results button").first.click()
+            assert page.locator(".native-fuzzy").count() == 0, (key,"tag modal failed to close")
+            assert page.locator(".ex-active-filter").is_visible()
+            assert "#查找标签069" in page.locator(".ex-active-filter").inner_text()
+            screenshot(page, theme, width, "filter-fuzzy-selected", "list-filter")
+            page.evaluate("""() => {
+              const r=window.__pane.renderer;
+              r.tagFilter='';r.filterOpen=false;r.rebuildAvailableTags();
+              r.renderTagsFilter();r.drawCards('results');
+            }""")
+            # Card read failures must stay inside the affected card, not broadcast
+            # an independent Notice for every background read.
+            page.evaluate("""async () => {
+              const r=window.__pane.renderer,repo=window.__plugin.repo;
+              const card=document.querySelector('.ex-card');
+              window.__initialNoticeCount=(window.__notices||[]).length;
+              window.__readBeforeFailure=repo.read.bind(repo);
+              repo.read=async()=>{throw Error('unreadable fixture card')};
+              await r.hydrate(r.items.find(x=>x.path===card.dataset.path),card,r.renderToken);
+            }""")
+            assert "摘录加载失败" in page.locator(".ex-card .ex-preview-error").first.inner_text()
+            assert page.locator(".ex-card.ex-card-loading").count() == 0
+            assert page.evaluate("(window.__notices||[]).length===window.__initialNoticeCount"), (
+                key,"background card failure flooded Notice")
+            screenshot(page, theme, width, "card-unreadable", "card-content")
+            page.evaluate("""async () => {
+              const r=window.__pane.renderer,repo=window.__plugin.repo;
+              repo.read=window.__readBeforeFailure;
+              const card=document.querySelector('.ex-card');
+              await r.hydrate(r.items.find(x=>x.path===card.dataset.path),card,r.renderToken);
+            }""")
             # Persistent exceptional statuses share the existing painter.
             page.evaluate("""() => {
               const renderer = window.__pane.renderer;
