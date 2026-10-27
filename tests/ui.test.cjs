@@ -4742,7 +4742,7 @@ test('a card created after an existing mutex synchronizes every action without a
   assert.equal(t.plugin.tryAcquireScan(owner),true);
   r.syncControls();
   const newCard=r.createCard(item);
-  root.append(newCard); // Models a newly mounted virtual row after the last broadcast.
+  r.containerEl.append(newCard); // Attach inside the renderer's actual control-sync scope.
   const more=newCard.querySelector('.ex-card-options');
   const tag=newCard.querySelector('.ex-tag');
   const add=newCard.querySelector('.ex-add-tag');
@@ -4771,7 +4771,7 @@ test('a card created after an existing mutex synchronizes every action without a
 test('new card tag cancellation remains available until its own tag write starts',async()=>{
   const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
   const item=r.items[0],card=r.createCard(item);
-  root.append(card);
+  r.containerEl.append(card);
   r.openTagEditors.add(item.path);
   r.renderTags(card.querySelector('.ex-chips'),item,true);
   assert.equal(card.querySelector('.ex-add-tag').disabled,false,'existing edit can be canceled');
