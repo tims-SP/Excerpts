@@ -3994,8 +3994,8 @@ test('tag menu is capped and tag picker reuses the same index between input even
     .find(button=>button.textContent.startsWith('更多标签'));
   assert.ok(more);more.click();
   assert.equal(Menu.last.items.length,41,'only 40 direct tags plus native lookup');
-  assert.equal(Menu.last.items.at(-1).title,'查找全部标签…');
-  assert.equal(Menu.last.items.at(-1).disabled,undefined);
+  assert.equal(Menu.last.items[0].title,'查找全部标签…');
+  assert.equal(Menu.last.items[0].disabled,undefined);
   clickByLabel(t.pane.contentEl,'添加标签');
   const input=t.pane.contentEl.querySelector('.ex-tags-input');
   for(const q of ['tag-','tag-标签-1','tag-标签-12']){
@@ -4569,7 +4569,7 @@ test('native full-tag lookup selects distant exact tags without changing filter 
   const more=[...root.querySelectorAll('.ex-filter-tags button')]
     .find(button=>button.textContent.startsWith('更多标签'));
   more.click();
-  const lookup=Menu.last.items.at(-1);
+  const lookup=Menu.last.items[0];
   assert.equal(lookup.title,'查找全部标签…');
   lookup.handler();
   const modal=FuzzySuggestModal.last;
@@ -4579,7 +4579,7 @@ test('native full-tag lookup selects distant exact tags without changing filter 
   assert.match(modal.placeholder,/查找已有标签/);
   modal.close();
   assert.equal(r.tagFilter,'','cancel must leave filter unchanged');
-  more.click();Menu.last.items.at(-1).handler();
+  more.click();Menu.last.items[0].handler();
   FuzzySuggestModal.last.onChooseItem('词条4999');
   assert.equal(r.tagFilter,'词条4999');
   assert.match(root.querySelector('.ex-active-filter').textContent,/词条4999/);
@@ -4592,7 +4592,7 @@ test('full-tag lookup refuses removed tag or cross-view mutex at choose-time',as
   clickByLabel(root,'筛选标签');
   const more=[...root.querySelectorAll('.ex-filter-tags button')]
     .find(button=>button.textContent.startsWith('更多标签'));
-  more.click();Menu.last.items.at(-1).handler();
+  more.click();Menu.last.items[0].handler();
   const modal=FuzzySuggestModal.last;
   r.availableTags=r.availableTags.filter(t=>t!=='tag54');
   Notice.last='';
