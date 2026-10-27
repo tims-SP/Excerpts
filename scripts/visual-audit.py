@@ -674,7 +674,7 @@ with sync_playwright() as playwright:
             page.evaluate("""() => {
               for (let i = 0; i < 25; i++) {
                 add('摘录/滚动验收-' + i + '.md',
-                  '用于测试长列表中部的恢复入口和滚动位置。第 ' + i + ' 条。', [], i + 5);
+                  '用于测试长列表中部的恢复入口和滚动位置。第 ' + i + ' 条。', ['生活'], i + 5);
               }
               const r = window.__pane.renderer;
               r.searchText = ''; r.searchInput.value = '';
@@ -722,6 +722,36 @@ with sync_playwright() as playwright:
               if (!window.__plugin.tryAcquireScan(owner)) throw Error('mutex unavailable');
               window.__pane.renderer.syncControls();
             }""")
+            # Record mounted paths, then move the *real* virtualized scroll
+            # container under the lock. The new row must inherit all restrictions.
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              window.__lockedOriginalRows = new Set([...document.querySelectorAll('.ex-card')]
+                .map(card => card.dataset.path));
+              host.scrollTop = Math.min(host.scrollHeight - host.clientHeight, host.scrollTop + 1450);
+            }""")
+            page.wait_for_function("""() => [...document.querySelectorAll('.ex-card')].some(card =>
+              !window.__lockedOriginalRows.has(card.dataset.path) &&
+              card.getBoundingClientRect().top < innerHeight &&
+              card.getBoundingClientRect().bottom > 0)""", timeout=15000)
+            assert page.evaluate("""() => {
+              const fresh = [...document.querySelectorAll('.ex-card')].find(card => {
+                const rect = card.getBoundingClientRect();
+                return !window.__lockedOriginalRows.has(card.dataset.path) &&
+                  rect.top >= 0 && rect.top < innerHeight - 60;
+              });
+              if (!fresh) return false;
+              window.__newLockedCard = fresh;
+              const more = fresh.querySelector('.ex-card-options');
+              const add = fresh.querySelector('.ex-add-tag');
+              const tags = [...fresh.querySelectorAll('.ex-tag')];
+              return !!more && !more.disabled &&
+                more.dataset.exReasonOnly === 'true' &&
+                more.getAttribute('aria-label').includes('查看操作受限原因') &&
+                !more.hasAttribute('aria-haspopup') &&
+                !!add && add.disabled &&
+                tags.length > 0 && tags.every(tag => tag.disabled);
+            }"""), (key, "new virtual card failed to inherit mutex controls")
             # Inspect the currently mounted DOM within one JS evaluation:
             # virtual rows may recycle between separate Playwright locators.
             assert page.evaluate("""() => {
@@ -748,6 +778,10 @@ with sync_playwright() as playwright:
             assert page.locator(".menu").count() == 0, (key,"blocked card exposed unsafe file actions")
             page.evaluate("""() => {
               window.__plugin.releaseScan(window.__lockReviewOwner);
+              const fresh = window.__newLockedCard;
+              if (!fresh?.isConnected || fresh.querySelector('.ex-add-tag')?.disabled ||
+                  [...fresh.querySelectorAll('.ex-tag')].some(tag => tag.disabled))
+                throw Error('newly mounted card did not unlock after mutex release');
               const r = window.__pane.renderer;
               // Trigger a real committed search while keeping the large index.
               r.searchText = '滚动验收';
