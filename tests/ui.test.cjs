@@ -5105,3 +5105,96 @@ test('H2 section index invalidates on metadata revision even if card path surviv
   assert.equal(root.querySelectorAll('.ex-group-trigger[aria-expanded="true"]').length,0);
   await t.close();
 });
+
+
+test('offscreen unchanged-stat H2 is collapsed on force refresh without loading every source',async()=>{
+  const source='正文\n\n## 第一\n\n内容甲\n\n## 第二\n\n内容乙';
+  const t=await fixture(false,source),r=t.pane.renderer,root=t.pane.contentEl;
+  const first=root.querySelector('.ex-card');
+  first.querySelectorAll('.ex-group-trigger')[1].click();
+  assert.ok(r.sectionsShown.get(t.md.path)?.has(1));
+  // Recycle the row, just as a far-offscreen scroll would; preserve only H2 state.
+  r.timeline.setRows([], 'keep');
+  assert.equal(first.isConnected,false);
+  assert.ok(r.sectionsShown.get(t.md.path)?.has(1));
+  const reordered='正文\n\n## 第二\n\n内容乙\n\n## 第一\n\n内容甲';
+  assert.equal(reordered.length,source.length,'equal-size source change');
+  t.files.get(t.md.path).data=reordered;
+  t.plugin.onFileChange(t.md.path);
+  const originalRead=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let directReads=0;
+  t.plugin.app.vault.read=async file=>{directReads++;return originalRead(file);};
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && root.querySelector('.ex-card')?.textContent.includes('第二'),
+    'reconstructed revised H2 card');
+  assert.equal(r.sectionsShown.has(t.md.path),false,'unverified ordinals must not survive');
+  assert.equal(root.querySelectorAll('.ex-group-trigger[aria-expanded="true"]').length,0);
+  assert.equal(directReads,0,'offscreen source was not scanned for proof');
+  await t.close();
+});
+
+test('opened card menu refuses stale callbacks after a successful unchanged-index scan',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  clickByLabel(root,'卡片选项');
+  await waitFor(()=>Menu.last?.items.some(x=>x.title==='删除摘录'),'card menu ready');
+  const oldMenu=Menu.last,previous=r.itemByPath.get(t.md.path);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && r.itemByPath.get(t.md.path)!==previous,
+    'new index snapshot available');
+  Notice.last='';Modal.last=null;
+  oldMenu.items.find(x=>x.title==='编辑原文').handler();
+  assert.match(Notice.last,/索引已变化|重新打开卡片菜单/);
+  assert.equal(t.leaf.lastFile,null,'old menu never opens another index snapshot');
+  oldMenu.items.find(x=>x.title==='删除摘录').handler();
+  assert.equal(Modal.last,null,'old menu never creates a delete confirmation');
+  oldMenu.items.find(x=>x.title.startsWith('编辑分组：')).handler();
+  assert.equal(t.leaf.lastFile,null,'old section action cannot retarget a new index');
+  await t.close();
+});
+
+test('opened card menu cannot edit or delete a replaced file at the same path',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  clickByLabel(root,'卡片选项');
+  await waitFor(()=>Menu.last?.items.some(x=>x.title==='删除摘录'),'card menu ready');
+  const oldMenu=Menu.last,previous=t.md;
+  const replacement=new TFile(previous.path);
+  t.files.set(previous.path,{file:replacement,data:'新文档'});
+  Notice.last='';Modal.last=null;
+  oldMenu.items.find(x=>x.title==='删除摘录').handler();
+  assert.equal(Modal.last,null,'replaced source cannot be deleted from stale menu');
+  oldMenu.items.find(x=>x.title==='阅读原文').handler();
+  assert.equal(t.leaf.lastFile,null,'replaced source cannot be opened from stale menu');
+  assert.match(Notice.last,/索引已变化|重新打开卡片菜单/);
+  await t.close();
+});
+
+test('selection pruning synchronizes itemByPath with the visible item index',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const stale=await t.plugin.app.vault.create('摘录/即将删除.md','内容');
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && r.itemByPath.has(stale.path),'index loaded');
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(x=>x.title==='批量选择').handler();
+  t.files.delete(stale.path);
+  const row=[...root.querySelectorAll('.ex-card')].find(x=>x.dataset.path===stale.path);
+  assert.ok(row);
+  row.click();
+  assert.equal(r.itemByPath.has(stale.path),false);
+  assert.equal(r.items.some(x=>x.path===stale.path),false);
+  assert.equal(r.currentCard(stale.path),null);
+  root.querySelector('.ex-select-done').click();
+  await t.close();
+
+  const second=await fixture(),s=second.pane.renderer,body=second.pane.contentEl;
+  const absent=await second.plugin.app.vault.create('摘录/全选丢失.md','内容');
+  s.requestRefresh(true);
+  await waitFor(()=>s.scanStatus==='done' && s.itemByPath.has(absent.path),'batch index loaded');
+  clickByLabel(body,'页面选项');
+  Menu.last.items.find(x=>x.title==='批量选择').handler();
+  second.files.delete(absent.path);
+  body.querySelector('.ex-select-all').click();
+  await waitFor(()=>!s.itemByPath.has(absent.path),'pruned in select all');
+  assert.equal(s.items.some(x=>x.path===absent.path),false);
+  body.querySelector('.ex-select-done').click();
+  await second.close();
+});

@@ -1372,6 +1372,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         this.selectedPaths.delete(path);
         this.selectedCandidates.delete(path);
         this.items = this.items.filter(item => item.path !== path);
+        this.itemByPath.delete(path);
+        this.sectionsShown.delete(path);
+        this.expandedBodies.delete(path);
+        this.expandedTagRows.delete(path);
         this.matches?.delete(path);
         this.rebuildAvailableTags();
         this.showSuggestions();
@@ -1431,7 +1435,13 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (!this.disposed) {
         if (prunedPaths.size) {
           this.items = this.items.filter(item => !prunedPaths.has(item.path));
-          for (const path of prunedPaths) this.matches?.delete(path);
+          for (const path of prunedPaths) {
+            this.itemByPath.delete(path);
+            this.sectionsShown.delete(path);
+            this.expandedBodies.delete(path);
+            this.expandedTagRows.delete(path);
+            this.matches?.delete(path);
+          }
           this.rebuildAvailableTags();
           this.showSuggestions();
           this.renderTagsFilter();
@@ -1547,17 +1557,21 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }, cancelled);
       if (cancelled() || !cards) return;
       cards.sort((a, b) => b.ctime - a.ctime);
-      const changed = force && !this.scanDirty
-        ? await this.verifyMountedCardSources(cards, cancelled) : new Set<string>();
+      const verification = force && !this.scanDirty
+        ? await this.verifyMountedCardSources(cards, cancelled) : null;
       if (cancelled()) return;
+      const changed = verification?.changed ?? new Set<string>();
       for (const path of changed) this.invalidatedCardPaths.add(path);
       const nextIndex = new Map(cards.map(card => [card.path, card]));
-      // Clear stale H2 positions before timelineRows derives its layout key.
-      // Frontmatter-only revision changes are conservatively treated as revisions too.
-      for (const [path, previous] of this.itemByPath) {
+      // An offscreen card cannot be byte-verified without expanding the source-read
+      // budget. Discard only its stale H2 ordinals, never the whole card or DOM.
+      // Visible cards with proven identical raw bytes keep their disclosure state.
+      for (const path of [...this.sectionsShown.keys()]) {
+        const previous = this.itemByPath.get(path);
         const current = nextIndex.get(path);
-        if (!current || changed.has(path) ||
-            this.cardContentKey(previous) !== this.cardContentKey(current))
+        if (!previous || !current || changed.has(path) ||
+            this.cardContentKey(previous) !== this.cardContentKey(current) ||
+            (force && !verification?.unchanged.has(path)))
           this.resetSectionState(path);
       }
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
@@ -1866,8 +1880,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Compare only mounted unchanged-stamp cards; scanning never reads all Markdown. */
   private async verifyMountedCardSources(next: readonly CardIndex[],
-    cancelled: () => boolean): Promise<Set<string>> {
+    cancelled: () => boolean): Promise<{ changed: Set<string>; unchanged: Set<string> }> {
     const changed = new Set<string>();
+    const unchanged = new Set<string>();
     const byPath = new Map(next.map(item => [item.path, item]));
     const candidates: Array<{ path: string; raw: string }> = [];
     for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card"))) {
@@ -1887,9 +1902,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       await Promise.all(candidates.slice(i, i + 4).map(async ({ path, raw }) => {
         const latest = await this.repo.readSnapshot(path, true);
         if (latest.raw !== raw) changed.add(path);
+        else unchanged.add(path);
       }));
     }
-    return changed;
+    return { changed, unchanged };
   }
   private timelineRows(items: CardIndex[]): TimelineRow[] {
     let previous = "";
@@ -2131,8 +2147,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.showCardRecoveryMenu(anchor)) return;
     // Do not display read/edit/delete commands for a stale card whose file
     // has disappeared. A new manual scan is the only supported recovery.
-    if (!(this.plugin.app.vault.getAbstractFileByPath(item.path) instanceof TFile)) {
-      this.markStale(item.path);
+    const sourceFile = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!(sourceFile instanceof TFile)) {
+      this.markStale(path);
       new Notice("该摘录文件已移动或删除，请刷新索引");
       return;
     }
@@ -2152,19 +2169,36 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       new Notice("摘录索引需要刷新，请先手动刷新");
       return;
     }
-    if (!(this.plugin.app.vault.getAbstractFileByPath(item.path) instanceof TFile)) {
-      this.markStale(item.path);
-      new Notice("该摘录文件已移动或删除，请刷新索引");
+    if (this.plugin.app.vault.getAbstractFileByPath(path) !== sourceFile) {
+      this.markStale(path);
+      new Notice("摘录文件已替换，请刷新索引");
       return;
     }
+    // Menu entries may remain visible after a successful scan or a file
+    // replacement. Reject their old targets at click time, including Delete.
+    const currentMenuTarget = (): boolean => {
+      if (!this.guard("page")) return false;
+      if (this.scanStatus !== "done") {
+        new Notice("摘录索引需要刷新，请先手动刷新");
+        return false;
+      }
+      if (this.currentCard(path) !== item ||
+          this.plugin.app.vault.getAbstractFileByPath(path) !== sourceFile ||
+          sourceFile.path !== path ||
+          sourceFile.stat.mtime !== item.mtime || sourceFile.stat.size !== item.size) {
+        new Notice("摘录或索引已变化，请重新打开卡片菜单");
+        return false;
+      }
+      return true;
+    };
     const menu = new Menu();
     menu.addItem(entry => entry.setTitle("阅读原文").setIcon("book-open").onClick(() => {
-      if (!this.guard("page") || this.scanStatus !== "done") { if (this.scanStatus !== "done") new Notice("摘录索引需要刷新"); return; }
-      void this.plugin.openMarkdownPreview(item.path).catch(notify);
+      if (!currentMenuTarget()) return;
+      void this.plugin.openMarkdownPreview(path).catch(notify);
     }));
     menu.addItem(entry => entry.setTitle("编辑原文").onClick(() => {
-      if (!this.guard("page") || this.scanStatus !== "done") { if (this.scanStatus !== "done") new Notice("摘录索引需要刷新"); return; }
-      void this.plugin.openMarkdown(item.path).catch(notify);
+      if (!currentMenuTarget()) return;
+      void this.plugin.openMarkdown(path).catch(notify);
     }));
     // The card itself refuses per-section preview above 24 H2 headings.
     // The menu must honor that same limit instead of creating hundreds of actions.
@@ -2179,8 +2213,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         seen.set(section.name, count);
         const suffix = (totals.get(section.name) ?? 0) > 1 ? "（第 " + count + " 个）" : "";
         menu.addItem(entry => entry.setTitle("编辑分组：" + section.name + suffix).onClick(() => {
-          if (!this.guard("page")) return;
-          void this.openSection(item.path, index, sections).catch(notify);
+          if (!currentMenuTarget()) return;
+          void this.openSection(path, index, sections).catch(notify);
         }));
       }
     }
@@ -2188,7 +2222,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     menu.addItem(entry => {
       entry.setTitle("删除摘录").setIcon("trash-2")
         .setDisabled(Boolean(this.reason("delete")))
-        .onClick(() => this.confirmSingleDelete(item.path));
+        .onClick(() => {
+          if (currentMenuTarget()) this.confirmSingleDelete(path);
+        });
       // Obsidian's warning styling exists in some releases but is not part of the public MenuItem API.
       (entry as typeof entry & { setWarning?: (warning: boolean) => void }).setWarning?.(true);
     });
