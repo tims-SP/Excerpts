@@ -531,7 +531,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.disposed || this.homeInvalid || !isExcerptPath(file.path, this.workspace)) return;
     const card = this.repo.indexCreatedFile(file, tags);
     const priorIndex = this.items.findIndex(item => item.path === card.path);
-    if (priorIndex !== -1) this.items.splice(priorIndex, 1);
+    if (priorIndex !== -1) {
+      this.resetSectionState(card.path);
+      this.items.splice(priorIndex, 1);
+    }
     const insertion = this.items.findIndex(item => item.ctime < card.ctime);
     this.items.splice(insertion === -1 ? this.items.length : insertion, 0, card);
     this.itemByPath.set(card.path, card);
@@ -565,6 +568,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         old.tags.join("\u001f") === next.tags.join("\u001f") &&
         old.inlineTags.join("\u001f") === next.inlineTags.join("\u001f") &&
         old.frontmatterTags.join("\u001f") === next.frontmatterTags.join("\u001f")) return;
+    this.resetSectionState(file.path);
     this.items[index] = next;
     this.itemByPath.set(file.path, next);
     if (this.searchText && this.matches && next.tags.some(tag =>
@@ -1543,14 +1547,22 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }, cancelled);
       if (cancelled() || !cards) return;
       cards.sort((a, b) => b.ctime - a.ctime);
-      if (force && !this.scanDirty) {
-        const changed = await this.verifyMountedCardSources(cards, cancelled);
-        if (cancelled()) return;
-        for (const path of changed) this.invalidatedCardPaths.add(path);
+      const changed = force && !this.scanDirty
+        ? await this.verifyMountedCardSources(cards, cancelled) : new Set<string>();
+      if (cancelled()) return;
+      for (const path of changed) this.invalidatedCardPaths.add(path);
+      const nextIndex = new Map(cards.map(card => [card.path, card]));
+      // Clear stale H2 positions before timelineRows derives its layout key.
+      // Frontmatter-only revision changes are conservatively treated as revisions too.
+      for (const [path, previous] of this.itemByPath) {
+        const current = nextIndex.get(path);
+        if (!current || changed.has(path) ||
+            this.cardContentKey(previous) !== this.cardContentKey(current))
+          this.resetSectionState(path);
       }
       const scannedScrollPolicy: ScrollPolicy = this.items.length ? "anchor" : "keep";
       this.items = cards;
-      this.itemByPath = new Map(cards.map(card => [card.path, card]));
+      this.itemByPath = nextIndex;
       if (this.pageMode === "calendar") this.calendarView?.update(cards, "stale");
       this.rebuildAvailableTags();
       this.lastScanCount = cards.length;
@@ -1840,6 +1852,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.adaptiveBatch = Math.max(16, Math.min(96, suggested));
     return this.adaptiveBatch;
   }
+  /** A card DOM can outlive its metadata snapshot; actions must resolve by path. */
+  private currentCard(path: string): CardIndex | null {
+    return this.itemByPath.get(path) ?? null;
+  }
+  /** A section ordinal only belongs to its original source revision. */
+  private resetSectionState(path: string): void {
+    this.sectionsShown.delete(path);
+  }
   private cardContentKey(item: CardIndex): string {
     return [item.mtime, item.size, item.ctime, item.tags.join("\u001f"),
       item.frontmatterTags.join("\u001f"), item.inlineTags.join("\u001f")].join("\u001e");
@@ -2055,7 +2075,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     footer.append(tags);
     const actions = node("div", "ex-card-actions");
     const options = iconButton("ellipsis", "卡片选项", () =>
-      void this.showCardMenu(item, options).catch(notify), "ex-card-options");
+      void this.showCardMenu(item.path, options).catch(notify), "ex-card-options");
     options.setAttribute("aria-haspopup", "menu");
     const indicator = node("span", "ex-selection-indicator");
     indicator.setAttribute("aria-hidden", "true");
@@ -2100,8 +2120,14 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     menu.showAtPosition({ x: rect.left, y: rect.bottom }, anchor.ownerDocument);
     return true;
   }
-  private async showCardMenu(item: CardIndex, anchor: HTMLButtonElement): Promise<void> {
+  private async showCardMenu(path: string, anchor: HTMLButtonElement): Promise<void> {
     if (!this.guard("page")) return;
+    const item = this.currentCard(path);
+    if (!item) {
+      this.markStale(path);
+      new Notice("摘录索引已变化，请手动刷新");
+      return;
+    }
     if (this.showCardRecoveryMenu(anchor)) return;
     // Do not display read/edit/delete commands for a stale card whose file
     // has disappeared. A new manual scan is the only supported recovery.
@@ -2114,6 +2140,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     try { parsed = await this.repo.read(item.path); }
     catch { /* If the file still exists, retain the original preview/edit affordances. */ }
     if (this.disposed || !anchor.isConnected) return;
+    if (this.currentCard(path) !== item) {
+      new Notice("摘录索引已更新，请重新打开卡片选项");
+      return;
+    }
     // The scan may have become stale while repo.read() was pending.
     // Never fall through to file actions with a newly invalid index.
     if (this.showCardRecoveryMenu(anchor)) return;
@@ -2511,6 +2541,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!editorOpen) for (const tag of displayTags) {
       const pill = button("", () => {
         if (!this.guard("filter")) return;
+        const live = this.currentCard(item.path);
+        if (!live || !live.tags.includes(tag)) {
+          this.markStale(item.path);
+          new Notice("标签索引已变化，请手动刷新");
+          return;
+        }
         const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
         const origin = card?.getBoundingClientRect();
         const viewportRect = viewport?.getBoundingClientRect();
@@ -2529,8 +2565,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!editorOpen && !this.expandedTagRows.has(item.path)) {
       const more = button("", () => {
         const transferFocus = document.activeElement === more;
+        const live = this.currentCard(item.path);
+        if (!live) { this.markStale(item.path); return; }
         this.expandedTagRows.add(item.path);
-        this.renderTags(mount, item, false);
+        this.renderTags(mount, live, false);
         if (transferFocus) {
           this.reflowTagRow(mount);
           this.focusAvailableTagAction(mount, "collapse");
@@ -2542,8 +2580,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (!editorOpen && this.expandedTagRows.has(item.path)) {
       const collapse = button("收起", () => {
         const transferFocus = document.activeElement === collapse;
+        const live = this.currentCard(item.path);
+        if (!live) { this.markStale(item.path); return; }
         this.expandedTagRows.delete(item.path);
-        this.renderTags(mount, item, false);
+        this.renderTags(mount, live, false);
         if (transferFocus) {
           this.reflowTagRow(mount);
           this.focusAvailableTagAction(mount, "overflow");
@@ -2553,8 +2593,10 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       mount.append(collapse);
     }
     const toggle = button(editorOpen ? "" : item.tags.length ? "+" : "＋ 标签", () => {
+      const live = this.currentCard(item.path);
+      if (!live) { this.markStale(item.path); new Notice("摘录索引已变化，请手动刷新"); return; }
       if (this.pendingTags.has(item.path)) return;
-      if (this.openTagEditors.has(item.path)) this.closeTagEditor(item, card);
+      if (this.openTagEditors.has(item.path)) this.closeTagEditor(live, card);
       else {
         const footer = mount.closest<HTMLElement>(".ex-card-footer");
         if (footer && footer.clientWidth > 0 && footer.clientWidth < 44) {
@@ -2568,8 +2610,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         if (!this.guard("tag")) return;
         this.openTagEditors.add(item.path);
         this.updateAvailability();
-        this.renderTags(mount, item, true);
-        if (editor) this.renderTagEditor(editor, item);
+        this.renderTags(mount, live, true);
+        if (editor) this.renderTagEditor(editor, live);
       }
     }, "ex-add-tag");
     if (editorOpen) {
@@ -2594,8 +2636,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const editor = card?.querySelector<HTMLElement>(".ex-tag-editor");
     if (editor) { editor.hidden = true; editor.replaceChildren(); }
     const mount = card?.querySelector<HTMLElement>(".ex-chips");
-    if (mount) {
-      this.renderTags(mount, item, false);
+    const latest = this.currentCard(item.path);
+    if (mount && latest) {
+      this.renderTags(mount, latest, false);
       this.reflowTagRow(mount);
       const add = mount.querySelector<HTMLButtonElement>(".ex-add-tag");
       if (add && !add.hidden) add.focus();
@@ -2673,8 +2716,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           "正文标签请在 Markdown 原文中修改。先结束标签编辑，再从卡片选项进入原文。") : null;
     const commit = async () => {
       if (this.pendingTags.has(item.path) || !this.guard("tag")) return;
+      const beforeWrite = this.currentCard(item.path);
+      const sameTags = (a: readonly string[], b: readonly string[]) =>
+        a.length === b.length && a.every((tag, index) => tag === b[index]);
+      if (!beforeWrite || !this.items.includes(beforeWrite) ||
+          !sameTags(beforeWrite.frontmatterTags, original) ||
+          !sameTags(beforeWrite.inlineTags, item.inlineTags)) {
+        this.markStale(item.path);
+        warning.textContent = "摘录索引已变化，请取消标签编辑后手动刷新。";
+        warning.hidden = false;
+        done.disabled = true;
+        return;
+      }
       if (!isDirty()) {
-        this.closeTagEditor(item, card); return;
+        this.closeTagEditor(beforeWrite, card); return;
       }
       this.pendingTags.add(item.path);
       picker.setDisabled(true); done.disabled = true; cancel.disabled = true;
@@ -2686,17 +2741,27 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           throw new Error("原摘录文件不存在，请重新打开卡片");
         await this.repo.setFrontmatterTags(item.path, [...selected], original,
           this.workspace, targetFile);
-        item.frontmatterTags = [...selected];
-        item.tags = [...new Set([...selected, ...item.inlineTags])];
-        this.closeTagEditor(item, card, true);
+        const current = this.currentCard(item.path);
+        if (current !== beforeWrite || !current || !this.items.includes(current)) {
+          this.markStale(item.path);
+          throw new Error("标签已写入，但摘录索引在保存期间发生变化，请取消编辑并手动刷新");
+        }
+        current.frontmatterTags = [...selected];
+        current.tags = [...new Set([...selected, ...current.inlineTags])];
+        this.closeTagEditor(current, card, true);
         this.rebuildAvailableTags();
         this.showSuggestions(); this.renderTagsFilter();
         this.markStale(item.path);
       } catch (error) {
         notify(error);
         if (editor.isConnected) {
-          picker.setDisabled(false); done.disabled = false; cancel.disabled = false;
+          picker.setDisabled(false); cancel.disabled = false;
+          done.disabled = this.scanStatus !== "done";
           done.textContent = "完成";
+          if (this.scanStatus !== "done") {
+            warning.textContent = "摘录索引已变化，请取消标签编辑后手动刷新。";
+            warning.hidden = false;
+          }
           updatePreview();
           picker.focus();
         }

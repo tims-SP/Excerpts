@@ -5033,3 +5033,75 @@ test('a failed restored H2 settles loading and offers native reading without ret
     await t.close();
   }
 });
+
+// A retained DOM is permitted to outlive the original CardIndex object.
+test('retained card tag editor writes only to current scan index, never stale object',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card'),stale=r.itemByPath.get(t.md.path);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && r.itemByPath.get(t.md.path)!==stale,
+    'scan replaces CardIndex but retains Markdown card');
+  assert.equal(root.querySelector('.ex-card'),card);
+  const current=r.itemByPath.get(t.md.path);
+  card.querySelector('.ex-add-tag').click();
+  const picker=card.querySelector('.ex-tag-custom');
+  picker.value='刷新后标签';
+  picker.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...card.querySelectorAll('.ex-tag-choice')].find(b=>b.textContent.includes('创建 #刷新后标签')).click();
+  card.querySelector('.ex-tag-done').click();
+  await waitFor(()=>t.tagState.get(t.md.path).includes('刷新后标签') &&
+    card.querySelector('.ex-tag-editor').hidden,'tag save after index object replacement');
+  assert.equal(r.itemByPath.get(t.md.path),current);
+  assert.ok(current.tags.includes('刷新后标签'));
+  assert.ok(r.items.find(x=>x.path===t.md.path).tags.includes('刷新后标签'));
+  assert.ok(r.availableTags.includes('刷新后标签'));
+  assert.ok(!stale.tags.includes('刷新后标签'),'old closure reference was never mutated');
+  await t.close();
+});
+
+test('H2 insertion after original expanded group clears positional expansion on forced refresh',async()=>{
+  const source='正文\n\n## 来源\n\n原有分组\n\n## 批注\n\n笔记';
+  const t=await fixture(false,source),r=t.pane.renderer,root=t.pane.contentEl;
+  let card=root.querySelector('.ex-card');
+  card.querySelectorAll('.ex-group-trigger')[1].click();
+  assert.equal(r.sectionsShown.get(t.md.path).has(1),true);
+  const before=card;
+  t.files.get(t.md.path).data=source.replace('## 来源','## 新插入\n\n额外内容\n\n## 来源');
+  t.plugin.onFileChange(t.md.path);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && root.querySelector('.ex-card')!==before &&
+    root.querySelectorAll('.ex-group-trigger').length===3 &&
+    !root.querySelector('.ex-card').classList.contains('ex-card-loading'),'updated H2 preview');
+  card=root.querySelector('.ex-card');
+  assert.equal(r.sectionsShown.has(t.md.path),false,'old H2 index was discarded');
+  assert.equal(card.querySelectorAll('.ex-group-trigger[aria-expanded="true"]').length,0);
+  assert.equal(card.querySelectorAll('.ex-group-body:not([hidden])').length,0);
+  await t.close();
+});
+
+test('unchanged source refresh preserves an expanded H2 and the same Markdown card',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-group-trigger').click();
+  assert.equal(r.sectionsShown.get(t.md.path).has(0),true);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done','unchanged manual scan');
+  assert.equal(root.querySelector('.ex-card'),card);
+  assert.equal(r.sectionsShown.get(t.md.path).has(0),true);
+  assert.equal(card.querySelector('.ex-group-trigger').getAttribute('aria-expanded'),'true');
+  await t.close();
+});
+
+test('H2 section index invalidates on metadata revision even if card path survives',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  root.querySelector('.ex-group-trigger').click();
+  assert.equal(r.sectionsShown.get(t.md.path).has(0),true);
+  t.md.stat.mtime++;
+  t.plugin.onFileChange(t.md.path);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done' && !root.querySelector('.ex-card').classList.contains('ex-card-loading'),
+    'metadata revision scan');
+  assert.equal(r.sectionsShown.has(t.md.path),false);
+  assert.equal(root.querySelectorAll('.ex-group-trigger[aria-expanded="true"]').length,0);
+  await t.close();
+});
