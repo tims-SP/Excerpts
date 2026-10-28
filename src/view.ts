@@ -2169,9 +2169,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       new Notice("摘录索引需要刷新，请先手动刷新");
       return;
     }
-    if (this.plugin.app.vault.getAbstractFileByPath(path) !== sourceFile) {
+    const currentSource = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (currentSource !== sourceFile) {
       this.markStale(path);
-      new Notice("摘录文件已替换，请刷新索引");
+      new Notice(currentSource instanceof TFile
+        ? "摘录文件已替换，请刷新索引"
+        : "该摘录文件已移动或删除，请刷新索引");
       return;
     }
     // Menu entries may remain visible after a successful scan or a file
