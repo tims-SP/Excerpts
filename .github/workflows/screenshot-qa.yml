@@ -25,6 +25,8 @@ jobs:
         run: python scripts/focus-reorder-regression.py
       - name: Continuous-frame list transition regressions
         run: python scripts/list-transition-regression.py
+      - name: Indexed list scale regression (1k / 10k / 30k)
+        run: python scripts/list-scale-regression.py
       - name: Existing layout constraints
         run: python scripts/spacing-check.py
       - name: Existing screenshot and interaction coverage

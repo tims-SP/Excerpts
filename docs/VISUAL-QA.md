@@ -100,3 +100,11 @@ Actions 名称：**Screenshot QA**。PR 和 main 推送自动运行，无路径�
 出现整表空白帧、无故骨架恢复、未变化卡片丢失焦点、旧 H2 误展开、原生媒体不必要的重新挂载，均判定为失败。出现失败时先归因于业务代码、原生 Markdown 渲染、主题或 WebView 合成中的哪一层，不得为通过截图测试而更改不相关功能。
 
 本矩阵是人工实机验收规程，不表示已有任何真实 Android/iOS 测试结果。
+
+
+## 列表可见空白与规模回归（2026-10-28）
+
+- `scripts/list-transition-regression.py` 在已提交结果不为空、列表区域与滚动视口交集至少 160px 时，要求实际有可视卡片；不能只以 DOM 数量证明“没有空白帧”。短日期轨道、仅显示顶部输入框及真正空结果不应误报。断言增加了主动自检。
+- `scripts/list-scale-regression.py` 对 390/1280px Chromium 模拟宿主的已建索引 1,000、10,000、30,000 条摘录执行标签切换与 `visibleItems()/drawCards()`，检查匹配总数和挂载卡片数量上界；耗时输出到 `artifacts/transitions/list-scale-metrics.json`。未建立可信设备性能预算前不人为设定毫秒阈值，更不修改生产算法迎合测试。
+- 规模测试明确不覆盖真实扫描、全文 Markdown 读取、Android/iOS 性能、设备内存和原生音视频，仍应分别实际验收。
+- GitHub Actions 通过不代表启用必需检查；仅管理员开启主分支规则后，`Build and test / build` 和 `Screenshot QA / Visual inventory and layout guards` 才成为强制合并门槛。

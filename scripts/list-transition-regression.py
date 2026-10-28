@@ -30,6 +30,10 @@ INSTRUMENT = """() => {
   window.__readFrame = () => {
     const viewport = host.getBoundingClientRect();
     const cards = [...document.querySelectorAll('.ex-card')];
+    const renderer = window.__pane.renderer;
+    const feedRect = renderer.listEl.getBoundingClientRect();
+    const feedCoverage = Math.max(0, Math.min(viewport.bottom, feedRect.bottom) -
+      Math.max(viewport.top, feedRect.top));
     const visible = cards.filter(el => {
       const r=el.getBoundingClientRect();
       return r.width>0 && r.height>0 && r.bottom>viewport.top+4 &&
@@ -42,6 +46,8 @@ INSTRUMENT = """() => {
     return {
       top:host.scrollTop,
       count:cards.length,
+      committedRows:renderer.timeline.rows.length,
+      feedCoverage:Math.round(feedCoverage*10)/10,
       visible:visible.map(el=>({
         path:el.dataset.path,id:id(el),
         loading:el.classList.contains('ex-card-loading'),
@@ -77,6 +83,28 @@ INSTRUMENT = """() => {
   };
 }"""
 
+def assert_visible_feed(sample, label, index):
+    # Composer-only and short date-rail intersections are valid; a committed
+    # feed occupying substantial screen area without any visible card is not.
+    if sample["committedRows"] and sample["feedCoverage"] >= 160:
+        assert sample["visible"], (label,index,"virtual rows exist but viewport is blank",sample)
+
+
+def verify_coverage_guard():
+    state = {"count":10,"committedRows":10,"feedCoverage":400,"visible":[]}
+    try:
+        assert_visible_feed(state,"self-check",0)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("off-screen DOM must fail coverage assertion")
+    assert_visible_feed({**state,"feedCoverage":20},"composer-only",0)
+    assert_visible_feed({**state,"committedRows":0},"true-empty",0)
+
+
+verify_coverage_guard()
+
+
 def take(page, label, action):
     page.evaluate("window.__begin()")
     try:
@@ -86,8 +114,9 @@ def take(page, label, action):
         samples = page.evaluate("window.__end()")
     assert len(samples) >= 2, (label,"no animation frames sampled",len(samples))
     for index, sample in enumerate(samples):
-        if sample["results"] > 0:
+        if sample["committedRows"] > 0:
             assert sample["count"] > 0, (label,index,"blank feed frame",sample)
+        assert_visible_feed(sample, label, index)
         for card in sample["visible"]:
             identity = (card["path"], card["id"])
             assert not (card["loading"] and identity in hydrated_instances), (
