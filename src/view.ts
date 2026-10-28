@@ -1,4 +1,4 @@
-import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
+import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, TextComponent, setIcon } from "obsidian";
 import { findSectionHeadingLine, parseMarkdown } from "./codec";
 import type ExcerptsPlugin from "./main";
 import { DeleteCandidate, DeleteProgress, EntryRepository } from "./repository";
@@ -1001,7 +1001,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const actions = node("div", "ex-toolbar-actions");
     this.searchWrap = node("div", "ex-search-wrap");
     this.searchWrap.hidden = !this.searchText;
-    this.searchInput = node("input", "ex-input ex-search");
+    this.searchInput = new TextComponent(this.searchWrap).inputEl;
+    this.searchInput.classList.add("ex-input", "ex-search");
     this.searchInput.value = this.searchText;
     this.searchInput.type = "search";
     this.searchInput.placeholder = "搜索摘录内容或标签…";

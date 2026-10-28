@@ -37,13 +37,25 @@ class FuzzySuggestModal {
 }
 class Notice {constructor(message){Notice.last=message;}}
 class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},setWarning(){this.warning=true;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}addSeparator(){}showAtPosition(){Menu.last=this;}}
+class TextComponent {
+  constructor(root){this.inputEl=document.createElement('input');this.inputEl.type='text';this.inputEl.dataset.nativeControl='text';root.append(this.inputEl);}
+  setPlaceholder(value){this.inputEl.placeholder=value;return this;}
+  setValue(value){this.inputEl.value=value;return this;}
+}
+class ButtonComponent {
+  constructor(root){this.buttonEl=document.createElement('button');this.buttonEl.type='button';this.buttonEl.dataset.nativeControl='button';root.append(this.buttonEl);}
+  setButtonText(value){this.buttonEl.textContent=value;return this;}
+  setCta(){this.buttonEl.classList.add('mod-cta');return this;}
+  setWarning(){this.buttonEl.classList.add('mod-warning');return this;}
+  onClick(handler){this.buttonEl.addEventListener('click',handler);return this;}
+}
 class Modal {
   constructor(){this.modalEl=document.createElement('section');this.contentEl=document.createElement('div');this.modalEl.append(this.contentEl);}
   open(){document.body.append(this.modalEl);this.onOpen?.();Modal.last=this;return this;}
   close(){this.onClose?.();this.modalEl.remove();}
 }
 const renders=[];
-const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,FuzzySuggestModal,
+const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,FuzzySuggestModal,TextComponent,ButtonComponent,
   parseYaml(raw){
     const version=raw.match(/^version:\s*(\d+)$/m);
     const tag=raw.match(/^\s*tag:\s*(.+)$/m);
@@ -489,6 +501,8 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-calendar-shell').hidden,true);
   assert.equal(root.querySelector('.ex-feed-view').hidden,false);
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
+  assert.equal(root.querySelector('input.ex-search').dataset.nativeControl,'text',
+    'search field should be created by the Obsidian TextComponent');
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
@@ -1689,6 +1703,9 @@ test('save current filter creates a reusable .excerpts file without replacing th
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   assert.equal(dialog.querySelector('.ex-save-page-input').value,'哲学摘录');
+  assert.equal(dialog.querySelector('.ex-save-page-input').dataset.nativeControl,'text');
+  assert.equal(dialog.querySelector('.ex-save-page-submit').dataset.nativeControl,'button');
+  assert.ok(dialog.querySelector('.ex-save-page-submit').classList.contains('mod-cta'));
   assert.match(dialog.querySelector('.ex-save-page-hint').textContent,/哲学摘录.excerpts/);
   dialog.querySelector('.ex-save-page-submit').click();
   await wait();
@@ -1905,6 +1922,8 @@ test('single-card deletion requires native confirmation and uses the vault trash
   Menu.last.items.at(-1).handler();
   let modal=document.querySelector('.ex-delete-modal');
   assert.ok(modal);assert.equal(t.files.has(t.md.path),true);
+  assert.equal(modal.querySelector('.ex-delete-submit').dataset.nativeControl,'button');
+  assert.ok(modal.querySelector('.ex-delete-submit').classList.contains('mod-warning'));
   modal.querySelector('.ex-delete-cancel').click();
   assert.equal(document.querySelector('.ex-delete-modal'),null);
   assert.equal(t.files.has(t.md.path),true);
