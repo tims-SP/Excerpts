@@ -5200,3 +5200,37 @@ test('selection pruning synchronizes itemByPath with the visible item index',asy
   body.querySelector('.ex-select-done').click();
   await second.close();
 });
+
+
+test('pending tag write refuses to mutate a concurrently replaced index snapshot',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card');
+  card.querySelector('.ex-add-tag').click();
+  const original=r.itemByPath.get(t.md.path);
+  const choice=[...card.querySelectorAll('.ex-tag-choice')].find(x=>x.textContent==='哲学');
+  assert.ok(choice);
+  choice.click();
+  let release;
+  const actualWrite=t.plugin.app.fileManager.processFrontMatter;
+  t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
+    await new Promise(resolve=>{release=resolve;});
+    return actualWrite(file,fn);
+  };
+  card.querySelector('.ex-tag-done').click();
+  await waitFor(()=>typeof release==='function' && r.pendingTags.has(t.md.path),'pending tag write');
+  // The normal scan mutex prevents this, but the callback must still fail closed.
+  const replacement={...original,tags:[...original.tags],frontmatterTags:[...original.frontmatterTags]};
+  r.items=r.items.map(x=>x.path===t.md.path?replacement:x);
+  r.itemByPath.set(t.md.path,replacement);
+  release();
+  await waitFor(()=>!r.pendingTags.has(t.md.path),'index replacement during write settled');
+  assert.equal(t.getTagWrites(),1);
+  assert.equal(r.itemByPath.get(t.md.path),replacement);
+  assert.deepEqual(replacement.tags,original.tags,'obsolete callback cannot mutate new snapshot');
+  assert.equal(r.scanStatus,'stale');
+  assert.equal(card.querySelector('.ex-tag-editor').hidden,false);
+  assert.equal(card.querySelector('.ex-tag-done').disabled,true);
+  assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
+  card.querySelector('.ex-tag-cancel').click();
+  await t.close();
+});
