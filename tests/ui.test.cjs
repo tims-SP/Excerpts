@@ -501,6 +501,8 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-calendar-shell').hidden,true);
   assert.equal(root.querySelector('.ex-feed-view').hidden,false);
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
+  assert.equal(root.querySelector('input.ex-search').dataset.nativeControl,'text',
+    'search field should be created by the Obsidian TextComponent');
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
