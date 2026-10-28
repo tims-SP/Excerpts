@@ -5135,6 +5135,7 @@ test('offscreen unchanged-stat H2 is collapsed on force refresh without loading 
 
 test('opened card menu refuses stale callbacks after a successful unchanged-index scan',async()=>{
   const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  Menu.last=null;
   clickByLabel(root,'卡片选项');
   await waitFor(()=>Menu.last?.items.some(x=>x.title==='删除摘录'),'card menu ready');
   const oldMenu=Menu.last,previous=r.itemByPath.get(t.md.path);
@@ -5154,6 +5155,7 @@ test('opened card menu refuses stale callbacks after a successful unchanged-inde
 
 test('opened card menu cannot edit or delete a replaced file at the same path',async()=>{
   const t=await fixture(),root=t.pane.contentEl;
+  Menu.last=null;
   clickByLabel(root,'卡片选项');
   await waitFor(()=>Menu.last?.items.some(x=>x.title==='删除摘录'),'card menu ready');
   const oldMenu=Menu.last,previous=t.md;
