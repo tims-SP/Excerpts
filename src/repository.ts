@@ -253,19 +253,24 @@ export class EntryRepository {
         settle = onAttempt?.(path);
         this.assertFolderSource(ws);
         const file = await this.app.vault.create(path, content);
+        // The native writer may yield while a folder moves or a path is replaced.
+        // A completed write is not necessarily a valid save in this workspace.
+        this.assertFolderSource(ws);
+        if (file.path !== path || this.app.vault.getAbstractFileByPath(path) !== file ||
+            !isExcerptPath(path, ws))
+          throw new Error("摘录写入已返回，但文件位置发生变化，请核对实际文件");
         // Record the file identity before returning to the caller. Vault events
         // may arrive either before or after the create promise resolves.
         settle?.(file);
         return file;
       } catch (error) {
         settle?.();
-        // Retry only when another writer really created the path, not on unrelated IO errors.
-        const conflict = this.app.vault.getAllLoadedFiles()
-          .some(file => filenameKey(file.path) === key);
+        // Only an explicit native name collision permits a new filename.
+        // A failed write may already have persisted a file: never duplicate it.
         const alreadyExists = error instanceof Error &&
           (/\b(?:EEXIST|already exists|file exists)\b/i.test(error.message) ||
             (error as Error & { code?: string }).code === "EEXIST");
-        if (!conflict && !this.app.vault.getAbstractFileByPath(path) && !alreadyExists) throw error;
+        if (!alreadyExists) throw error;
         occupied.add(key);
       } finally {
         this.reservedPaths.delete(key);
@@ -308,6 +313,8 @@ export class EntryRepository {
           continue;
         }
         await this.app.fileManager.trashFile(current);
+        if (this.app.vault.getAbstractFileByPath(path) === current)
+          throw new Error("删除结果未确认，原文件仍然存在，请核对后手动刷新");
         this.invalidate(path);
         result.deleted.push(path);
       } catch (error) {
@@ -352,13 +359,12 @@ export class EntryRepository {
       else delete frontmatter.tags;
     });
     this.invalidate(path);
-    // An external rename after the native write started cannot be rolled back here.
-    if (ws.kind === "folder") {
-      try {
-        this.assertScopedFile(ws, path, expectedFile);
-      } catch {
-        throw new Error("标签写入已返回，但文件夹或文件位置发生变化，请核对实际标签结果");
-      }
+    // A native write may finish after the source moves, including on file-based pages.
+    // Do not claim unqualified success for a different file or scope.
+    try {
+      this.assertScopedFile(ws, path, expectedFile);
+    } catch {
+      throw new Error("标签写入已返回，但文件夹或文件位置发生变化，请核对实际标签结果");
     }
   }
 }

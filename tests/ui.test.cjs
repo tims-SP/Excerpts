@@ -2231,7 +2231,9 @@ test('deletion completes without automatic indexing and marks the feed stale',as
   const scan=t.plugin.repo.scan.bind(t.plugin.repo);
   t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   let release;
-  t.plugin.app.fileManager.trashFile=()=>new Promise(resolve=>{release=resolve;});
+  t.plugin.app.fileManager.trashFile=file=>new Promise(resolve=>{
+    release=()=>{t.files.delete(file.path);resolve();};
+  });
   clickByLabel(root,'卡片选项');await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录');
   Menu.last.items.at(-1).handler();
   const modal=Modal.last;
@@ -5232,5 +5234,121 @@ test('pending tag write refuses to mutate a concurrently replaced index snapshot
   assert.equal(card.querySelector('.ex-tag-done').disabled,true);
   assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
   card.querySelector('.ex-tag-cancel').click();
+  await t.close();
+});
+
+
+test('create refuses an uncertain native write instead of silently saving a second copy',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const original=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const originalPaths=new Set(t.files.keys());
+  let attempts=0;
+  t.plugin.app.vault.create=async(path,content)=>{
+    attempts++;
+    if(attempts===1){
+      await original(path,content);
+      throw Error('EIO: native writer failed after persisting the file');
+    }
+    return original(path,content);
+  };
+  await assert.rejects(t.plugin.repo.create(ws,'# 模拟写入后异常'),/EIO|无法确认/);
+  assert.equal(attempts,1,'unrelated I/O errors must not retry under a new filename');
+  const created=[...t.files.keys()].filter(path=>!originalPaths.has(path)&&path.endsWith('.md'));
+  assert.equal(created.length,1,'the caller must inspect the one potentially saved file');
+  await t.close();
+});
+
+test('create does not report success if its folder source moves while Vault.create is pending',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  const ws=t.plugin.workspaceForFolder(folder);
+  const original=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  let release;
+  t.plugin.app.vault.create=(path,content)=>new Promise(resolve=>{
+    release=()=>resolve(original(path,content));
+  });
+  const creating=t.plugin.repo.create(ws,'# 保存过程中目录移动');
+  assert.equal(typeof release,'function');
+  t.files.delete('摘录');folder.path='新位置';t.files.set(folder.path,{file:folder});
+  release();
+  await assert.rejects(creating,/目录|文件夹|位置|核对/,
+    'native success is not an authorized in-scope save if source folder moved');
+  await t.close();
+});
+
+test('file-home tag write reports uncertain success if Markdown is moved after native write',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const ws=t.plugin.workspaceForHome(t.home),originalPath=t.md.path;
+  const original=t.plugin.app.fileManager.processFrontMatter.bind(t.plugin.app.fileManager);
+  t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
+    await original(file,fn);
+    const existing=t.files.get(file.path);
+    t.files.delete(file.path);
+    file.path='摘录/已移动的原文件.md';
+    t.files.set(file.path,existing);
+  };
+  await assert.rejects(
+    repo.setFrontmatterTags(t.md.path,['哲学','新标签'],['哲学'],ws,t.md),
+    /标签写入已返回.*位置发生变化|核对实际标签结果/);
+  assert.deepEqual(t.tagState.get(originalPath),['哲学','新标签'],
+    'native write happened, but repository must not report unqualified success');
+  await t.close();
+});
+
+test('deleteEntries does not report a successful deletion when native trash leaves original in Vault',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(t.md.path,ws);
+  assert.ok(candidate);
+  t.plugin.app.fileManager.trashFile=async()=>{};
+  const outcomes=await repo.deleteEntries(ws,[candidate]);
+  assert.equal(outcomes.deleted.length,0);
+  assert.equal(outcomes.failed.length,1);
+  assert.match(outcomes.failed[0].reason,/删除.*未完成|仍然存在|未确认/);
+  assert.equal(t.files.get(t.md.path).file,t.md,'still-present original must not be discarded from the index');
+  await t.close();
+});
+
+
+test('explicit EEXIST collision still permits exactly one unique-name retry',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const create=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const paths=[];
+  t.plugin.app.vault.create=async(path,content)=>{
+    paths.push(path);
+    if(paths.length===1){
+      await create(path,'an external file won the first path');
+      const conflict=Error('File already exists');
+      conflict.code='EEXIST';
+      throw conflict;
+    }
+    return create(path,content);
+  };
+  const saved=await t.plugin.repo.create(ws,'# 明确重名后保存');
+  assert.equal(paths.length,2,'only the known filename collision may be retried');
+  assert.notEqual(paths[0],paths[1]);
+  assert.equal(t.files.get(paths[0]).data,'an external file won the first path');
+  assert.equal(saved.path,paths[1]);
+  assert.match(t.files.get(saved.path).data,/明确重名后保存/);
+  await t.close();
+});
+
+test('native trash moving a file to a different trash path remains a successful deletion',async()=>{
+  const t=await fixture(),repo=t.plugin.repo,original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(original,ws);
+  t.plugin.app.fileManager.trashFile=async file=>{
+    const entry=t.files.get(original);
+    t.files.delete(original);
+    file.path='.trash/测试.md';
+    t.files.set(file.path,entry);
+  };
+  const result=await repo.deleteEntries(ws,[candidate]);
+  assert.deepEqual(result.deleted,[original]);
+  assert.deepEqual(result.failed,[]);
+  assert.equal(t.files.has(original),false);
+  assert.equal(t.files.get('.trash/测试.md').file,t.md);
   await t.close();
 });
