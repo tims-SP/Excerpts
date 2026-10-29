@@ -5308,3 +5308,42 @@ test('native reading and editing tabs clean up when revealLeaf fails',async()=>{
     await t.close();
   }
 });
+
+
+test('native Markdown tab cleanup failure preserves original error and tells user to close the tab',async()=>{
+  const t=await fixture();
+  const tab={view:null,detach(){throw Error('detach not available');},
+    async setViewState(){throw Error('original Markdown navigation error');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  Notice.last='';
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/original Markdown navigation error/);
+  assert.match(Notice.last,/请手动关闭本次创建的异常标签页/);
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+test('scoped native editor discards its new tab if the original file moves while opening',async()=>{
+  const t=await fixture();
+  const original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  let reveals=0;
+  const tab={view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){
+      this.view=new MarkdownView();this.view.mode='source';this.view.file=file;
+      const record=t.files.get(original);
+      t.files.delete(original);
+      file.path='已移动/测试.md';
+      t.files.set(file.path,record);
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{reveals++;};
+  await assert.rejects(
+    t.plugin.openMarkdown(original,undefined,false,{workspace:ws,file:t.md}),
+    /已移动|替换|范围/);
+  assert.equal(tab.detachCalls,1,'failed identity check must discard the new native tab');
+  assert.equal(reveals,0,'the moved file must never be offered as the original excerpt');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
