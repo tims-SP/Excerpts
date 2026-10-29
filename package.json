@@ -5,7 +5,6 @@
   "description": "Native Markdown excerpt cards for Obsidian",
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit && node esbuild.config.mjs",
-    "build:offline": "node scripts/build-offline.cjs",
     "typecheck:offline": "tsc -p tsconfig.offline.json --noEmit",
     "test": "node scripts/test.cjs",
     "smoke": "node scripts/smoke.cjs",
