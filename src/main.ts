@@ -1,4 +1,5 @@
 import { MarkdownView, Notice, Plugin, TFile, TFolder } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, PluginSettings, SCAN_BATCH_SIZES, LIST_BATCH_SIZES, Workspace, validateRelativePath } from "./model";
 import { EntryRepository } from "./repository";
 import { ExcerptsSettingTab } from "./settings";
@@ -391,16 +392,30 @@ export default class ExcerptsPlugin extends Plugin {
     await leaf.openFile(file);
     await this.app.workspace.revealLeaf(leaf);
   }
+  /** Only discard the tab returned by getLeaf("tab"), never an existing Excerpts leaf. */
+  private detachFailedMarkdownTab(leaf: WorkspaceLeaf): void {
+    try {
+      leaf.detach();
+    } catch (cleanupError) {
+      console.error("Excerpts: failed to detach new Markdown tab", cleanupError);
+      new Notice("打开原文失败，请手动关闭本次创建的异常标签页");
+    }
+  }
   /** Reading uses the native Markdown preview mode, with no editor focus or soft keyboard. */
   async openMarkdownPreview(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile) || file.extension.toLowerCase() !== "md")
       throw new Error("Markdown 文件不存在：" + path);
     const leaf = this.app.workspace.getLeaf("tab");
-    await leaf.setViewState({ type: "markdown", state: { file: path, mode: "preview" } });
-    if (!(leaf.view instanceof MarkdownView) || leaf.view.getMode() !== "preview")
-      throw new Error("无法切换到 Markdown 阅读模式");
-    await this.app.workspace.revealLeaf(leaf);
+    try {
+      await leaf.setViewState({ type: "markdown", state: { file: path, mode: "preview" } });
+      if (!(leaf.view instanceof MarkdownView) || leaf.view.getMode() !== "preview")
+        throw new Error("无法切换到 Markdown 阅读模式");
+      await this.app.workspace.revealLeaf(leaf);
+    } catch (error) {
+      this.detachFailedMarkdownTab(leaf);
+      throw error;
+    }
   }
   async openMarkdown(path: string, line?: number, atEnd = false,
     expected?: { workspace: Workspace; file: TFile }): Promise<void> {
@@ -410,27 +425,35 @@ export default class ExcerptsPlugin extends Plugin {
     if (!(file instanceof TFile)) throw new Error("Markdown 文件不存在：" + path);
     // A new tab keeps the .excerpts homepage, its filters and scroll position intact.
     const leaf = this.app.workspace.getLeaf("tab");
-    if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
-    await leaf.openFile(file);
-    if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
-    // Switch the leaf's view state rather than calling an unsupported MarkdownView setter.
-    if (leaf.view instanceof MarkdownView && leaf.view.getMode() !== "source") {
+    let nativeView: MarkdownView;
+    try {
       if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
-      await leaf.setViewState({ type: "markdown", state: { file: path, mode: "source" } });
-    }
-    if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
-    await this.app.workspace.revealLeaf(leaf);
-    const view = leaf.view;
-    if (view instanceof MarkdownView) {
-      if (line !== undefined || atEnd) {
-        const lastLine = atEnd ? view.editor.lastLine() : 0;
-        const cursor = line !== undefined ? { line, ch: 0 } :
-          { line: lastLine, ch: view.editor.getLine(lastLine).length };
-        view.editor.setCursor(cursor);
-        view.editor.scrollIntoView({ from: cursor, to: cursor }, true);
+      await leaf.openFile(file);
+      if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
+      // Switch the leaf's view state rather than calling an unsupported MarkdownView setter.
+      if (leaf.view instanceof MarkdownView && leaf.view.getMode() !== "source") {
+        if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
+        await leaf.setViewState({ type: "markdown", state: { file: path, mode: "source" } });
       }
-      view.editor.focus();
+      if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
+      const view = leaf.view;
+      if (!(view instanceof MarkdownView) || view.getMode() !== "source")
+        throw new Error("无法切换到 Markdown 编辑模式");
+      nativeView = view;
+      await this.app.workspace.revealLeaf(leaf);
+    } catch (error) {
+      this.detachFailedMarkdownTab(leaf);
+      throw error;
     }
+    // The tab is already revealed: cursor/focus errors must not detach a valid editor.
+    if (line !== undefined || atEnd) {
+      const lastLine = atEnd ? nativeView.editor.lastLine() : 0;
+      const cursor = line !== undefined ? { line, ch: 0 } :
+        { line: lastLine, ch: nativeView.editor.getLine(lastLine).length };
+      nativeView.editor.setCursor(cursor);
+      nativeView.editor.scrollIntoView({ from: cursor, to: cursor }, true);
+    }
+    nativeView.editor.focus();
   }
 }
 function showError(error: unknown): void { new Notice(error instanceof Error ? error.message : String(error)); }
