@@ -5284,3 +5284,22 @@ test('metadata scan refuses a document moved outside scope during a yielded batc
     'a captured file that leaves the scan scope cannot be committed to the current index');
   await t.close();
 });
+
+
+test('metadata scan validates already-processed files again before returning the index',async()=>{
+  const t=await fixture();
+  const repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  for(let i=0;i<40;i++)await t.plugin.app.vault.create('摘录/复核-'+i+'.md','body');
+  let firstBatchFinished=false;
+  const running=repo.scan(ws,16,(done,total)=>{
+    if(done===16&&total===41)firstBatchFinished=true;
+  },()=>false);
+  assert.equal(firstBatchFinished,true);
+  const original=t.files.get(t.md.path);
+  t.files.delete(t.md.path);
+  t.md.path='另一个文件夹/已移出.md';
+  t.files.set(t.md.path,original);
+  await assert.rejects(running,/扫描期间.*变化|手动刷新/,
+    'a moved row from an earlier batch must not be committed');
+  await t.close();
+});
