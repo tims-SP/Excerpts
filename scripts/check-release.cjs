@@ -26,7 +26,7 @@ for (const [name, expected] of Object.entries(pkg.devDependencies)) {
 }
 assert.match(ci, /npm ci --no-audit --no-fund/, 'Build CI must install frozen dependencies');
 assert.match(screenshotCi, /npm ci --no-audit --no-fund/, 'Screenshot CI must install frozen dependencies');
-assert.match(ci, /package-lock\\.json/, 'Source snapshot must contain the lockfile');
+assert.ok(ci.includes('package-lock.json'), 'Source snapshot must contain the lockfile');
 assert.match(ci, /excerpts-\$\{VERSION\}\.zip/, 'CI packaging is not versioned by manifest');
 assert.match(ci, /dist\/excerpts-\*\.zip/, 'CI artifact list must include the versioned zip');
 assert.match(css, /^\.excerpts-root\s*\{/m, 'Expected scoped root styles');
