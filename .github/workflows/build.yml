@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
       - run: npm run verify
       - name: Prepare plugin
         run: |
@@ -26,7 +26,7 @@ jobs:
         run: |
           tar -czf dist/excerpts-source-snapshot.tar.gz \
             src tests scripts docs .github/workflows \
-            README.md LICENSE package.json esbuild.config.mjs \
+            README.md LICENSE package.json package-lock.json esbuild.config.mjs \
             tsconfig.json tsconfig.offline.json manifest.json styles.css versions.json types-offline
       - uses: actions/upload-artifact@v4
         with:
