@@ -2231,7 +2231,9 @@ test('deletion completes without automatic indexing and marks the feed stale',as
   const scan=t.plugin.repo.scan.bind(t.plugin.repo);
   t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   let release;
-  t.plugin.app.fileManager.trashFile=()=>new Promise(resolve=>{release=resolve;});
+  t.plugin.app.fileManager.trashFile=file=>new Promise(resolve=>{
+    release=()=>{t.files.delete(file.path);resolve();};
+  });
   clickByLabel(root,'卡片选项');await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录');
   Menu.last.items.at(-1).handler();
   const modal=Modal.last;
