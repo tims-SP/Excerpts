@@ -5553,3 +5553,29 @@ test('native editor stays open if focus fails after a successful reveal',async()
   assert.equal(t.pane.file,t.home);
   await t.close();
 });
+
+
+test('H2 section editor refuses a replacement file appearing during native tab creation',async()=>{
+  const t=await fixture();
+  const path=t.md.path, original=t.md, r=t.pane.renderer;
+  const parsed=await t.plugin.repo.read(path);
+  assert.ok(parsed.sections.length>0,'the source contains an editable H2 section');
+  const oldGetLeaf=t.plugin.app.workspace.getLeaf;
+  let opened=0,replaced=false;
+  t.plugin.app.workspace.getLeaf=mode=>{
+    if(mode==='tab'&&!replaced){
+      replaced=true;
+      t.files.set(path,{file:new TFile(path),data:'# 不相关的新文件\\n\\n## 来源\\n错误目标'});
+    }
+    return oldGetLeaf(mode);
+  };
+  const originalOpen=t.leaf.openFile;
+  t.leaf.openFile=async file=>{opened++;return originalOpen.call(t.leaf,file);};
+  await assert.rejects(r.openSection(path,0,parsed.sections),/已移动|替换|超出文件夹范围/,
+    'the H2 action must carry its previously verified TFile identity into native navigation');
+  assert.equal(replaced,true,'the race was injected during creation of the native tab');
+  assert.equal(opened,0,'the replacement document is never opened as the old H2 section');
+  assert.equal(t.files.get(path).file!==original,true);
+  assert.equal(t.pane.file,t.home,'the Excerpts view remains untouched');
+  await t.close();
+});
