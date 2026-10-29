@@ -425,6 +425,7 @@ export default class ExcerptsPlugin extends Plugin {
     if (!(file instanceof TFile)) throw new Error("Markdown 文件不存在：" + path);
     // A new tab keeps the .excerpts homepage, its filters and scroll position intact.
     const leaf = this.app.workspace.getLeaf("tab");
+    let nativeView: MarkdownView;
     try {
       if (expected) this.repo.assertScopedFile(expected.workspace, path, expected.file);
       await leaf.openFile(file);
@@ -438,19 +439,21 @@ export default class ExcerptsPlugin extends Plugin {
       const view = leaf.view;
       if (!(view instanceof MarkdownView) || view.getMode() !== "source")
         throw new Error("无法切换到 Markdown 编辑模式");
+      nativeView = view;
       await this.app.workspace.revealLeaf(leaf);
-      if (line !== undefined || atEnd) {
-        const lastLine = atEnd ? view.editor.lastLine() : 0;
-        const cursor = line !== undefined ? { line, ch: 0 } :
-          { line: lastLine, ch: view.editor.getLine(lastLine).length };
-        view.editor.setCursor(cursor);
-        view.editor.scrollIntoView({ from: cursor, to: cursor }, true);
-      }
-      view.editor.focus();
     } catch (error) {
       this.detachFailedMarkdownTab(leaf);
       throw error;
     }
+    // The tab is already revealed: cursor/focus errors must not detach a valid editor.
+    if (line !== undefined || atEnd) {
+      const lastLine = atEnd ? nativeView.editor.lastLine() : 0;
+      const cursor = line !== undefined ? { line, ch: 0 } :
+        { line: lastLine, ch: nativeView.editor.getLine(lastLine).length };
+      nativeView.editor.setCursor(cursor);
+      nativeView.editor.scrollIntoView({ from: cursor, to: cursor }, true);
+    }
+    nativeView.editor.focus();
   }
 }
 function showError(error: unknown): void { new Notice(error instanceof Error ? error.message : String(error)); }
