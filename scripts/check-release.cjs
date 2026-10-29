@@ -19,7 +19,7 @@ assert.equal(lock.packages['']?.version, pkg.version, 'Lockfile root package is 
 assert.deepEqual(lock.packages['']?.devDependencies, pkg.devDependencies,
   'Direct dependencies differ from the lockfile');
 for (const [name, expected] of Object.entries(pkg.devDependencies)) {
-  assert.match(expected, /^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/,
+  assert.match(expected, /^[0-9]+[.][0-9]+[.][0-9]+(?:-[0-9A-Za-z.-]+)?$/,
     'Direct dependency must be an exact version: ' + name);
   assert.equal(lock.packages['node_modules/' + name]?.version, expected,
     'Installed direct dependency differs from pinned version: ' + name);
