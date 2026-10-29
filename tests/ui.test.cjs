@@ -5307,3 +5307,46 @@ test('deleteEntries does not report a successful deletion when native trash leav
   assert.equal(t.files.get(t.md.path).file,t.md,'still-present original must not be discarded from the index');
   await t.close();
 });
+
+
+test('explicit EEXIST collision still permits exactly one unique-name retry',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const create=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const paths=[];
+  t.plugin.app.vault.create=async(path,content)=>{
+    paths.push(path);
+    if(paths.length===1){
+      await create(path,'an external file won the first path');
+      const conflict=Error('File already exists');
+      conflict.code='EEXIST';
+      throw conflict;
+    }
+    return create(path,content);
+  };
+  const saved=await t.plugin.repo.create(ws,'# 明确重名后保存');
+  assert.equal(paths.length,2,'only the known filename collision may be retried');
+  assert.notEqual(paths[0],paths[1]);
+  assert.equal(t.files.get(paths[0]).data,'an external file won the first path');
+  assert.equal(saved.path,paths[1]);
+  assert.match(t.files.get(saved.path).data,/明确重名后保存/);
+  await t.close();
+});
+
+test('native trash moving a file to a different trash path remains a successful deletion',async()=>{
+  const t=await fixture(),repo=t.plugin.repo,original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(original,ws);
+  t.plugin.app.fileManager.trashFile=async file=>{
+    const entry=t.files.get(original);
+    t.files.delete(original);
+    file.path='.trash/测试.md';
+    t.files.set(file.path,entry);
+  };
+  const result=await repo.deleteEntries(ws,[candidate]);
+  assert.deepEqual(result.deleted,[original]);
+  assert.deepEqual(result.failed,[]);
+  assert.equal(t.files.has(original),false);
+  assert.equal(t.files.get('.trash/测试.md').file,t.md);
+  await t.close();
+});
