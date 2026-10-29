@@ -5234,3 +5234,77 @@ test('pending tag write refuses to mutate a concurrently replaced index snapshot
   card.querySelector('.ex-tag-cancel').click();
   await t.close();
 });
+
+
+test('native reading tab is detached if setViewState fails',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async setViewState(){throw Error('native reading transition failed');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/native reading transition failed/);
+  assert.equal(tab.detachCalls,1,'failed newly created reading tab must be discarded');
+  assert.equal(t.pane.file,t.home,'existing excerpt page must survive');
+  await t.close();
+});
+
+test('native reading tab is detached if host refuses preview mode',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async setViewState(){
+      this.view=new MarkdownView();
+      this.view.mode='source';
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/无法切换到 Markdown 阅读模式/);
+  assert.equal(tab.detachCalls,1,'wrong native mode must not leave a new tab');
+  await t.close();
+});
+
+test('native editor tab is detached if opening the Markdown file fails',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async openFile(){throw Error('native source editor open failed');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/native source editor open failed/);
+  assert.equal(tab.detachCalls,1,'failed newly created editor tab must be discarded');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+test('native editor refuses and cleans up a non-Markdown tab instead of claiming success',async()=>{
+  const t=await fixture();
+  let reveals=0;
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async openFile(){this.view={getMode(){return 'source';}};}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{reveals++;};
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/无法切换到 Markdown 编辑模式/);
+  assert.equal(reveals,0,'invalid host view must not be revealed');
+  assert.equal(tab.detachCalls,1,'invalid host view must not survive');
+  await t.close();
+});
+
+test('native reading and editing tabs clean up when revealLeaf fails',async()=>{
+  for(const mode of ['read','edit']){
+    const t=await fixture();
+    const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+      async openFile(file){
+        this.view=new MarkdownView();this.view.file=file;this.view.mode='source';
+      },
+      async setViewState(state){
+        this.view=new MarkdownView();this.view.mode=state.state.mode;
+      }};
+    const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+    t.plugin.app.workspace.getLeaf=kind=>kind==='tab'?tab:nativeGetLeaf(kind);
+    t.plugin.app.workspace.revealLeaf=async()=>{throw Error('native reveal failed');};
+    const opening=mode==='read'?t.plugin.openMarkdownPreview(t.md.path):t.plugin.openMarkdown(t.md.path);
+    await assert.rejects(opening,/native reveal failed/);
+    assert.equal(tab.detachCalls,1,mode+' must discard unrevealed tab');
+    assert.equal(t.pane.file,t.home);
+    await t.close();
+  }
+});
