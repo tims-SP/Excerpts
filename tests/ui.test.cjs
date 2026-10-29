@@ -5347,3 +5347,22 @@ test('scoped native editor discards its new tab if the original file moves while
   assert.equal(t.pane.file,t.home);
   await t.close();
 });
+
+
+test('native editor stays open if focus fails after a successful reveal',async()=>{
+  const t=await fixture();
+  let revealed=0;
+  const tab={view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){
+      this.view=new MarkdownView();this.view.file=file;this.view.mode='source';
+      this.view.editor.focus=()=>{throw Error('native focus failed');};
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{revealed++;};
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/native focus failed/);
+  assert.equal(revealed,1);
+  assert.equal(tab.detachCalls,0,'a successfully revealed editor should not be closed because focus failed');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
