@@ -5277,7 +5277,7 @@ test('create does not report success if its folder source moves while Vault.crea
 
 test('file-home tag write reports uncertain success if Markdown is moved after native write',async()=>{
   const t=await fixture(),repo=t.plugin.repo;
-  const ws=t.plugin.workspaceForHome(t.home);
+  const ws=t.plugin.workspaceForHome(t.home),originalPath=t.md.path;
   const original=t.plugin.app.fileManager.processFrontMatter.bind(t.plugin.app.fileManager);
   t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
     await original(file,fn);
@@ -5289,7 +5289,7 @@ test('file-home tag write reports uncertain success if Markdown is moved after n
   await assert.rejects(
     repo.setFrontmatterTags(t.md.path,['哲学','新标签'],['哲学'],ws,t.md),
     /标签写入已返回.*位置发生变化|核对实际标签结果/);
-  assert.deepEqual(t.tagState.get(t.md.path),['哲学','新标签'],
+  assert.deepEqual(t.tagState.get(originalPath),['哲学','新标签'],
     'native write happened, but repository must not report unqualified success');
   await t.close();
 });
