@@ -5234,3 +5234,53 @@ test('pending tag write refuses to mutate a concurrently replaced index snapshot
   card.querySelector('.ex-tag-cancel').click();
   await t.close();
 });
+
+
+test('repository parsed cache rejects a same-stat replacement file at the same path',async()=>{
+  const t=await fixture(false,'# 旧标题\n\n仅旧文件正文');
+  const repo=t.plugin.repo,path=t.md.path;
+  const first=await repo.readSnapshot(path);
+  assert.match(first.raw,/旧文件正文/);
+  const substitute=new TFile(path);
+  substitute.stat={...t.md.stat};
+  t.files.set(path,{file:substitute,data:'# 新标题\n\n新文件内容'});
+  const second=await repo.readSnapshot(path);
+  assert.match(second.raw,/新文件内容/,'same-stat new TFile must not reuse old parsed cache');
+  assert.doesNotMatch(second.raw,/旧文件正文/);
+  await t.close();
+});
+
+test('repository full-text cache rejects a same-stat replacement without waiting for vault events',async()=>{
+  const t=await fixture(false,'# 第一条\n\nuniqueOldCacheTerm');
+  const repo=t.plugin.repo,path=t.md.path;
+  const cards=await repo.scan(t.plugin.workspaceForHome(t.home),64,()=>{},()=>false);
+  const before=await repo.search(cards,'uniqueOldCacheTerm',()=>false);
+  assert.equal(before.has(path),true);
+  const substitute=new TFile(path);
+  substitute.stat={...t.md.stat};
+  t.files.set(path,{file:substitute,data:'# 新建正文\n\nuniqueNewCacheTerm'});
+  const oldResult=await repo.search(cards,'uniqueOldCacheTerm',()=>false);
+  assert.equal(oldResult.has(path),false,'new file may not inherit old normalized text');
+  const newResult=await repo.search(cards,'uniqueNewCacheTerm',()=>false);
+  assert.equal(newResult.has(path),true,'replacement body is read using the current file identity');
+  await t.close();
+});
+
+test('metadata scan refuses a document moved outside scope during a yielded batch',async()=>{
+  const t=await fixture();
+  const repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  for(let i=0;i<40;i++)await t.plugin.app.vault.create('摘录/批次文件-'+i+'.md','batch body');
+  let reachedFirstBatch=false;
+  const running=repo.scan(ws,16,(done,total)=>{
+    if(done===16&&total===41)reachedFirstBatch=true;
+  },()=>false);
+  assert.equal(reachedFirstBatch,true,'scan should yield after first 16 entries');
+  const moved=t.files.get('摘录/批次文件-20.md');
+  assert.ok(moved);
+  t.files.delete(moved.file.path);
+  moved.file.path='其他文件夹/批次文件-20.md';
+  t.files.set(moved.file.path,moved);
+  await assert.rejects(running,/扫描期间.*变化|超出.*范围|重新.*刷新/,
+    'a captured file that leaves the scan scope cannot be committed to the current index');
+  await t.close();
+});
