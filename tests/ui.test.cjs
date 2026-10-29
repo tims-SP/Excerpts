@@ -2231,7 +2231,9 @@ test('deletion completes without automatic indexing and marks the feed stale',as
   const scan=t.plugin.repo.scan.bind(t.plugin.repo);
   t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   let release;
-  t.plugin.app.fileManager.trashFile=()=>new Promise(resolve=>{release=resolve;});
+  t.plugin.app.fileManager.trashFile=file=>new Promise(resolve=>{
+    release=()=>{t.files.delete(file.path);resolve();};
+  });
   clickByLabel(root,'卡片选项');await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录');
   Menu.last.items.at(-1).handler();
   const modal=Modal.last;
@@ -5232,5 +5234,322 @@ test('pending tag write refuses to mutate a concurrently replaced index snapshot
   assert.equal(card.querySelector('.ex-tag-done').disabled,true);
   assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
   card.querySelector('.ex-tag-cancel').click();
+  await t.close();
+});
+
+
+test('create refuses an uncertain native write instead of silently saving a second copy',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const original=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const originalPaths=new Set(t.files.keys());
+  let attempts=0;
+  t.plugin.app.vault.create=async(path,content)=>{
+    attempts++;
+    if(attempts===1){
+      await original(path,content);
+      throw Error('EIO: native writer failed after persisting the file');
+    }
+    return original(path,content);
+  };
+  await assert.rejects(t.plugin.repo.create(ws,'# 模拟写入后异常'),/EIO|无法确认/);
+  assert.equal(attempts,1,'unrelated I/O errors must not retry under a new filename');
+  const created=[...t.files.keys()].filter(path=>!originalPaths.has(path)&&path.endsWith('.md'));
+  assert.equal(created.length,1,'the caller must inspect the one potentially saved file');
+  await t.close();
+});
+
+test('create does not report success if its folder source moves while Vault.create is pending',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  const ws=t.plugin.workspaceForFolder(folder);
+  const original=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  let release;
+  t.plugin.app.vault.create=(path,content)=>new Promise(resolve=>{
+    release=()=>resolve(original(path,content));
+  });
+  const creating=t.plugin.repo.create(ws,'# 保存过程中目录移动');
+  assert.equal(typeof release,'function');
+  t.files.delete('摘录');folder.path='新位置';t.files.set(folder.path,{file:folder});
+  release();
+  await assert.rejects(creating,/目录|文件夹|位置|核对/,
+    'native success is not an authorized in-scope save if source folder moved');
+  await t.close();
+});
+
+test('file-home tag write reports uncertain success if Markdown is moved after native write',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const ws=t.plugin.workspaceForHome(t.home),originalPath=t.md.path;
+  const original=t.plugin.app.fileManager.processFrontMatter.bind(t.plugin.app.fileManager);
+  t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
+    await original(file,fn);
+    const existing=t.files.get(file.path);
+    t.files.delete(file.path);
+    file.path='摘录/已移动的原文件.md';
+    t.files.set(file.path,existing);
+  };
+  await assert.rejects(
+    repo.setFrontmatterTags(t.md.path,['哲学','新标签'],['哲学'],ws,t.md),
+    /标签写入已返回.*位置发生变化|核对实际标签结果/);
+  assert.deepEqual(t.tagState.get(originalPath),['哲学','新标签'],
+    'native write happened, but repository must not report unqualified success');
+  await t.close();
+});
+
+test('deleteEntries does not report a successful deletion when native trash leaves original in Vault',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(t.md.path,ws);
+  assert.ok(candidate);
+  t.plugin.app.fileManager.trashFile=async()=>{};
+  const outcomes=await repo.deleteEntries(ws,[candidate]);
+  assert.equal(outcomes.deleted.length,0);
+  assert.equal(outcomes.failed.length,1);
+  assert.match(outcomes.failed[0].reason,/删除.*未完成|仍然存在|未确认/);
+  assert.equal(t.files.get(t.md.path).file,t.md,'still-present original must not be discarded from the index');
+  await t.close();
+});
+
+
+test('explicit EEXIST collision still permits exactly one unique-name retry',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const create=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const paths=[];
+  t.plugin.app.vault.create=async(path,content)=>{
+    paths.push(path);
+    if(paths.length===1){
+      await create(path,'an external file won the first path');
+      const conflict=Error('File already exists');
+      conflict.code='EEXIST';
+      throw conflict;
+    }
+    return create(path,content);
+  };
+  const saved=await t.plugin.repo.create(ws,'# 明确重名后保存');
+  assert.equal(paths.length,2,'only the known filename collision may be retried');
+  assert.notEqual(paths[0],paths[1]);
+  assert.equal(t.files.get(paths[0]).data,'an external file won the first path');
+  assert.equal(saved.path,paths[1]);
+  assert.match(t.files.get(saved.path).data,/明确重名后保存/);
+  await t.close();
+});
+
+test('native trash moving a file to a different trash path remains a successful deletion',async()=>{
+  const t=await fixture(),repo=t.plugin.repo,original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(original,ws);
+  t.plugin.app.fileManager.trashFile=async file=>{
+    const entry=t.files.get(original);
+    t.files.delete(original);
+    file.path='.trash/测试.md';
+    t.files.set(file.path,entry);
+  };
+  const result=await repo.deleteEntries(ws,[candidate]);
+  assert.deepEqual(result.deleted,[original]);
+  assert.deepEqual(result.failed,[]);
+  assert.equal(t.files.has(original),false);
+  assert.equal(t.files.get('.trash/测试.md').file,t.md);
+  await t.close();
+});
+
+
+test('repository parsed cache rejects a same-stat replacement file at the same path',async()=>{
+  const t=await fixture(false,'# 旧标题\n\n仅旧文件正文');
+  const repo=t.plugin.repo,path=t.md.path;
+  const first=await repo.readSnapshot(path);
+  assert.match(first.raw,/旧文件正文/);
+  const substitute=new TFile(path);
+  substitute.stat={...t.md.stat};
+  t.files.set(path,{file:substitute,data:'# 新标题\n\n新文件内容'});
+  const second=await repo.readSnapshot(path);
+  assert.match(second.raw,/新文件内容/,'same-stat new TFile must not reuse old parsed cache');
+  assert.doesNotMatch(second.raw,/旧文件正文/);
+  await t.close();
+});
+
+test('repository full-text cache rejects a same-stat replacement without waiting for vault events',async()=>{
+  const t=await fixture(false,'# 第一条\n\nuniqueOldCacheTerm');
+  const repo=t.plugin.repo,path=t.md.path;
+  const cards=await repo.scan(t.plugin.workspaceForHome(t.home),64,()=>{},()=>false);
+  const before=await repo.search(cards,'uniqueOldCacheTerm',()=>false);
+  assert.equal(before.has(path),true);
+  const substitute=new TFile(path);
+  substitute.stat={...t.md.stat};
+  t.files.set(path,{file:substitute,data:'# 新建正文\n\nuniqueNewCacheTerm'});
+  const oldResult=await repo.search(cards,'uniqueOldCacheTerm',()=>false);
+  assert.equal(oldResult.has(path),false,'new file may not inherit old normalized text');
+  const newResult=await repo.search(cards,'uniqueNewCacheTerm',()=>false);
+  assert.equal(newResult.has(path),true,'replacement body is read using the current file identity');
+  await t.close();
+});
+
+test('metadata scan refuses a document moved outside scope during a yielded batch',async()=>{
+  const t=await fixture();
+  const repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  for(let i=0;i<40;i++)await t.plugin.app.vault.create('摘录/批次文件-'+i+'.md','batch body');
+  let reachedFirstBatch=false;
+  const running=repo.scan(ws,16,(done,total)=>{
+    if(done===16&&total===41)reachedFirstBatch=true;
+  },()=>false);
+  assert.equal(reachedFirstBatch,true,'scan should yield after first 16 entries');
+  const moved=t.files.get('摘录/批次文件-20.md');
+  assert.ok(moved);
+  t.files.delete(moved.file.path);
+  moved.file.path='其他文件夹/批次文件-20.md';
+  t.files.set(moved.file.path,moved);
+  await assert.rejects(running,/扫描期间.*变化|超出.*范围|重新.*刷新/,
+    'a captured file that leaves the scan scope cannot be committed to the current index');
+  await t.close();
+});
+
+
+test('metadata scan validates already-processed files again before returning the index',async()=>{
+  const t=await fixture();
+  const repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  for(let i=0;i<40;i++)await t.plugin.app.vault.create('摘录/复核-'+i+'.md','body');
+  let firstBatchFinished=false;
+  const running=repo.scan(ws,16,(done,total)=>{
+    if(done===16&&total===41)firstBatchFinished=true;
+  },()=>false);
+  assert.equal(firstBatchFinished,true);
+  const original=t.files.get(t.md.path);
+  t.files.delete(t.md.path);
+  t.md.path='另一个文件夹/已移出.md';
+  t.files.set(t.md.path,original);
+  await assert.rejects(running,/扫描期间.*变化|手动刷新/,
+    'a moved row from an earlier batch must not be committed');
+  await t.close();
+});
+
+
+test('native reading tab is detached if setViewState fails',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async setViewState(){throw Error('native reading transition failed');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/native reading transition failed/);
+  assert.equal(tab.detachCalls,1,'failed newly created reading tab must be discarded');
+  assert.equal(t.pane.file,t.home,'existing excerpt page must survive');
+  await t.close();
+});
+
+test('native reading tab is detached if host refuses preview mode',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async setViewState(){
+      this.view=new MarkdownView();
+      this.view.mode='source';
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/无法切换到 Markdown 阅读模式/);
+  assert.equal(tab.detachCalls,1,'wrong native mode must not leave a new tab');
+  await t.close();
+});
+
+test('native editor tab is detached if opening the Markdown file fails',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async openFile(){throw Error('native source editor open failed');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/native source editor open failed/);
+  assert.equal(tab.detachCalls,1,'failed newly created editor tab must be discarded');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+test('native editor refuses and cleans up a non-Markdown tab instead of claiming success',async()=>{
+  const t=await fixture();
+  let reveals=0;
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async openFile(){this.view={getMode(){return 'source';}};}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{reveals++;};
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/无法切换到 Markdown 编辑模式/);
+  assert.equal(reveals,0,'invalid host view must not be revealed');
+  assert.equal(tab.detachCalls,1,'invalid host view must not survive');
+  await t.close();
+});
+
+test('native reading and editing tabs clean up when revealLeaf fails',async()=>{
+  for(const mode of ['read','edit']){
+    const t=await fixture();
+    const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+      async openFile(file){
+        this.view=new MarkdownView();this.view.file=file;this.view.mode='source';
+      },
+      async setViewState(state){
+        this.view=new MarkdownView();this.view.mode=state.state.mode;
+      }};
+    const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+    t.plugin.app.workspace.getLeaf=kind=>kind==='tab'?tab:nativeGetLeaf(kind);
+    t.plugin.app.workspace.revealLeaf=async()=>{throw Error('native reveal failed');};
+    const opening=mode==='read'?t.plugin.openMarkdownPreview(t.md.path):t.plugin.openMarkdown(t.md.path);
+    await assert.rejects(opening,/native reveal failed/);
+    assert.equal(tab.detachCalls,1,mode+' must discard unrevealed tab');
+    assert.equal(t.pane.file,t.home);
+    await t.close();
+  }
+});
+
+
+test('native Markdown tab cleanup failure preserves original error and tells user to close the tab',async()=>{
+  const t=await fixture();
+  const tab={view:null,detach(){throw Error('detach not available');},
+    async setViewState(){throw Error('original Markdown navigation error');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  Notice.last='';
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/original Markdown navigation error/);
+  assert.match(Notice.last,/请手动关闭本次创建的异常标签页/);
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+test('scoped native editor discards its new tab if the original file moves while opening',async()=>{
+  const t=await fixture();
+  const original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  let reveals=0;
+  const tab={view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){
+      this.view=new MarkdownView();this.view.mode='source';this.view.file=file;
+      const record=t.files.get(original);
+      t.files.delete(original);
+      file.path='已移动/测试.md';
+      t.files.set(file.path,record);
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{reveals++;};
+  await assert.rejects(
+    t.plugin.openMarkdown(original,undefined,false,{workspace:ws,file:t.md}),
+    /已移动|替换|范围/);
+  assert.equal(tab.detachCalls,1,'failed identity check must discard the new native tab');
+  assert.equal(reveals,0,'the moved file must never be offered as the original excerpt');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+
+test('native editor stays open if focus fails after a successful reveal',async()=>{
+  const t=await fixture();
+  let revealed=0;
+  const tab={view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){
+      this.view=new MarkdownView();this.view.file=file;this.view.mode='source';
+      this.view.editor.focus=()=>{throw Error('native focus failed');};
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{revealed++;};
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/native focus failed/);
+  assert.equal(revealed,1);
+  assert.equal(tab.detachCalls,0,'a successfully revealed editor should not be closed because focus failed');
+  assert.equal(t.pane.file,t.home);
   await t.close();
 });
