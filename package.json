@@ -13,9 +13,9 @@
     "ui": "node --test tests/ui.test.cjs tests/styles.test.cjs tests/virtual.test.cjs tests/preview.test.cjs tests/visual-contract.test.cjs"
   },
   "devDependencies": {
-    "obsidian": "latest",
-    "typescript": "^5.8.3",
-    "esbuild": "^0.25.5",
-    "jsdom": "^26.1.0"
+    "obsidian": "1.14.4",
+    "typescript": "5.9.3",
+    "esbuild": "0.25.12",
+    "jsdom": "26.1.0"
   }
 }
