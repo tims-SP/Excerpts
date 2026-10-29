@@ -2251,7 +2251,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       throw new Error("原文分组已变化，请重新打开卡片菜单");
     const line = findSectionHeadingLine(raw, index);
     if (line === null) throw new Error("无法定位该分组，请重新打开卡片选项");
-    await this.plugin.openMarkdown(path, line);
+    await this.plugin.openMarkdown(path, line, false,
+      { workspace: this.workspace, file: source });
   }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
     let parsed: ParsedMarkdown;
