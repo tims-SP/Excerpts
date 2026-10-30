@@ -21,6 +21,11 @@ export interface DeleteProgress {
   failed: number;
 }
 
+/** The source was unchanged but a Vault/cache event invalidated the in-flight read. */
+export class ReadInvalidatedError extends Error {
+  readonly name = "ReadInvalidatedError";
+}
+
 export class EntryRepository {
   private cache = new Map<string, { file: TFile; stamp: string; parsed: ParsedMarkdown; raw: string }>();
   /** Exact original text for a returned parse, retained only while the parse is referenced. */
@@ -140,10 +145,12 @@ export class EntryRepository {
     const fileEpoch = this.fileEpochs.get(file) ?? 0;
     const globalEpoch = this.globalEpoch;
     const raw = fresh ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
-    if (globalEpoch !== this.globalEpoch || fileEpoch !== (this.fileEpochs.get(file) ?? 0) ||
-        this.app.vault.getAbstractFileByPath(path) !== file ||
+    // Moving/replacing/changing a file is never a retryable cache event.
+    if (this.app.vault.getAbstractFileByPath(path) !== file ||
         stamp !== String(file.stat?.mtime ?? 0) + ":" + String(file.stat?.size ?? 0))
       throw new Error("摘录在读取期间发生变化，请手动刷新");
+    if (globalEpoch !== this.globalEpoch || fileEpoch !== (this.fileEpochs.get(file) ?? 0))
+      throw new ReadInvalidatedError("摘录在读取期间发生变化，请手动刷新");
     const parsed = parseMarkdown(raw);
     this.rawByParsed.set(parsed, raw);
     this.cache.set(path, { file, stamp, raw, parsed });
