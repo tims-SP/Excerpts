@@ -1954,7 +1954,7 @@ test('selection mode toggles cards without reopening Markdown or changing tags',
 test('selection actions are native buttons in one toolbar without a bottom overlay',async()=>{
   const t=await fixture(),root=t.pane.contentEl;
   const card=root.querySelector('.ex-card');
-  const host=root.querySelector('.excerpts-native-host');
+  const host=root;
   host.scrollTop=350;
   clickByLabel(root,'页面选项');
   Menu.last.items.find(item=>item.title==='批量选择').handler();
