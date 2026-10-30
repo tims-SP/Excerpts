@@ -1,7 +1,7 @@
 import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, TextComponent, setIcon } from "obsidian";
 import { findSectionHeadingLine, parseMarkdown } from "./codec";
 import type ExcerptsPlugin from "./main";
-import { DeleteCandidate, DeleteProgress, EntryRepository } from "./repository";
+import { DeleteCandidate, DeleteProgress, EntryRepository, ReadInvalidatedError } from "./repository";
 import { DeleteExcerptModal, DeleteOutcome } from "./delete-modal";
 import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath } from "./model";
@@ -115,6 +115,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   /** Scoped identities for this view's own creates; never suppress external modifies. */
   private localCreates = new Map<string, {
     file: TFile | null; tags: string[]; ignoredEvent: boolean;
+    previewRecoveryUsed: boolean;
   }>();
   private updateComposerControls: () => void = () => {};
   private renderToken = 0;
@@ -506,7 +507,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Register the exact path before vault.create can emit a create event. */
   private beginLocalCreate(path: string, tags: string[]): (file?: TFile) => void {
-    const record = { file: null as TFile | null, tags, ignoredEvent: false };
+    const record = { file: null as TFile | null, tags, ignoredEvent: false,
+      previewRecoveryUsed: false };
     this.localCreates.set(path, record);
     return file => {
       if (this.localCreates.get(path) !== record) return;
@@ -2261,10 +2263,33 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     await this.plugin.openMarkdown(path, line, false,
       { workspace: this.workspace, file: source });
   }
+  /**
+   * Metadata parsing may invalidate this freshly created file while cachedRead
+   * is in flight. Recover only that verified same-file epoch race, at most once.
+   * Actual I/O errors and source modifications still fail closed.
+   */
+  private async readCardMarkdown(item: CardIndex, card: HTMLElement, token: number):
+    Promise<ParsedMarkdown> {
+    try {
+      return await this.repo.read(item.path);
+    } catch (error) {
+      const own = this.localCreates.get(item.path);
+      if (!(error instanceof ReadInvalidatedError) || !own?.file ||
+          own.previewRecoveryUsed || this.disposed || this.homeInvalid ||
+          token !== this.renderToken || !card.isConnected ||
+          this.scanStatus !== "done" || this.currentCard(item.path) !== item)
+        throw error;
+      this.repo.assertScopedFile(this.workspace, item.path, own.file);
+      if (own.file.stat.mtime !== item.mtime || own.file.stat.size !== item.size)
+        throw error;
+      own.previewRecoveryUsed = true;
+      return (await this.repo.readSnapshot(item.path, true)).parsed;
+    }
+  }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
     let parsed: ParsedMarkdown;
     try {
-      parsed = await this.repo.read(item.path);
+      parsed = await this.readCardMarkdown(item, card, token);
     } catch {
       // A file read failure is already represented by this card. Do not
       // produce a second Notice per card from the background work queue.
