@@ -5598,3 +5598,30 @@ test('H2 section editor refuses a replacement file appearing during native tab c
   assert.equal(t.pane.file,t.home,'the Excerpts view remains untouched');
   await t.close();
 });
+
+
+test('delete refuses a file changed while the native editor-open state is checked',async()=>{
+  const t=await fixture(),repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(t.md.path,ws);
+  assert.ok(candidate);
+  let trashCalls=0,mutationObserved=false;
+  t.plugin.app.fileManager.trashFile=async()=>{trashCalls++;t.files.delete(t.md.path);};
+  const previous=t.plugin.app.workspace.getLeavesOfType.bind(t.plugin.app.workspace);
+  t.plugin.app.workspace.getLeavesOfType=type=>{
+    const result=previous(type);
+    if(type==='markdown'&&!mutationObserved){
+      mutationObserved=true;
+      t.md.stat.mtime++;
+      t.files.get(t.md.path).data+='\n外部编辑器新增的内容';
+    }
+    return result;
+  };
+  const outcome=await repo.deleteEntries(ws,[candidate]);
+  assert.equal(mutationObserved,true,'file changed at the pre-native-call boundary');
+  assert.equal(trashCalls,0,'a changed file must not be handed to native trash');
+  assert.deepEqual(outcome.deleted,[]);
+  assert.equal(outcome.failed.length,1);
+  assert.match(outcome.failed[0].reason,/修改|变化|重新选择/);
+  assert.ok(t.files.get(t.md.path).data.includes('外部编辑器新增的内容'));
+  await t.close();
+});
