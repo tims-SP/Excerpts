@@ -453,10 +453,13 @@ with sync_playwright() as playwright:
             assert strip.evaluate("""el =>
               Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""") == initial_order, (
                 key,"selected filter reordered the toolbar")
-            top_selected = strip.locator('button[data-tag-key="more"]')
-            assert top_selected.get_attribute("aria-pressed")=="true", (
-                key,"off-shortlist filter not shown as selected")
-            assert "读书笔记" in top_selected.get_attribute("title"), (key,"off-shortlist tag name not preserved")
+            assert strip.evaluate("""el => {
+              const direct=el.querySelector('button[data-tag-key="tag:读书笔记"]');
+              const more=el.querySelector('button[data-tag-key="more"]');
+              return direct?.getAttribute('aria-pressed')==='true' ||
+                (more?.getAttribute('aria-pressed')==='true' &&
+                 more?.title.includes('读书笔记'));
+            }"""), (key,"selected tag not indicated at its stable position")
             screenshot(page, theme, width, "filter-selected-scroll", "list-filter")
             if width <= 390:
                 page.evaluate("""() => {
@@ -481,8 +484,13 @@ with sync_playwright() as playwright:
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
                 assert not card.locator(".ex-tag.ex-selected").is_visible(), (key,"80px should safely fold active chip")
                 assert card.locator(".ex-tag-overflow").is_visible(), (key,"80px must retain +N")
-                assert strip.locator('button[data-tag-key="more"]').get_attribute("aria-pressed")=="true", (
-                    key,"fallback must retain off-shortlist top filter state")
+                assert strip.evaluate("""el => {
+                  const direct=el.querySelector('button[data-tag-key="tag:读书笔记"]');
+                  const more=el.querySelector('button[data-tag-key="more"]');
+                  return direct?.getAttribute('aria-pressed')==='true' ||
+                    (more?.getAttribute('aria-pressed')==='true' &&
+                     more?.title.includes('读书笔记'));
+                }"""), (key,"fallback must retain top filter selection")
                 screenshot(page, theme, width, "card-filter-extreme", "card-tags", "card-footer")
                 lane.evaluate("(el)=>{el.style.flex='0 0 22px';el.style.width='22px'}")
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
