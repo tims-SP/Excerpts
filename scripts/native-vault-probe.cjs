@@ -97,9 +97,17 @@ async function runNativeVaultProbe(app, config, runtime = globalThis) {
     for (const label of ["first", "second"]) {
       guard();
       const start = wallNow();
+      let searchCancelled = false;
       const matches = await plugin.repo.search(cards,
         "__EXCERPTS_NATIVE_DIAGNOSTIC_" + label + "_NO_MATCH__",
-        () => plugin.isBusy() || app.vault.getAbstractFileByPath(folderPath) !== folder);
+        () => {
+          const invalid = plugin.isBusy() || app.vault.getAbstractFileByPath(folderPath) !== folder;
+          if (invalid) searchCancelled = true;
+          return invalid;
+        });
+      // Repository.search returns partial matches on cancellation. Even if the
+      // competing operation finishes immediately, partial data is never a result.
+      if (searchCancelled) throw Error("搜索期间状态变化，诊断已中止");
       guard();
       report.searches.push({
         pass: label, wallMs: elapsed(start), matchCount: matches.size,
