@@ -1,7 +1,7 @@
-import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, setIcon } from "obsidian";
+import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, TextComponent, setIcon } from "obsidian";
 import { findSectionHeadingLine, parseMarkdown } from "./codec";
 import type ExcerptsPlugin from "./main";
-import { DeleteCandidate, DeleteProgress, EntryRepository } from "./repository";
+import { DeleteCandidate, DeleteProgress, EntryRepository, ReadInvalidatedError } from "./repository";
 import { DeleteExcerptModal, DeleteOutcome } from "./delete-modal";
 import { TagPicker } from "./tag-picker";
 import { CardIndex, ParsedMarkdown, Workspace, isExcerptPath } from "./model";
@@ -115,6 +115,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   /** Scoped identities for this view's own creates; never suppress external modifies. */
   private localCreates = new Map<string, {
     file: TFile | null; tags: string[]; ignoredEvent: boolean;
+    previewRecoveryUsed: boolean;
   }>();
   private updateComposerControls: () => void = () => {};
   private renderToken = 0;
@@ -189,7 +190,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.disposed || this.pageMode !== "feed") return;
       this.checkTypographyChange();
       this.reflowVisibleTags();
-      this.scheduleActiveFilterVisibility();
+      
     }));
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
@@ -198,7 +199,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           return; // Hidden feed geometry is not measurable.
         }
         this.reflowVisibleTags();
-        this.scheduleActiveFilterVisibility();
+        
         this.reflowCaptureTags();
         for (const update of this.previewUpdates.values()) update();
         for (const group of this.sectionHeightChecks.values()) {
@@ -506,7 +507,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   /** Register the exact path before vault.create can emit a create event. */
   private beginLocalCreate(path: string, tags: string[]): (file?: TFile) => void {
-    const record = { file: null as TFile | null, tags, ignoredEvent: false };
+    const record = { file: null as TFile | null, tags, ignoredEvent: false,
+      previewRecoveryUsed: false };
     this.localCreates.set(path, record);
     return file => {
       if (this.localCreates.get(path) !== record) return;
@@ -1005,7 +1007,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const actions = node("div", "ex-toolbar-actions");
     this.searchWrap = node("div", "ex-search-wrap");
     this.searchWrap.hidden = !this.searchText;
-    this.searchInput = node("input", "ex-input ex-search");
+    this.searchInput = new TextComponent(this.searchWrap).inputEl;
+    this.searchInput.classList.add("ex-input", "ex-search");
     this.searchInput.value = this.searchText;
     this.searchInput.type = "search";
     this.searchInput.placeholder = "搜索摘录内容或标签…";
@@ -1563,6 +1566,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const changed = verification?.changed ?? new Set<string>();
       for (const path of changed) this.invalidatedCardPaths.add(path);
       const nextIndex = new Map(cards.map(card => [card.path, card]));
+      // Preserve expansion for filtered cards, not for entries removed from the
+      // committed index. Otherwise path-keyed UI state grows across deletions.
+      for (const path of this.expandedBodies)
+        if (!nextIndex.has(path)) this.expandedBodies.delete(path);
+      for (const path of this.expandedTagRows)
+        if (!nextIndex.has(path)) this.expandedTagRows.delete(path);
       // An offscreen card cannot be byte-verified without expanding the source-read
       // budget. Discard only its stale H2 ordinals, never the whole card or DOM.
       // Visible cards with proven identical raw bytes keep their disclosure state.
@@ -1687,7 +1696,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
         owner.tagFilter = item;
         owner.renderTagsFilter();
-        owner.drawCards("results");
+        owner.drawCards("keep");
       }
     }
     const picker = new TagFilterPicker(this.plugin.app);
@@ -1715,7 +1724,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const all = use("all", () => button("全部", () => {
       if (!this.guard("filter")) return;
       this.tagFilter = "";
-      this.renderTagsFilter(); this.drawCards("results");
+      this.renderTagsFilter(); this.drawCards("keep");
     }));
     all.classList.toggle("ex-selected", !this.tagFilter);
     all.classList.toggle("ex-btn-quiet", Boolean(this.tagFilter));
@@ -1723,16 +1732,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     desired.push(all);
 
     const activeTag = this.tagFilter.trim();
-    const tags = activeTag
-      ? [activeTag, ...this.availableTags.filter(tag => tag !== activeTag)]
-      : this.availableTags;
+    // Tag positions are stable across every filter selection.
+    const tags = this.availableTags;
     const limit = 8;
     for (const tag of tags.slice(0, limit)) {
       const selected = activeTag === tag;
       const chip = use("tag:" + tag, () => button("#" + tag, () => {
         if (!this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
-        this.renderTagsFilter(); this.drawCards("results");
+        this.renderTagsFilter(); this.drawCards("keep");
       }));
       const wasSelected = chip.classList.contains("ex-active-filter");
       chip.classList.toggle("ex-selected", selected);
@@ -1754,10 +1762,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (tags.length > limit) {
       const more = use("more", () => button("", () => {
         if (!this.guard("filter")) return;
-        const active = this.tagFilter.trim();
-        const current = active
-          ? [active, ...this.availableTags.filter(tag => tag !== active)]
-          : this.availableTags;
+        const current = this.availableTags;
         const menu = new Menu();
         // Keep the complete lookup reachable without scrolling a tall native
         // menu, especially on narrow mobile viewports.
@@ -1767,13 +1772,23 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         for (const tag of current.slice(limit, limit + 40)) menu.addItem(item =>
           item.setTitle("#" + tag).onClick(() => {
             if (!this.guard("filter")) return;
-            this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("results");
+            this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("keep");
           }));
         const rect = more.getBoundingClientRect();
         menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet"));
-      const label = "更多标签 · " + (tags.length - limit);
+      const selectedMore = Boolean(activeTag) && !tags.slice(0, limit).includes(activeTag);
+      const label = "更多标签 · " + (tags.length - limit) + (selectedMore ? " · 已选" : "");
       if (more.textContent !== label) more.textContent = label;
+      more.classList.toggle("ex-selected", selectedMore);
+      more.setAttribute("aria-pressed", String(selectedMore));
+      if (selectedMore) {
+        more.title = "当前筛选标签：#" + activeTag;
+        more.setAttribute("aria-label", "当前筛选标签：#" + activeTag + "；更多标签");
+      } else {
+        more.removeAttribute("title");
+        more.removeAttribute("aria-label");
+      }
       desired.push(more);
     }
     const wanted = new Set(desired);
@@ -1792,30 +1807,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         desired.find(chip => chip.dataset.tagKey === "all");
       if (target && !target.disabled) target.focus({ preventScroll: true });
     }
-    if (!activeTag) strip.scrollLeft = 0;
-    else this.scheduleActiveFilterVisibility();
+    // Filtering never changes the user's horizontal tag-strip position.
     this.updateAvailability();
-  }
-  /** Scroll only inside the tag strip, never the page. */
-  private scheduleActiveFilterVisibility(): void {
-    const strip = this.tagBar;
-    const chip = strip.querySelector<HTMLButtonElement>(".ex-active-filter");
-    const expectedTag = this.tagFilter.trim();
-    if (!chip || !expectedTag) return;
-    const reveal = () => {
-      // A previous animation frame must not undo a later filter choice or reset.
-      if (this.disposed || this.tagFilter.trim() !== expectedTag ||
-          !strip.isConnected || !chip.isConnected || strip.hidden ||
-          !chip.classList.contains("ex-active-filter") ||
-          chip.getAttribute("aria-label") !== "当前筛选标签：" + expectedTag) return;
-      const bounds = strip.getBoundingClientRect();
-      const selected = chip.getBoundingClientRect();
-      if (!bounds.width || !selected.width) return;
-      if (selected.left < bounds.left) strip.scrollLeft += selected.left - bounds.left;
-      else if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right;
-    };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
-    else setTimeout(reveal, 0);
   }
   private unmountMarkdown(path?: string): void {
     const paths = path ? [path] : [...this.markdownChildren.keys()];
@@ -2251,12 +2244,36 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       throw new Error("原文分组已变化，请重新打开卡片菜单");
     const line = findSectionHeadingLine(raw, index);
     if (line === null) throw new Error("无法定位该分组，请重新打开卡片选项");
-    await this.plugin.openMarkdown(path, line);
+    await this.plugin.openMarkdown(path, line, false,
+      { workspace: this.workspace, file: source });
+  }
+  /**
+   * Metadata parsing may invalidate this freshly created file while cachedRead
+   * is in flight. Recover only that verified same-file epoch race, at most once.
+   * Actual I/O errors and source modifications still fail closed.
+   */
+  private async readCardMarkdown(item: CardIndex, card: HTMLElement, token: number):
+    Promise<ParsedMarkdown> {
+    try {
+      return await this.repo.read(item.path);
+    } catch (error) {
+      const own = this.localCreates.get(item.path);
+      if (!(error instanceof ReadInvalidatedError) || !own?.file ||
+          own.previewRecoveryUsed || this.disposed || this.homeInvalid ||
+          token !== this.renderToken || !card.isConnected ||
+          this.scanStatus !== "done" || this.currentCard(item.path) !== item)
+        throw error;
+      this.repo.assertScopedFile(this.workspace, item.path, own.file);
+      if (own.file.stat.mtime !== item.mtime || own.file.stat.size !== item.size)
+        throw error;
+      own.previewRecoveryUsed = true;
+      return (await this.repo.readSnapshot(item.path, true)).parsed;
+    }
   }
   private async hydrate(item: CardIndex, card: HTMLElement, token: number): Promise<void> {
     let parsed: ParsedMarkdown;
     try {
-      parsed = await this.repo.read(item.path);
+      parsed = await this.readCardMarkdown(item, card, token);
     } catch {
       // A file read failure is already represented by this card. Do not
       // produce a second Notice per card from the background work queue.

@@ -5,4 +5,4 @@ const root = path.resolve(__dirname,'..');
 mkdirSync(path.join(root,'.test-compiled'),{recursive:true});
 // Tests rely only on Node and TypeScript, never an Obsidian runtime.
 execFileSync('tsc',['--target','ES2022','--module','commonjs','--outDir','.test-compiled','src/model.ts','src/codec.ts','src/naming.ts','src/heatmap.ts'],{cwd:root,stdio:'inherit'});
-execFileSync(process.execPath,['--test','tests/codec.test.cjs','tests/naming.test.cjs','tests/heatmap.test.cjs'],{cwd:root,stdio:'inherit'});
+execFileSync(process.execPath,['--test','tests/codec.test.cjs','tests/naming.test.cjs','tests/heatmap.test.cjs','tests/native-vault-probe.test.cjs'],{cwd:root,stdio:'inherit'});

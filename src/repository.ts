@@ -21,14 +21,19 @@ export interface DeleteProgress {
   failed: number;
 }
 
+/** The source was unchanged but a Vault/cache event invalidated the in-flight read. */
+export class ReadInvalidatedError extends Error {
+  readonly name = "ReadInvalidatedError";
+}
+
 export class EntryRepository {
-  private cache = new Map<string, { stamp: string; parsed: ParsedMarkdown; raw: string }>();
+  private cache = new Map<string, { file: TFile; stamp: string; parsed: ParsedMarkdown; raw: string }>();
   /** Exact original text for a returned parse, retained only while the parse is referenced. */
   private readonly rawByParsed = new WeakMap<ParsedMarkdown, string>();
   private readonly fileEpochs = new WeakMap<TFile, number>();
   private globalEpoch = 0;
   /** Reusable full-text search material, bounded independently from parsed Markdown. */
-  private searchCache = new Map<string, { stamp: string; lowerText: string; bytes: number }>();
+  private searchCache = new Map<string, { file: TFile; stamp: string; lowerText: string; bytes: number }>();
   private searchCacheBytes = 0;
   private reservedPaths = new Set<string>();
   constructor(private readonly app: App) {}
@@ -66,6 +71,7 @@ export class EntryRepository {
     if (isCancelled()) return null;
     this.assertFolderSource(ws);
     const files = this.app.vault.getMarkdownFiles().filter(file => isExcerptPath(file.path, ws));
+    const initialPaths = files.map(file => file.path);
     const total = files.length;
     onProgress(0, total);
     const stride = Number.isInteger(batchSize) && batchSize > 0 ? batchSize : 64;
@@ -73,12 +79,23 @@ export class EntryRepository {
     for (let start = 0; start < total; start += stride) {
       if (isCancelled()) return null;
       this.assertFolderSource(ws);
-      for (const file of files.slice(start, start + stride)) cards.push(this.indexFile(file));
+      for (let i = start; i < Math.min(total, start + stride); i++) {
+        const file = files[i], path = initialPaths[i];
+        if (file.path !== path || this.app.vault.getAbstractFileByPath(path) !== file)
+          throw new Error("摘录文件在扫描期间发生变化，请手动刷新");
+        cards.push(this.indexFile(file));
+      }
       onProgress(cards.length, total);
       if (cards.length < total) await new Promise<void>(resolve => setTimeout(resolve, 0));
     }
     if (isCancelled()) return null;
     this.assertFolderSource(ws);
+    // A processed file can also move during a later batch's yield.
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].path !== initialPaths[i] ||
+          this.app.vault.getAbstractFileByPath(initialPaths[i]) !== files[i])
+        throw new Error("摘录文件在扫描期间发生变化，请手动刷新");
+    }
     return cards;
   }
   /** Index one newly created Markdown file without scanning the vault.
@@ -121,20 +138,22 @@ export class EntryRepository {
     const file = this.file(path);
     const stamp = String(file.stat?.mtime ?? 0) + ":" + String(file.stat?.size ?? 0);
     const prior = this.cache.get(path);
-    if (!fresh && prior?.stamp === stamp) {
+    if (!fresh && prior?.file === file && prior.stamp === stamp) {
       this.cache.delete(path); this.cache.set(path, prior);
       return { raw: prior.raw, parsed: prior.parsed };
     }
     const fileEpoch = this.fileEpochs.get(file) ?? 0;
     const globalEpoch = this.globalEpoch;
     const raw = fresh ? await this.app.vault.read(file) : await this.app.vault.cachedRead(file);
-    if (globalEpoch !== this.globalEpoch || fileEpoch !== (this.fileEpochs.get(file) ?? 0) ||
-        this.app.vault.getAbstractFileByPath(path) !== file ||
+    // Moving/replacing/changing a file is never a retryable cache event.
+    if (this.app.vault.getAbstractFileByPath(path) !== file ||
         stamp !== String(file.stat?.mtime ?? 0) + ":" + String(file.stat?.size ?? 0))
       throw new Error("摘录在读取期间发生变化，请手动刷新");
+    if (globalEpoch !== this.globalEpoch || fileEpoch !== (this.fileEpochs.get(file) ?? 0))
+      throw new ReadInvalidatedError("摘录在读取期间发生变化，请手动刷新");
     const parsed = parseMarkdown(raw);
     this.rawByParsed.set(parsed, raw);
-    this.cache.set(path, { stamp, raw, parsed });
+    this.cache.set(path, { file, stamp, raw, parsed });
     this.trim();
     return { raw, parsed };
   }
@@ -169,8 +188,9 @@ export class EntryRepository {
   }
   private async searchText(card: CardIndex): Promise<string> {
     const stamp = card.mtime + ":" + card.size;
+    const file = this.file(card.path);
     const cached = this.searchCache.get(card.path);
-    if (cached?.stamp === stamp) {
+    if (cached?.file === file && cached.stamp === stamp) {
       this.searchCache.delete(card.path);
       this.searchCache.set(card.path, cached);
       return cached.lowerText;
@@ -188,7 +208,7 @@ export class EntryRepository {
     // Keep a stable bounded subset rather than thrashing the cache during a 10k+ full scan.
     if (this.searchCache.size >= 30000 || this.searchCacheBytes + bytes > 16 * 1024 * 1024)
       return lowerText;
-    this.searchCache.set(card.path, { stamp, lowerText, bytes });
+    this.searchCache.set(card.path, { file, stamp, lowerText, bytes });
     this.searchCacheBytes += bytes;
     return lowerText;
   }
@@ -253,19 +273,24 @@ export class EntryRepository {
         settle = onAttempt?.(path);
         this.assertFolderSource(ws);
         const file = await this.app.vault.create(path, content);
+        // The native writer may yield while a folder moves or a path is replaced.
+        // A completed write is not necessarily a valid save in this workspace.
+        this.assertFolderSource(ws);
+        if (file.path !== path || this.app.vault.getAbstractFileByPath(path) !== file ||
+            !isExcerptPath(path, ws))
+          throw new Error("摘录写入已返回，但文件位置发生变化，请核对实际文件");
         // Record the file identity before returning to the caller. Vault events
         // may arrive either before or after the create promise resolves.
         settle?.(file);
         return file;
       } catch (error) {
         settle?.();
-        // Retry only when another writer really created the path, not on unrelated IO errors.
-        const conflict = this.app.vault.getAllLoadedFiles()
-          .some(file => filenameKey(file.path) === key);
+        // Only an explicit native name collision permits a new filename.
+        // A failed write may already have persisted a file: never duplicate it.
         const alreadyExists = error instanceof Error &&
           (/\b(?:EEXIST|already exists|file exists)\b/i.test(error.message) ||
             (error as Error & { code?: string }).code === "EEXIST");
-        if (!conflict && !this.app.vault.getAbstractFileByPath(path) && !alreadyExists) throw error;
+        if (!alreadyExists) throw error;
         occupied.add(key);
       } finally {
         this.reservedPaths.delete(key);
@@ -307,7 +332,16 @@ export class EntryRepository {
           result.failed.push({ path, reason: "文件正在编辑器中打开，请先关闭" });
           continue;
         }
+        // Host editor-state inspection can expose a concurrent Vault update.
+        // Recheck immediately before the native operation; no automatic retry.
+        this.assertScopedFile(ws, path, candidate.file);
+        if (current.stat.mtime !== candidate.mtime || current.stat.size !== candidate.size) {
+          result.failed.push({ path, reason: "文件已被修改，请重新选择" });
+          continue;
+        }
         await this.app.fileManager.trashFile(current);
+        if (this.app.vault.getAbstractFileByPath(path) === current)
+          throw new Error("删除结果未确认，原文件仍然存在，请核对后手动刷新");
         this.invalidate(path);
         result.deleted.push(path);
       } catch (error) {
@@ -352,13 +386,12 @@ export class EntryRepository {
       else delete frontmatter.tags;
     });
     this.invalidate(path);
-    // An external rename after the native write started cannot be rolled back here.
-    if (ws.kind === "folder") {
-      try {
-        this.assertScopedFile(ws, path, expectedFile);
-      } catch {
-        throw new Error("标签写入已返回，但文件夹或文件位置发生变化，请核对实际标签结果");
-      }
+    // A native write may finish after the source moves, including on file-based pages.
+    // Do not claim unqualified success for a different file or scope.
+    try {
+      this.assertScopedFile(ws, path, expectedFile);
+    } catch {
+      throw new Error("标签写入已返回，但文件夹或文件位置发生变化，请核对实际标签结果");
     }
   }
 }

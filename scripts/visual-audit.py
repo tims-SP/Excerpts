@@ -165,6 +165,42 @@ def geometry(page, theme, width):
     return result
 
 
+def assert_native_modal_geometry(page, key, state):
+    """Native Modal requires a full-screen overlay and a centered dialog shell.
+
+    Check the host fixture independently of any plugin component styles. Otherwise
+    the mock can produce left-anchored, partially shaded screenshots yet pass QA.
+    """
+    result = page.evaluate("""() => {
+      const cover = document.querySelector('.modal-container');
+      const dialog = cover?.querySelector('.modal');
+      const content = dialog?.querySelector('.modal-content');
+      if (!cover || !dialog || !content) return null;
+      const a = cover.getBoundingClientRect(), b = dialog.getBoundingClientRect();
+      return {
+        cover: [a.left, a.top, a.right, a.bottom],
+        dialog: [b.left, b.top, b.right, b.bottom],
+        backdrop: getComputedStyle(cover).backgroundColor,
+        viewport: [innerWidth, innerHeight],
+      };
+    }""")
+    assert result is not None, (key, state, "missing native modal container")
+    left, top, right, bottom = result["cover"]
+    width, height = result["viewport"]
+    assert abs(left) <= 1 and abs(top) <= 1 and abs(right - width) <= 1 and abs(bottom - height) <= 1, (
+        key, state, "native overlay does not shade entire viewport", result)
+    x, y, end_x, end_y = result["dialog"]
+    assert 0 <= x <= end_x <= width and 0 <= y <= end_y <= height, (
+        key, state, "modal not inside viewport", result)
+    assert abs((x + end_x) / 2 - width / 2) <= 2, (
+        key, state, "native dialog is not horizontally centered", result)
+    assert abs((y + end_y) / 2 - height / 2) <= 2, (
+        key, state, "native dialog is not vertically centered", result)
+    assert result["backdrop"] != "rgba(0, 0, 0, 0)", (
+        key, state, "native modal backdrop is transparent", result)
+    manifest.setdefault("native_modal_geometry", {}).setdefault(key, {})[state] = result
+
+
 def assert_no_runtime_errors(errors, key, state):
     assert not errors, (key, state, errors)
 
@@ -404,34 +440,42 @@ with sync_playwright() as playwright:
                 assert hidden and more.inner_text() == "+" + str(hidden), (key,"filtered overflow count")
             screenshot(page, theme, width, "card-filtered-tag", "card-tags", "card-footer")
             strip = page.locator(".ex-filter-tags")
+            initial_order = strip.evaluate("""el =>
+              Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""")
             strip.evaluate("el => {el.scrollLeft = el.scrollWidth}")
+            scroll_x = strip.evaluate("el => el.scrollLeft")
+            scroll_y = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
             page.evaluate("window.__pane.renderer.renderTagsFilter()")
-            page.wait_for_function("""() => {
-              const bar=document.querySelector('.ex-filter-tags'),active=bar?.querySelector('.ex-active-filter');
-              if(!bar||!active)return false;
-              const b=bar.getBoundingClientRect(),r=active.getBoundingClientRect();
-              return r.left>=b.left-1 && r.right<=b.right+1;
-            }""", timeout=4000)
+            page.wait_for_timeout(80)
+            assert strip.evaluate("el => el.scrollLeft") == scroll_x, (key,"tag strip auto-scrolled")
+            assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") == scroll_y, (
+                key,"tag selection moved page scroll")
+            assert strip.evaluate("""el =>
+              Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""") == initial_order, (
+                key,"selected filter reordered the toolbar")
+            assert strip.evaluate("""el => {
+              const direct=el.querySelector('button[data-tag-key="tag:读书笔记"]');
+              const more=el.querySelector('button[data-tag-key="more"]');
+              return direct?.getAttribute('aria-pressed')==='true' ||
+                (more?.getAttribute('aria-pressed')==='true' &&
+                 more?.title.includes('读书笔记'));
+            }"""), (key,"selected tag not indicated at its stable position")
             screenshot(page, theme, width, "filter-selected-scroll", "list-filter")
             if width <= 390:
-                renderer = page.evaluate_handle("window.__pane.renderer")
                 page.evaluate("""() => {
                   const r=window.__pane.renderer;
                   r.tagFilter="超长筛选标签".repeat(15);r.renderTagsFilter();
                 }""")
-                long_active = page.locator(".ex-active-filter")
-                page.wait_for_function("""() => {
-                  const bar=document.querySelector('.ex-filter-tags'),active=bar?.querySelector('.ex-active-filter');
-                  if(!bar||!active)return false;
-                  const b=bar.getBoundingClientRect(),r=active.getBoundingClientRect();
-                  return r.left>=b.left-1 && r.right<=b.right+1;
-                }""", timeout=4000)
-                assert long_active.get_attribute("title").startswith("#超长筛选标签")
-                assert long_active.evaluate("el=>getComputedStyle(el).justifyContent") == "flex-start", (
-                    key,"long active filter must align the tag prefix at the start")
-                assert long_active.locator(".ex-active-filter-label").evaluate(
-                    "el=>getComputedStyle(el).textOverflow") == "ellipsis", (key,"missing text ellipsis")
-                assert long_active.evaluate("el=>el.getBoundingClientRect().width<=Math.min(200,el.parentElement.clientWidth)+1"), (key,"long filter escapes strip")
+                more_selected = strip.locator('button[data-tag-key="more"]')
+                assert more_selected.get_attribute("aria-pressed")=="true"
+                assert more_selected.get_attribute("title").startswith("当前筛选标签：#超长筛选标签")
+                assert strip.evaluate("""el =>
+                  !Array.from(el.querySelectorAll('button[data-tag-key^="tag:"]'))
+                    .some(b => b.textContent.includes('超长筛选标签'))"""), (
+                    key,"missing long tag was promoted ahead of stable filter controls")
+                assert more_selected.evaluate("""el =>
+                  el.getBoundingClientRect().width <= el.parentElement.clientWidth + 1"""), (
+                    key,"selected More control overflows the tag toolbar")
                 screenshot(page, theme, width, "filter-long-selected", "list-filter")
                 page.evaluate("""() => {const r=window.__pane.renderer;r.tagFilter="读书笔记";r.renderTagsFilter()}""")
             if width <= 390:
@@ -440,8 +484,13 @@ with sync_playwright() as playwright:
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
                 assert not card.locator(".ex-tag.ex-selected").is_visible(), (key,"80px should safely fold active chip")
                 assert card.locator(".ex-tag-overflow").is_visible(), (key,"80px must retain +N")
-                assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text()=="#读书笔记", (
-                    key,"fallback must retain top filter state")
+                assert strip.evaluate("""el => {
+                  const direct=el.querySelector('button[data-tag-key="tag:读书笔记"]');
+                  const more=el.querySelector('button[data-tag-key="more"]');
+                  return direct?.getAttribute('aria-pressed')==='true' ||
+                    (more?.getAttribute('aria-pressed')==='true' &&
+                     more?.title.includes('读书笔记'));
+                }"""), (key,"fallback must retain top filter selection")
                 screenshot(page, theme, width, "card-filter-extreme", "card-tags", "card-footer")
                 lane.evaluate("(el)=>{el.style.flex='0 0 22px';el.style.width='22px'}")
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
@@ -566,6 +615,7 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "card-menu", "list-menu")
             page.locator(".menu button", has_text="删除摘录").click()
             assert page.locator(".ex-delete-modal").is_visible()
+            assert_native_modal_geometry(page, key, "single-delete")
             screenshot(page, theme, width, "single-delete", "delete-single-dialog")
             page.locator(".ex-delete-cancel").click()
 
@@ -579,6 +629,7 @@ with sync_playwright() as playwright:
                        "selection-toolbar", "selection-card", "selection-footer")
             page.locator(".ex-delete-selected").click()
             assert page.locator(".ex-delete-modal").is_visible()
+            assert_native_modal_geometry(page, key, "bulk-delete")
             screenshot(page, theme, width, "bulk-delete", "delete-bulk-dialog")
             page.locator(".ex-delete-cancel").click()
             page.evaluate("() => window.__pane.renderer.markStale()")
@@ -599,6 +650,7 @@ with sync_playwright() as playwright:
             page.locator(".ex-page-options").click()
             page.locator(".menu button", has_text="保存当前筛选").click()
             assert page.locator(".ex-save-page-modal").is_visible()
+            assert_native_modal_geometry(page, key, "saved-filter")
             screenshot(page, theme, width, "saved-filter", "saved-filter-dialog")
             page.locator(".ex-save-page-input").fill("")
             modal_field = page.locator(".ex-save-page-input")
@@ -865,8 +917,13 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "filter-fuzzy-picker", "native-tag-picker")
             page.locator(".native-fuzzy-results button").first.click()
             assert page.locator(".native-fuzzy").count() == 0, (key,"tag modal failed to close")
-            assert page.locator(".ex-active-filter").is_visible()
-            assert "#查找标签069" in page.locator(".ex-active-filter").inner_text()
+            selected_more = page.locator('.ex-filter-tags button[data-tag-key="more"]')
+            assert selected_more.get_attribute("aria-pressed") == "true", (
+                key,"fuzzy-selected distant tag must retain selection in More")
+            assert "查找标签069" in selected_more.get_attribute("title"), (
+                key,"fuzzy-selected tag identity missing from More")
+            assert not page.locator('.ex-filter-tags button[data-tag-key="tag:查找标签069"]').count(), (
+                key,"fuzzy selection must not promote a distant chip")
             screenshot(page, theme, width, "filter-fuzzy-selected", "list-filter")
             page.evaluate("""() => {
               const r=window.__pane.renderer;

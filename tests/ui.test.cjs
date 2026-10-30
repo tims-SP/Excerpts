@@ -37,13 +37,25 @@ class FuzzySuggestModal {
 }
 class Notice {constructor(message){Notice.last=message;}}
 class Menu {constructor(){this.items=[];}addItem(fn){const item={setTitle(title){this.title=title;return this;},setIcon(icon){this.icon=icon;return this;},setDisabled(value){this.disabled=value;return this;},setWarning(){this.warning=true;return this;},onClick(handler){this.handler=handler;return this;}};fn(item);this.items.push(item);}addSeparator(){}showAtPosition(){Menu.last=this;}}
+class TextComponent {
+  constructor(root){this.inputEl=document.createElement('input');this.inputEl.type='text';this.inputEl.dataset.nativeControl='text';root.append(this.inputEl);}
+  setPlaceholder(value){this.inputEl.placeholder=value;return this;}
+  setValue(value){this.inputEl.value=value;return this;}
+}
+class ButtonComponent {
+  constructor(root){this.buttonEl=document.createElement('button');this.buttonEl.type='button';this.buttonEl.dataset.nativeControl='button';root.append(this.buttonEl);}
+  setButtonText(value){this.buttonEl.textContent=value;return this;}
+  setCta(){this.buttonEl.classList.add('mod-cta');return this;}
+  setWarning(){this.buttonEl.classList.add('mod-warning');return this;}
+  onClick(handler){this.buttonEl.addEventListener('click',handler);return this;}
+}
 class Modal {
   constructor(){this.modalEl=document.createElement('section');this.contentEl=document.createElement('div');this.modalEl.append(this.contentEl);}
   open(){document.body.append(this.modalEl);this.onOpen?.();Modal.last=this;return this;}
   close(){this.onClose?.();this.modalEl.remove();}
 }
 const renders=[];
-const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,FuzzySuggestModal,
+const mocks={TAbstractFile,TFile,TFolder,MarkdownRenderChild,ItemView,FileView,MarkdownView,Plugin,PluginSettingTab,Setting,Notice,Menu,Modal,FuzzySuggestModal,TextComponent,ButtonComponent,
   parseYaml(raw){
     const version=raw.match(/^version:\s*(\d+)$/m);
     const tag=raw.match(/^\s*tag:\s*(.+)$/m);
@@ -340,33 +352,25 @@ test('native card action keeps focus when surviving list rows change order',asyn
   await t.close();
 });
 
-test('stale active-tag visibility frame cannot undo a newer clear selection',async()=>{
-  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+test('top filter selection does not schedule a scroll animation or reset strip position',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
   clickByLabel(root,'筛选标签');
   const strip=root.querySelector('.ex-filter-tags');
-  const previous=global.requestAnimationFrame;
-  const tasks=[];
+  const previous=global.requestAnimationFrame,tasks=[];
   try{
     global.requestAnimationFrame=fn=>{tasks.push(fn);return tasks.length;};
-    strip.getBoundingClientRect=()=>({left:0,right:100,width:100});
-    renderer.tagFilter='哲学';
-    renderer.renderTagsFilter();
-    const old=strip.querySelector('.ex-active-filter');
-    assert.ok(old,'selected tag exists before the queued frame');
-    old.getBoundingClientRect=()=>({left:300,right:400,width:100});
-    assert.ok(tasks.length>0);
-    renderer.tagFilter='';
-    renderer.renderTagsFilter();
-    assert.equal(strip.scrollLeft,0);
-    for(const task of tasks)task();
-    assert.equal(strip.scrollLeft,0,'outdated frame cannot scroll toward an old active chip');
+    strip.scrollLeft=65;
+    r.tagFilter='哲学';r.renderTagsFilter();
+    assert.equal(strip.scrollLeft,65);
+    r.tagFilter='';r.renderTagsFilter();
+    assert.equal(strip.scrollLeft,65);
+    assert.equal(tasks.length,0,'filter state never schedules horizontal navigation');
   }finally{
     if(previous===undefined)delete global.requestAnimationFrame;
     else global.requestAnimationFrame=previous;
   }
   await t.close();
 });
-
 test('a card filter toggles selected tag without recreating its chips or Markdown body',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const card=root.querySelector('.ex-card'),tag=card.querySelector('.ex-tag');
@@ -489,6 +493,8 @@ test('opening .excerpts displays an editorial date-group feed and always-visible
   assert.equal(root.querySelector('.ex-calendar-shell').hidden,true);
   assert.equal(root.querySelector('.ex-feed-view').hidden,false);
   assert.ok(root.querySelector('.ex-list-heading').textContent.includes('最近摘录'));
+  assert.equal(root.querySelector('input.ex-search').dataset.nativeControl,'text',
+    'search field should be created by the Obsidian TextComponent');
   assert.equal(root.querySelector('.ex-search-wrap').hidden,true);
   assert.equal(root.querySelector('.ex-filter-tags').hidden,true);
   assert.equal(root.querySelectorAll('.ex-card').length,1);
@@ -1009,28 +1015,26 @@ test('clipped tag add actions disappear and recover when the pane becomes usable
   await t.close();
 });
 
-test('the current top filter is scrolled into view horizontally without page scrolling',async()=>{
+test('active off-shortlist tag is indicated by More without horizontal or vertical scroll',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,strip=t.pane.contentEl.querySelector('.ex-filter-tags');
   renderer.availableTags=['一','二','三','四','五','六','七','八','九','长标签'];
   renderer.filterOpen=true;renderer.tagFilter='长标签';
-  let pageTop=115;
   const host=t.pane.contentEl.closest('.excerpts-native-host');
-  Object.defineProperty(host,'scrollTop',{configurable:true,get(){return pageTop},set(v){pageTop=v}});
-  strip.scrollLeft=0;
-  strip.getBoundingClientRect=()=>({left:10,right:130,width:120});
+  host.scrollTop=115;strip.scrollLeft=60;
   renderer.renderTagsFilter();
-  const selected=strip.querySelector('.ex-active-filter');
-  selected.getBoundingClientRect=()=>({left:100,right:205,width:105});
-  await wait();
-  assert.equal(strip.scrollLeft,75,'horizontal tag strip reveals its active pill');
-  assert.equal(pageTop,115,'never move the vertical feed to show a chip');
-  assert.equal(selected.title,'#长标签');
-  assert.equal(selected.getAttribute('aria-label'),'当前筛选标签：长标签');
-  strip.scrollLeft=60;renderer.tagFilter='';renderer.renderTagsFilter();
-  assert.equal(strip.scrollLeft,0,'clearing selection resets horizontal offset');
+  const buttons=[...strip.querySelectorAll('button[data-tag-key]')];
+  assert.equal(buttons[1].textContent,'#一');
+  assert.equal(buttons[2].textContent,'#二');
+  const more=buttons.at(-1);
+  assert.equal(more.dataset.tagKey,'more');
+  assert.equal(more.getAttribute('aria-pressed'),'true');
+  assert.match(more.title,/长标签/);
+  assert.equal(strip.scrollLeft,60,'no automatic horizontal reveal');
+  assert.equal(host.scrollTop,115,'no page navigation on filter repaint');
+  renderer.tagFilter='';renderer.renderTagsFilter();
+  assert.equal(strip.scrollLeft,60,'clearing selection does not reset horizontal offset');
   await t.close();
 });
-
 test('font metric changes invalidate virtual heights but color-only css-change keeps cache',async()=>{
   const t=await fixture(),renderer=t.pane.renderer;
   const timeline=renderer.timeline;
@@ -1267,35 +1271,34 @@ test('impossibly narrow card refuses starting an edit before draft state is crea
   await t.close();
 });
 
-test('active toolbar tag stays in the first eight even when its source index is later or missing',async()=>{
+test('top filter shortlist keeps original order, including off-shortlist and missing selection',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
   const tags=['a','b','c','d','e','f','g','h','i','j'];
   renderer.availableTags=[...tags];
-  renderer.filterOpen=true;
-  renderer.tagFilter='j';
+  renderer.filterOpen=true;renderer.tagFilter='';
   renderer.renderTagsFilter();
-  assert.equal(root.querySelector('.ex-filter-tags button').getAttribute('aria-pressed'),'false');
-  let buttons=[...root.querySelectorAll('.ex-filter-tags button')];
-  assert.equal(buttons[1].getAttribute('aria-pressed'),'true');
-  assert.equal(buttons[2].getAttribute('aria-pressed'),'false');
-  assert.equal(buttons[1].textContent,'#j');
-  assert.equal(buttons[1].classList.contains('ex-selected'),true);
-  assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
-  assert.match(buttons.at(-1).textContent,/更多标签 · 2/);
-  renderer.tagFilter='archived-only';
-  renderer.renderTagsFilter();
-  buttons=[...root.querySelectorAll('.ex-filter-tags button')];
-  assert.equal(buttons[1].textContent,'#archived-only');
-  assert.equal(buttons[1].classList.contains('ex-selected'),true);
-  assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
-  renderer.tagFilter='';
-  renderer.renderTagsFilter();
-  assert.equal(root.querySelector('.ex-filter-tags button').getAttribute('aria-pressed'),'true');
-  assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].getAttribute('aria-pressed'),'false');
-  assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].textContent,'#a');
+  const strip=root.querySelector('.ex-filter-tags');
+  const firstEight=()=>[...strip.querySelectorAll('button[data-tag-key^="tag:"]')]
+    .map(button=>button.dataset.tagKey);
+  const baseline=firstEight();
+  const refs=new Map([...strip.querySelectorAll('button[data-tag-key]')]
+    .map(button=>[button.dataset.tagKey,button]));
+  assert.deepEqual(baseline,tags.slice(0,8).map(tag=>'tag:'+tag));
+  for(const tag of ['b','j','archived-only','a','']){
+    renderer.tagFilter=tag;
+    renderer.renderTagsFilter();
+    assert.deepEqual(firstEight(),baseline,'selection must not promote a tag');
+    for(const [key,button] of refs)
+      assert.equal(strip.querySelector('button[data-tag-key="'+key+'"]'),button,
+        'stable filter control retains its DOM identity');
+    const more=strip.querySelector('button[data-tag-key="more"]');
+    const offShortlist=Boolean(tag)&&!tags.slice(0,8).includes(tag);
+    assert.equal(more.getAttribute('aria-pressed'),String(offShortlist));
+    if(offShortlist)assert.match(more.title,new RegExp(tag));
+  }
+  assert.equal(strip.querySelector('button[data-tag-key="all"]').getAttribute('aria-pressed'),'true');
   await t.close();
 });
-
 test('staged tag preview replaces saved chips, preserves the search input and cancels without writing',async()=>{
   const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
   const mount=card.querySelector('.ex-chips');
@@ -1689,6 +1692,9 @@ test('save current filter creates a reusable .excerpts file without replacing th
   const dialog=document.querySelector('.ex-save-page-modal');
   assert.ok(dialog);
   assert.equal(dialog.querySelector('.ex-save-page-input').value,'哲学摘录');
+  assert.equal(dialog.querySelector('.ex-save-page-input').dataset.nativeControl,'text');
+  assert.equal(dialog.querySelector('.ex-save-page-submit').dataset.nativeControl,'button');
+  assert.ok(dialog.querySelector('.ex-save-page-submit').classList.contains('mod-cta'));
   assert.match(dialog.querySelector('.ex-save-page-hint').textContent,/哲学摘录.excerpts/);
   dialog.querySelector('.ex-save-page-submit').click();
   await wait();
@@ -1702,7 +1708,7 @@ test('save current filter creates a reusable .excerpts file without replacing th
   await t.close();
 });
 
-test('saved filtered page pins its active tag above the ordinary filter shortlist at first render',async()=>{
+test('saved filtered page indicates its tag without moving the stable shortlist',async()=>{
   const t=await fixture();
   const saved=await t.plugin.createSavedPage(t.home.path,'固定过滤',{tag:'哲学',query:''});
   await t.pane.openFile(saved);
@@ -1712,12 +1718,14 @@ test('saved filtered page pins its active tag above the ordinary filter shortlis
   r.renderTagsFilter();
   const root=t.pane.contentEl;
   const pills=[...root.querySelectorAll('.ex-filter-tags button')];
-  assert.equal(pills[1].textContent,'#哲学');
-  assert.equal(pills[1].classList.contains('ex-selected'),true);
+  assert.equal(pills[1].textContent,'#a');
+  assert.equal(pills[8].textContent,'#h');
+  assert.equal(pills.at(-1).dataset.tagKey,'more');
+  assert.equal(pills.at(-1).getAttribute('aria-pressed'),'true');
+  assert.match(pills.at(-1).title,/哲学/);
   assert.equal(root.querySelector('.ex-card .ex-tag.ex-selected').textContent,'#哲学');
   await t.close();
 });
-
 test('saved page restores filters and can update only after explicit confirmation',async()=>{
   const t=await fixture();
   const saved=await t.plugin.createSavedPage(t.home.path,'文学摘录',{tag:'哲学',query:''});
@@ -1905,6 +1913,8 @@ test('single-card deletion requires native confirmation and uses the vault trash
   Menu.last.items.at(-1).handler();
   let modal=document.querySelector('.ex-delete-modal');
   assert.ok(modal);assert.equal(t.files.has(t.md.path),true);
+  assert.equal(modal.querySelector('.ex-delete-submit').dataset.nativeControl,'button');
+  assert.ok(modal.querySelector('.ex-delete-submit').classList.contains('mod-warning'));
   modal.querySelector('.ex-delete-cancel').click();
   assert.equal(document.querySelector('.ex-delete-modal'),null);
   assert.equal(t.files.has(t.md.path),true);
@@ -2231,7 +2241,9 @@ test('deletion completes without automatic indexing and marks the feed stale',as
   const scan=t.plugin.repo.scan.bind(t.plugin.repo);
   t.plugin.repo.scan=async(...args)=>{scans++;return scan(...args);};
   let release;
-  t.plugin.app.fileManager.trashFile=()=>new Promise(resolve=>{release=resolve;});
+  t.plugin.app.fileManager.trashFile=file=>new Promise(resolve=>{
+    release=()=>{t.files.delete(file.path);resolve();};
+  });
   clickByLabel(root,'卡片选项');await waitFor(()=>Menu.last?.items?.at(-1)?.title==='删除摘录');
   Menu.last.items.at(-1).handler();
   const modal=Modal.last;
@@ -4652,7 +4664,10 @@ test('native full-tag lookup selects distant exact tags without changing filter 
   more.click();Menu.last.items[0].handler();
   FuzzySuggestModal.last.onChooseItem('词条4999');
   assert.equal(r.tagFilter,'词条4999');
-  assert.match(root.querySelector('.ex-active-filter').textContent,/词条4999/);
+  assert.equal(root.querySelector('.ex-active-filter'),null,
+    'the distant tag stays in More instead of moving ahead of existing chips');
+  assert.equal(more.getAttribute('aria-pressed'),'true');
+  assert.match(more.title,/词条4999/);
   await t.close();
 });
 
@@ -5232,5 +5247,666 @@ test('pending tag write refuses to mutate a concurrently replaced index snapshot
   assert.equal(card.querySelector('.ex-tag-done').disabled,true);
   assert.equal(card.querySelector('.ex-tag-cancel').disabled,false);
   card.querySelector('.ex-tag-cancel').click();
+  await t.close();
+});
+
+
+test('create refuses an uncertain native write instead of silently saving a second copy',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const original=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const originalPaths=new Set(t.files.keys());
+  let attempts=0;
+  t.plugin.app.vault.create=async(path,content)=>{
+    attempts++;
+    if(attempts===1){
+      await original(path,content);
+      throw Error('EIO: native writer failed after persisting the file');
+    }
+    return original(path,content);
+  };
+  await assert.rejects(t.plugin.repo.create(ws,'# 模拟写入后异常'),/EIO|无法确认/);
+  assert.equal(attempts,1,'unrelated I/O errors must not retry under a new filename');
+  const created=[...t.files.keys()].filter(path=>!originalPaths.has(path)&&path.endsWith('.md'));
+  assert.equal(created.length,1,'the caller must inspect the one potentially saved file');
+  await t.close();
+});
+
+test('create does not report success if its folder source moves while Vault.create is pending',async()=>{
+  const t=await fixture();
+  const folder=t.files.get('摘录').file;
+  const ws=t.plugin.workspaceForFolder(folder);
+  const original=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  let release;
+  t.plugin.app.vault.create=(path,content)=>new Promise(resolve=>{
+    release=()=>resolve(original(path,content));
+  });
+  const creating=t.plugin.repo.create(ws,'# 保存过程中目录移动');
+  assert.equal(typeof release,'function');
+  t.files.delete('摘录');folder.path='新位置';t.files.set(folder.path,{file:folder});
+  release();
+  await assert.rejects(creating,/目录|文件夹|位置|核对/,
+    'native success is not an authorized in-scope save if source folder moved');
+  await t.close();
+});
+
+test('file-home tag write reports uncertain success if Markdown is moved after native write',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const ws=t.plugin.workspaceForHome(t.home),originalPath=t.md.path;
+  const original=t.plugin.app.fileManager.processFrontMatter.bind(t.plugin.app.fileManager);
+  t.plugin.app.fileManager.processFrontMatter=async(file,fn)=>{
+    await original(file,fn);
+    const existing=t.files.get(file.path);
+    t.files.delete(file.path);
+    file.path='摘录/已移动的原文件.md';
+    t.files.set(file.path,existing);
+  };
+  await assert.rejects(
+    repo.setFrontmatterTags(t.md.path,['哲学','新标签'],['哲学'],ws,t.md),
+    /标签写入已返回.*位置发生变化|核对实际标签结果/);
+  assert.deepEqual(t.tagState.get(originalPath),['哲学','新标签'],
+    'native write happened, but repository must not report unqualified success');
+  await t.close();
+});
+
+test('deleteEntries does not report a successful deletion when native trash leaves original in Vault',async()=>{
+  const t=await fixture(),repo=t.plugin.repo;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(t.md.path,ws);
+  assert.ok(candidate);
+  t.plugin.app.fileManager.trashFile=async()=>{};
+  const outcomes=await repo.deleteEntries(ws,[candidate]);
+  assert.equal(outcomes.deleted.length,0);
+  assert.equal(outcomes.failed.length,1);
+  assert.match(outcomes.failed[0].reason,/删除.*未完成|仍然存在|未确认/);
+  assert.equal(t.files.get(t.md.path).file,t.md,'still-present original must not be discarded from the index');
+  await t.close();
+});
+
+
+test('explicit EEXIST collision still permits exactly one unique-name retry',async()=>{
+  const t=await fixture();
+  const ws=t.plugin.workspaceForHome(t.home);
+  const create=t.plugin.app.vault.create.bind(t.plugin.app.vault);
+  const paths=[];
+  t.plugin.app.vault.create=async(path,content)=>{
+    paths.push(path);
+    if(paths.length===1){
+      await create(path,'an external file won the first path');
+      const conflict=Error('File already exists');
+      conflict.code='EEXIST';
+      throw conflict;
+    }
+    return create(path,content);
+  };
+  const saved=await t.plugin.repo.create(ws,'# 明确重名后保存');
+  assert.equal(paths.length,2,'only the known filename collision may be retried');
+  assert.notEqual(paths[0],paths[1]);
+  assert.equal(t.files.get(paths[0]).data,'an external file won the first path');
+  assert.equal(saved.path,paths[1]);
+  assert.match(t.files.get(saved.path).data,/明确重名后保存/);
+  await t.close();
+});
+
+test('native trash moving a file to a different trash path remains a successful deletion',async()=>{
+  const t=await fixture(),repo=t.plugin.repo,original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(original,ws);
+  t.plugin.app.fileManager.trashFile=async file=>{
+    const entry=t.files.get(original);
+    t.files.delete(original);
+    file.path='.trash/测试.md';
+    t.files.set(file.path,entry);
+  };
+  const result=await repo.deleteEntries(ws,[candidate]);
+  assert.deepEqual(result.deleted,[original]);
+  assert.deepEqual(result.failed,[]);
+  assert.equal(t.files.has(original),false);
+  assert.equal(t.files.get('.trash/测试.md').file,t.md);
+  await t.close();
+});
+
+
+test('repository parsed cache rejects a same-stat replacement file at the same path',async()=>{
+  const t=await fixture(false,'# 旧标题\n\n仅旧文件正文');
+  const repo=t.plugin.repo,path=t.md.path;
+  const first=await repo.readSnapshot(path);
+  assert.match(first.raw,/旧文件正文/);
+  const substitute=new TFile(path);
+  substitute.stat={...t.md.stat};
+  t.files.set(path,{file:substitute,data:'# 新标题\n\n新文件内容'});
+  const second=await repo.readSnapshot(path);
+  assert.match(second.raw,/新文件内容/,'same-stat new TFile must not reuse old parsed cache');
+  assert.doesNotMatch(second.raw,/旧文件正文/);
+  await t.close();
+});
+
+test('repository full-text cache rejects a same-stat replacement without waiting for vault events',async()=>{
+  const t=await fixture(false,'# 第一条\n\nuniqueOldCacheTerm');
+  const repo=t.plugin.repo,path=t.md.path;
+  const cards=await repo.scan(t.plugin.workspaceForHome(t.home),64,()=>{},()=>false);
+  const before=await repo.search(cards,'uniqueOldCacheTerm',()=>false);
+  assert.equal(before.has(path),true);
+  const substitute=new TFile(path);
+  substitute.stat={...t.md.stat};
+  t.files.set(path,{file:substitute,data:'# 新建正文\n\nuniqueNewCacheTerm'});
+  const oldResult=await repo.search(cards,'uniqueOldCacheTerm',()=>false);
+  assert.equal(oldResult.has(path),false,'new file may not inherit old normalized text');
+  const newResult=await repo.search(cards,'uniqueNewCacheTerm',()=>false);
+  assert.equal(newResult.has(path),true,'replacement body is read using the current file identity');
+  await t.close();
+});
+
+test('metadata scan refuses a document moved outside scope during a yielded batch',async()=>{
+  const t=await fixture();
+  const repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  for(let i=0;i<40;i++)await t.plugin.app.vault.create('摘录/批次文件-'+i+'.md','batch body');
+  let reachedFirstBatch=false;
+  const running=repo.scan(ws,16,(done,total)=>{
+    if(done===16&&total===41)reachedFirstBatch=true;
+  },()=>false);
+  assert.equal(reachedFirstBatch,true,'scan should yield after first 16 entries');
+  const moved=t.files.get('摘录/批次文件-20.md');
+  assert.ok(moved);
+  t.files.delete(moved.file.path);
+  moved.file.path='其他文件夹/批次文件-20.md';
+  t.files.set(moved.file.path,moved);
+  await assert.rejects(running,/扫描期间.*变化|超出.*范围|重新.*刷新/,
+    'a captured file that leaves the scan scope cannot be committed to the current index');
+  await t.close();
+});
+
+
+test('metadata scan validates already-processed files again before returning the index',async()=>{
+  const t=await fixture();
+  const repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  for(let i=0;i<40;i++)await t.plugin.app.vault.create('摘录/复核-'+i+'.md','body');
+  let firstBatchFinished=false;
+  const running=repo.scan(ws,16,(done,total)=>{
+    if(done===16&&total===41)firstBatchFinished=true;
+  },()=>false);
+  assert.equal(firstBatchFinished,true);
+  const original=t.files.get(t.md.path);
+  t.files.delete(t.md.path);
+  t.md.path='另一个文件夹/已移出.md';
+  t.files.set(t.md.path,original);
+  await assert.rejects(running,/扫描期间.*变化|手动刷新/,
+    'a moved row from an earlier batch must not be committed');
+  await t.close();
+});
+
+
+test('native reading tab is detached if setViewState fails',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async setViewState(){throw Error('native reading transition failed');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/native reading transition failed/);
+  assert.equal(tab.detachCalls,1,'failed newly created reading tab must be discarded');
+  assert.equal(t.pane.file,t.home,'existing excerpt page must survive');
+  await t.close();
+});
+
+test('native reading tab is detached if host refuses preview mode',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async setViewState(){
+      this.view=new MarkdownView();
+      this.view.mode='source';
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/无法切换到 Markdown 阅读模式/);
+  assert.equal(tab.detachCalls,1,'wrong native mode must not leave a new tab');
+  await t.close();
+});
+
+test('native editor tab is detached if opening the Markdown file fails',async()=>{
+  const t=await fixture();
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async openFile(){throw Error('native source editor open failed');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/native source editor open failed/);
+  assert.equal(tab.detachCalls,1,'failed newly created editor tab must be discarded');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+test('native editor refuses and cleans up a non-Markdown tab instead of claiming success',async()=>{
+  const t=await fixture();
+  let reveals=0;
+  const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+    async openFile(){this.view={getMode(){return 'source';}};}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{reveals++;};
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/无法切换到 Markdown 编辑模式/);
+  assert.equal(reveals,0,'invalid host view must not be revealed');
+  assert.equal(tab.detachCalls,1,'invalid host view must not survive');
+  await t.close();
+});
+
+test('native reading and editing tabs clean up when revealLeaf fails',async()=>{
+  for(const mode of ['read','edit']){
+    const t=await fixture();
+    const tab={detachCalls:0,view:null,detach(){this.detachCalls++;},
+      async openFile(file){
+        this.view=new MarkdownView();this.view.file=file;this.view.mode='source';
+      },
+      async setViewState(state){
+        this.view=new MarkdownView();this.view.mode=state.state.mode;
+      }};
+    const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+    t.plugin.app.workspace.getLeaf=kind=>kind==='tab'?tab:nativeGetLeaf(kind);
+    t.plugin.app.workspace.revealLeaf=async()=>{throw Error('native reveal failed');};
+    const opening=mode==='read'?t.plugin.openMarkdownPreview(t.md.path):t.plugin.openMarkdown(t.md.path);
+    await assert.rejects(opening,/native reveal failed/);
+    assert.equal(tab.detachCalls,1,mode+' must discard unrevealed tab');
+    assert.equal(t.pane.file,t.home);
+    await t.close();
+  }
+});
+
+
+test('native Markdown tab cleanup failure preserves original error and tells user to close the tab',async()=>{
+  const t=await fixture();
+  const tab={view:null,detach(){throw Error('detach not available');},
+    async setViewState(){throw Error('original Markdown navigation error');}};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  Notice.last='';
+  await assert.rejects(t.plugin.openMarkdownPreview(t.md.path),/original Markdown navigation error/);
+  assert.match(Notice.last,/请手动关闭本次创建的异常标签页/);
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+test('scoped native editor discards its new tab if the original file moves while opening',async()=>{
+  const t=await fixture();
+  const original=t.md.path;
+  const ws=t.plugin.workspaceForHome(t.home);
+  let reveals=0;
+  const tab={view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){
+      this.view=new MarkdownView();this.view.mode='source';this.view.file=file;
+      const record=t.files.get(original);
+      t.files.delete(original);
+      file.path='已移动/测试.md';
+      t.files.set(file.path,record);
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{reveals++;};
+  await assert.rejects(
+    t.plugin.openMarkdown(original,undefined,false,{workspace:ws,file:t.md}),
+    /已移动|替换|范围/);
+  assert.equal(tab.detachCalls,1,'failed identity check must discard the new native tab');
+  assert.equal(reveals,0,'the moved file must never be offered as the original excerpt');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+
+test('native editor stays open if focus fails after a successful reveal',async()=>{
+  const t=await fixture();
+  let revealed=0;
+  const tab={view:null,detachCalls:0,detach(){this.detachCalls++;},
+    async openFile(file){
+      this.view=new MarkdownView();this.view.file=file;this.view.mode='source';
+      this.view.editor.focus=()=>{throw Error('native focus failed');};
+    }};
+  const nativeGetLeaf=t.plugin.app.workspace.getLeaf;
+  t.plugin.app.workspace.getLeaf=mode=>mode==='tab'?tab:nativeGetLeaf(mode);
+  t.plugin.app.workspace.revealLeaf=async()=>{revealed++;};
+  await assert.rejects(t.plugin.openMarkdown(t.md.path),/native focus failed/);
+  assert.equal(revealed,1);
+  assert.equal(tab.detachCalls,0,'a successfully revealed editor should not be closed because focus failed');
+  assert.equal(t.pane.file,t.home);
+  await t.close();
+});
+
+
+test('H2 section editor refuses a replacement file appearing during native tab creation',async()=>{
+  const t=await fixture();
+  const path=t.md.path, original=t.md, r=t.pane.renderer;
+  const parsed=await t.plugin.repo.read(path);
+  assert.ok(parsed.sections.length>0,'the source contains an editable H2 section');
+  const oldGetLeaf=t.plugin.app.workspace.getLeaf;
+  let opened=0,replaced=false;
+  t.plugin.app.workspace.getLeaf=mode=>{
+    if(mode==='tab'&&!replaced){
+      replaced=true;
+      t.files.set(path,{file:new TFile(path),data:'# 不相关的新文件\\n\\n## 来源\\n错误目标'});
+    }
+    return oldGetLeaf(mode);
+  };
+  const originalOpen=t.leaf.openFile;
+  t.leaf.openFile=async file=>{opened++;return originalOpen.call(t.leaf,file);};
+  await assert.rejects(r.openSection(path,0,parsed.sections),/已移动|替换|超出文件夹范围/,
+    'the H2 action must carry its previously verified TFile identity into native navigation');
+  assert.equal(replaced,true,'the race was injected during creation of the native tab');
+  assert.equal(opened,0,'the replacement document is never opened as the old H2 section');
+  assert.equal(t.files.get(path).file!==original,true);
+  assert.equal(t.pane.file,t.home,'the Excerpts view remains untouched');
+  await t.close();
+});
+
+
+test('delete refuses a file changed while the native editor-open state is checked',async()=>{
+  const t=await fixture(),repo=t.plugin.repo,ws=t.plugin.workspaceForHome(t.home);
+  const candidate=repo.snapshotForDelete(t.md.path,ws);
+  assert.ok(candidate);
+  let trashCalls=0,mutationObserved=false;
+  t.plugin.app.fileManager.trashFile=async()=>{trashCalls++;t.files.delete(t.md.path);};
+  const previous=t.plugin.app.workspace.getLeavesOfType.bind(t.plugin.app.workspace);
+  t.plugin.app.workspace.getLeavesOfType=type=>{
+    const result=previous(type);
+    if(type==='markdown'&&!mutationObserved){
+      mutationObserved=true;
+      t.md.stat.mtime++;
+      t.files.get(t.md.path).data+='\n外部编辑器新增的内容';
+    }
+    return result;
+  };
+  const outcome=await repo.deleteEntries(ws,[candidate]);
+  assert.equal(mutationObserved,true,'file changed at the pre-native-call boundary');
+  assert.equal(trashCalls,0,'a changed file must not be handed to native trash');
+  assert.deepEqual(outcome.deleted,[]);
+  assert.equal(outcome.failed.length,1);
+  assert.match(outcome.failed[0].reason,/修改|变化|重新选择/);
+  assert.ok(t.files.get(t.md.path).data.includes('外部编辑器新增的内容'));
+  await t.close();
+});
+
+
+test('removed excerpts cannot retain unfolded body or tag-row state across refresh',async()=>{
+  const t=await fixture(false,'# 旧卡片\n\n正文\n\n## 来源\n\n出处');
+  const r=t.pane.renderer,path=t.md.path;
+  r.expandedBodies.add(path);
+  r.expandedTagRows.add(path);
+  r.sectionsShown.set(path,new Set([0]));
+  t.files.delete(path);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done'&&r.items.length===0,'removed card scan committed');
+  assert.equal(r.expandedBodies.has(path),false,
+    'removed card body state must not accumulate across a long browsing session');
+  assert.equal(r.expandedTagRows.has(path),false,
+    'removed card tag state must not accumulate across a long browsing session');
+  assert.equal(r.sectionsShown.has(path),false);
+  await t.close();
+});
+
+test('a pending native Markdown render cannot resurrect resources after card unmount',async()=>{
+  const t=await fixture(false,'# 页面\n\n异步正文');
+  const r=t.pane.renderer,path=t.md.path;
+  const original=mocks.MarkdownRenderer.render;
+  let release=null;
+  mocks.MarkdownRenderer.render=()=>new Promise(resolve=>{release=resolve;});
+  const card=r.createCard(r.items[0]);
+  r.containerEl.append(card);
+  try {
+    const pending=r.hydrate(r.items[0],card,r.renderToken);
+    await waitFor(()=>release!==null,'native renderer in flight');
+    assert.ok((r.markdownChildren.get(path)||[]).length>0);
+    r.unmountMarkdown(path);
+    card.remove();
+    release();
+    await pending;
+    assert.equal(r.markdownChildren.has(path),false,'unmounted path does not regain child references');
+    assert.equal(r.previewObservers.has(path),false);
+    assert.equal(r.sectionObservers.has(path),false);
+    assert.equal(r.children.filter(c=>c.containerEl?.classList?.contains('ex-native-markdown')).length,0,
+      'view has no retained native Markdown children for the card');
+  } finally {mocks.MarkdownRenderer.render=original;card.remove();await t.close();}
+});
+
+
+test('one hundred native Markdown mount/unmount cycles preserve only baseline children',async()=>{
+  const t=await fixture(false,'# 测试\n\n普通正文');
+  const r=t.pane.renderer,path=t.md.path;
+  const initialChildren=r.children.length;
+  const initialMounts=(r.markdownChildren.get(path)||[]).length;
+  const root=t.pane.contentEl;
+  for(let cycle=0;cycle<100;cycle++){
+    const region=document.createElement('div');
+    root.append(region);
+    const result=await r.renderMarkdown(region,'正文轮次 '+cycle,path);
+    assert.equal(result.ok,true);
+    assert.equal((r.markdownChildren.get(path)||[]).length,initialMounts+1);
+    r.unmountMarkdownIn(region,path);
+    region.remove();
+    assert.equal(r.children.length,initialChildren,'native render children must not accumulate');
+    assert.equal((r.markdownChildren.get(path)||[]).length,initialMounts);
+  }
+  await t.close();
+  assert.equal(r.markdownChildren.size,0,'closing view releases all native child ownership');
+  assert.equal(r.previewObservers.size,0);
+  assert.equal(r.sectionObservers.size,0);
+  assert.equal(r.queue.length,0);
+});
+
+
+test('a newly saved excerpt survives its own metadata event during first cachedRead without refresh',async()=>{
+  const t=await fixture(false,'# 已有卡片\n\n原始正文');
+  const root=t.pane.contentEl;
+  const oldRead=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const oldFresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  const oldScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let eventCount=0,freshReads=0,scans=0;
+  t.plugin.repo.scan=async(...args)=>{scans++;return oldScan(...args);};
+  t.plugin.app.vault.read=async(file)=>{if(file!==t.md)freshReads++;return oldFresh(file);};
+  t.plugin.app.vault.cachedRead=async(file)=>{
+    const content=await oldRead(file);
+    if(file!==t.md && file.extension==='md' && !eventCount){
+      eventCount++;
+      // A real Obsidian metadata event may invalidate the repository while
+      // its first native cachedRead promise is still unresolved.
+      t.metadataEvents.get('changed')?.(file);
+    }
+    return content;
+  };
+  const input=root.querySelector('.ex-compose-text');
+  input.value='# 新的摘录\n\n立即可见的内容\n\n## 来源\n\n原书';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')]
+    .find(x=>x.textContent.includes('哲学')).click();
+  [...root.querySelectorAll('.ex-compose-actions button')]
+    .find(x=>x.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2','new index committed');
+  const created=[...t.files.values()].find(x=>x.file instanceof TFile &&
+    x.file.extension==='md' && x.file!==t.md);
+  assert.ok(created,'native create persisted the new file');
+  await waitFor(()=>root.querySelector('.ex-card[data-path="'+created.file.path+'"]') &&
+    !root.querySelector('.ex-card[data-path="'+created.file.path+'"]').classList.contains('ex-card-loading'),
+    'new card hydration settled');
+  const card=root.querySelector('.ex-card[data-path="'+created.file.path+'"]');
+  assert.equal(eventCount,1,'metadata event injected during first read');
+  assert.equal(card.querySelector('.ex-preview-error'),null,
+    'one temporary stale read must not leave a permanent failed card');
+  assert.match(card.textContent,/立即可见的内容/);
+  assert.match(card.textContent,/来源/);
+  assert.match(card.textContent,/哲学/);
+  assert.equal(freshReads,1,'only the affected new file receives one verified fresh read');
+  assert.equal(scans,0,'card recovery does not start an index scan');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  await t.close();
+});
+
+
+test('new-card real cachedRead failure is not reclassified as a recoverable metadata race',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const fresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let freshReads=0;
+  t.plugin.app.vault.cachedRead=async(file)=>{
+    if(file!==t.md && file.extension==='md')throw Error('native EIO');
+    return cached(file);
+  };
+  t.plugin.app.vault.read=async file=>{if(file!==t.md)freshReads++;return fresh(file);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='新摘录遭遇真实读取错误';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const entry=[...t.files.values()].find(e=>e.file instanceof TFile&&e.file.extension==='md'&&e.file!==t.md);
+  await waitFor(()=>root.querySelector('.ex-card[data-path="'+entry.file.path+'"] .ex-preview-error'),
+    'read failed card');
+  assert.match(entry.data,/新摘录遭遇真实读取错误/,'saved content remains on disk');
+  assert.equal(freshReads,0,'actual I/O error never triggers fresh fallback');
+  await t.close();
+});
+
+test('new-card source replacement with identical metadata rejects any recovery',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const fresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let replaced=false,freshReads=0;
+  t.plugin.app.vault.cachedRead=async(file)=>{
+    const raw=await cached(file);
+    if(file!==t.md && file.extension==='md' && !replaced){
+      replaced=true;
+      const replacement=new TFile(file.path);
+      replacement.stat={...file.stat};
+      t.files.set(file.path,{file:replacement,data:'不同来源的文件'});
+    }
+    return raw;
+  };
+  t.plugin.app.vault.read=async file=>{if(file!==t.md)freshReads++;return fresh(file);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='已被替换的刚创建文件';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const card=[...root.querySelectorAll('.ex-card')].find(e=>e.dataset.path!==t.md.path);
+  assert.ok(card);
+  await waitFor(()=>card.querySelector('.ex-preview-error'),'source identity mismatch');
+  assert.equal(replaced,true);
+  assert.equal(freshReads,0,'replacement is not a retriable epoch-only error');
+  assert.doesNotMatch(card.textContent,/已被替换的刚创建文件/);
+  await t.close();
+});
+
+test('new-card external modify during initial read stays stale and never retries',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const fresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let modified=false,freshReads=0;
+  t.plugin.app.vault.cachedRead=async file=>{
+    const raw=await cached(file);
+    if(file!==t.md && file.extension==='md' && !modified){
+      modified=true;
+      file.stat.mtime++;
+      t.files.get(file.path).data+='\n外部写入';
+      t.vaultEvents.get('modify')?.(file);
+    }
+    return raw;
+  };
+  t.plugin.app.vault.read=async file=>{if(file!==t.md)freshReads++;return fresh(file);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='外部修改之前的摘录';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const card=[...root.querySelectorAll('.ex-card')].find(e=>e.dataset.path!==t.md.path);
+  await waitFor(()=>card?.querySelector('.ex-preview-error'),'external modification refused');
+  assert.equal(freshReads,0);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale',
+    'external modify is never swallowed as locally created metadata');
+  assert.ok([...t.files.values()].some(e=>e.data?.includes('外部写入')));
+  await t.close();
+});
+
+test('new-card fresh fallback failure settles once without retry loops',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  let eventCount=0,freshReads=0;
+  t.plugin.app.vault.cachedRead=async file=>{
+    const raw=await cached(file);
+    if(file!==t.md && file.extension==='md' && !eventCount){
+      eventCount++;
+      t.metadataEvents.get('changed')?.(file);
+    }
+    return raw;
+  };
+  t.plugin.app.vault.read=async file=>{
+    if(file!==t.md){freshReads++;throw Error('native read blocked');}
+    return t.files.get(file.path).data;
+  };
+  const input=root.querySelector('.ex-compose-text');
+  input.value='需要安全回退的摘录';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const card=[...root.querySelectorAll('.ex-card')].find(e=>e.dataset.path!==t.md.path);
+  await waitFor(()=>card?.querySelector('.ex-preview-error'),'fallback read failed');
+  assert.equal(freshReads,1,'one local file gets at most one fresh reread');
+  assert.equal(eventCount,1);
+  await t.close();
+});
+
+
+test('top tag toolbar selection never promotes its chip or moves the page scroll position',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const tags=['a','b','c','d','e','f','g','h','i','j'];
+  r.availableTags=[...tags];r.filterOpen=true;r.renderTagsFilter();
+  const bar=root.querySelector('.ex-filter-tags');
+  const order=()=>[...bar.querySelectorAll('button[data-tag-key]')].map(b=>b.dataset.tagKey);
+  const initial=order();
+  const first=bar.querySelector('button[data-tag-key="tag:b"]');
+  const more=bar.querySelector('button[data-tag-key="more"]');
+  assert.ok(first&&more);
+  const host=root.closest('.excerpts-native-host');
+  host.scrollTop=420;
+  first.focus();first.click();
+  assert.deepEqual(order(),initial,'tag positions must be stable after selecting');
+  assert.equal(document.activeElement,first,'focused tag remains at the same DOM position');
+  assert.equal(host.scrollTop,420,'top filter must not navigate toward results');
+  assert.equal(r.tagFilter,'b');
+  first.click();
+  assert.deepEqual(order(),initial);
+  assert.equal(host.scrollTop,420,'clearing selected tag must not scroll the page');
+  more.click();
+  const distant=Menu.last.items.find(x=>x.title==='#j');
+  assert.ok(distant,'far tag remains reachable through more without promotion');
+  distant.handler();
+  assert.deepEqual(order(),initial,'selecting from more cannot displace visible chips');
+  assert.equal(r.tagFilter,'j');
+  assert.equal(host.scrollTop,420,'more selection must not jump to results');
+  assert.equal(more.getAttribute('aria-pressed'),'true','more indicates off-shortlist selection');
+  const all=bar.querySelector('button[data-tag-key="all"]');
+  all.click();
+  assert.deepEqual(order(),initial);
+  assert.equal(host.scrollTop,420,'all must not jump to results');
+  await t.close();
+});
+
+test('top tag selection never automatically scrolls the horizontal filter bar',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  r.availableTags=['a','b','c','d','e','f','g','h','i','j'];
+  r.filterOpen=true;r.renderTagsFilter();
+  const bar=root.querySelector('.ex-filter-tags');
+  bar.scrollLeft=80;
+  const old=global.requestAnimationFrame,tasks=[];
+  try{
+    global.requestAnimationFrame=fn=>{tasks.push(fn);return tasks.length;};
+    bar.querySelector('button[data-tag-key="tag:a"]').click();
+    bar.querySelector('button[data-tag-key="tag:a"]').click();
+    bar.querySelector('button[data-tag-key="more"]').click();
+    Menu.last.items.find(x=>x.title==='#j').handler();
+    for(const task of tasks)task();
+    assert.equal(bar.scrollLeft,80,'selection and clearing keep the horizontal gesture position');
+    // Other virtual-list work may schedule frames; none may change
+    // the tag strip position after the filter was committed.
+  }finally{
+    if(old===undefined)delete global.requestAnimationFrame;
+    else global.requestAnimationFrame=old;
+  }
   await t.close();
 });
