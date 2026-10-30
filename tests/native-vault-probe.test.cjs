@@ -119,3 +119,15 @@ test("native diagnostic permits a metadata-only measurement without fulltext rea
   assert.equal(t.events.searched,0);
   assert.equal(t.events.scanned,1);
 });
+
+test("native diagnostic rejects partial results after transient search cancellation", async () => {
+  const t=host();
+  t.plugin.repo.search=async (_cards,_term,cancelled) => {
+    t.events.busy=true;
+    assert.equal(cancelled(),true);
+    t.events.busy=false;
+    return new Set(["G3-测试/摘录-0.md"]);
+  };
+  await assert.rejects(probe(t.app,t.config,t.runtime),/搜索期间状态变化，诊断已中止/);
+  assert.equal(t.events.writes,0);
+});
