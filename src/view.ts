@@ -190,7 +190,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       if (this.disposed || this.pageMode !== "feed") return;
       this.checkTypographyChange();
       this.reflowVisibleTags();
-      this.scheduleActiveFilterVisibility();
+      
     }));
     if (typeof ResizeObserver !== "undefined") {
       this.tagResizeObserver = new ResizeObserver(() => {
@@ -199,7 +199,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
           return; // Hidden feed geometry is not measurable.
         }
         this.reflowVisibleTags();
-        this.scheduleActiveFilterVisibility();
+        
         this.reflowCaptureTags();
         for (const update of this.previewUpdates.values()) update();
         for (const group of this.sectionHeightChecks.values()) {
@@ -1696,7 +1696,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         }
         owner.tagFilter = item;
         owner.renderTagsFilter();
-        owner.drawCards("results");
+        owner.drawCards("keep");
       }
     }
     const picker = new TagFilterPicker(this.plugin.app);
@@ -1724,7 +1724,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const all = use("all", () => button("全部", () => {
       if (!this.guard("filter")) return;
       this.tagFilter = "";
-      this.renderTagsFilter(); this.drawCards("results");
+      this.renderTagsFilter(); this.drawCards("keep");
     }));
     all.classList.toggle("ex-selected", !this.tagFilter);
     all.classList.toggle("ex-btn-quiet", Boolean(this.tagFilter));
@@ -1732,16 +1732,15 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     desired.push(all);
 
     const activeTag = this.tagFilter.trim();
-    const tags = activeTag
-      ? [activeTag, ...this.availableTags.filter(tag => tag !== activeTag)]
-      : this.availableTags;
+    // Tag positions are stable across every filter selection.
+    const tags = this.availableTags;
     const limit = 8;
     for (const tag of tags.slice(0, limit)) {
       const selected = activeTag === tag;
       const chip = use("tag:" + tag, () => button("#" + tag, () => {
         if (!this.guard("filter")) return;
         this.tagFilter = this.tagFilter === tag ? "" : tag;
-        this.renderTagsFilter(); this.drawCards("results");
+        this.renderTagsFilter(); this.drawCards("keep");
       }));
       const wasSelected = chip.classList.contains("ex-active-filter");
       chip.classList.toggle("ex-selected", selected);
@@ -1763,10 +1762,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (tags.length > limit) {
       const more = use("more", () => button("", () => {
         if (!this.guard("filter")) return;
-        const active = this.tagFilter.trim();
-        const current = active
-          ? [active, ...this.availableTags.filter(tag => tag !== active)]
-          : this.availableTags;
+        const current = this.availableTags;
         const menu = new Menu();
         // Keep the complete lookup reachable without scrolling a tall native
         // menu, especially on narrow mobile viewports.
@@ -1776,13 +1772,23 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         for (const tag of current.slice(limit, limit + 40)) menu.addItem(item =>
           item.setTitle("#" + tag).onClick(() => {
             if (!this.guard("filter")) return;
-            this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("results");
+            this.tagFilter = tag; this.renderTagsFilter(); this.drawCards("keep");
           }));
         const rect = more.getBoundingClientRect();
         menu.showAtPosition({ x: rect.left, y: rect.bottom }, more.ownerDocument);
       }, "ex-btn-quiet"));
-      const label = "更多标签 · " + (tags.length - limit);
+      const selectedMore = Boolean(activeTag) && !tags.slice(0, limit).includes(activeTag);
+      const label = "更多标签 · " + (tags.length - limit) + (selectedMore ? " · 已选" : "");
       if (more.textContent !== label) more.textContent = label;
+      more.classList.toggle("ex-selected", selectedMore);
+      more.setAttribute("aria-pressed", String(selectedMore));
+      if (selectedMore) {
+        more.title = "当前筛选标签：#" + activeTag;
+        more.setAttribute("aria-label", "当前筛选标签：#" + activeTag + "；更多标签");
+      } else {
+        more.removeAttribute("title");
+        more.removeAttribute("aria-label");
+      }
       desired.push(more);
     }
     const wanted = new Set(desired);
@@ -1801,30 +1807,8 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
         desired.find(chip => chip.dataset.tagKey === "all");
       if (target && !target.disabled) target.focus({ preventScroll: true });
     }
-    if (!activeTag) strip.scrollLeft = 0;
-    else this.scheduleActiveFilterVisibility();
+    // Filtering never changes the user's horizontal tag-strip position.
     this.updateAvailability();
-  }
-  /** Scroll only inside the tag strip, never the page. */
-  private scheduleActiveFilterVisibility(): void {
-    const strip = this.tagBar;
-    const chip = strip.querySelector<HTMLButtonElement>(".ex-active-filter");
-    const expectedTag = this.tagFilter.trim();
-    if (!chip || !expectedTag) return;
-    const reveal = () => {
-      // A previous animation frame must not undo a later filter choice or reset.
-      if (this.disposed || this.tagFilter.trim() !== expectedTag ||
-          !strip.isConnected || !chip.isConnected || strip.hidden ||
-          !chip.classList.contains("ex-active-filter") ||
-          chip.getAttribute("aria-label") !== "当前筛选标签：" + expectedTag) return;
-      const bounds = strip.getBoundingClientRect();
-      const selected = chip.getBoundingClientRect();
-      if (!bounds.width || !selected.width) return;
-      if (selected.left < bounds.left) strip.scrollLeft += selected.left - bounds.left;
-      else if (selected.right > bounds.right) strip.scrollLeft += selected.right - bounds.right;
-    };
-    if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
-    else setTimeout(reveal, 0);
   }
   private unmountMarkdown(path?: string): void {
     const paths = path ? [path] : [...this.markdownChildren.keys()];
