@@ -5625,3 +5625,70 @@ test('delete refuses a file changed while the native editor-open state is checke
   assert.ok(t.files.get(t.md.path).data.includes('外部编辑器新增的内容'));
   await t.close();
 });
+
+
+test('removed excerpts cannot retain unfolded body or tag-row state across refresh',async()=>{
+  const t=await fixture(false,'# 旧卡片\n\n正文\n\n## 来源\n\n出处');
+  const r=t.pane.renderer,path=t.md.path;
+  r.expandedBodies.add(path);
+  r.expandedTagRows.add(path);
+  r.sectionsShown.set(path,new Set([0]));
+  t.files.delete(path);
+  r.requestRefresh(true);
+  await waitFor(()=>r.scanStatus==='done'&&r.items.length===0,'removed card scan committed');
+  assert.equal(r.expandedBodies.has(path),false,
+    'removed card body state must not accumulate across a long browsing session');
+  assert.equal(r.expandedTagRows.has(path),false,
+    'removed card tag state must not accumulate across a long browsing session');
+  assert.equal(r.sectionsShown.has(path),false);
+  await t.close();
+});
+
+test('a pending native Markdown render cannot resurrect resources after card unmount',async()=>{
+  const t=await fixture(false,'# 页面\n\n异步正文');
+  const r=t.pane.renderer,path=t.md.path;
+  const original=mocks.MarkdownRenderer.render;
+  let release=null;
+  mocks.MarkdownRenderer.render=()=>new Promise(resolve=>{release=resolve;});
+  const card=r.createCard(r.items[0]);
+  r.containerEl.append(card);
+  try {
+    const pending=r.hydrate(r.items[0],card,r.renderToken);
+    await waitFor(()=>release!==null,'native renderer in flight');
+    assert.ok((r.markdownChildren.get(path)||[]).length>0);
+    r.unmountMarkdown(path);
+    card.remove();
+    release();
+    await pending;
+    assert.equal(r.markdownChildren.has(path),false,'unmounted path does not regain child references');
+    assert.equal(r.previewObservers.has(path),false);
+    assert.equal(r.sectionObservers.has(path),false);
+    assert.equal(r.children.filter(c=>c.containerEl?.classList?.contains('ex-native-markdown')).length,0,
+      'view has no retained native Markdown children for the card');
+  } finally {mocks.MarkdownRenderer.render=original;card.remove();await t.close();}
+});
+
+
+test('one hundred native Markdown mount/unmount cycles preserve only baseline children',async()=>{
+  const t=await fixture(false,'# 测试\n\n普通正文');
+  const r=t.pane.renderer,path=t.md.path;
+  const initialChildren=r.children.length;
+  const initialMounts=(r.markdownChildren.get(path)||[]).length;
+  const root=t.pane.contentEl;
+  for(let cycle=0;cycle<100;cycle++){
+    const region=document.createElement('div');
+    root.append(region);
+    const result=await r.renderMarkdown(region,'正文轮次 '+cycle,path);
+    assert.equal(result.ok,true);
+    assert.equal((r.markdownChildren.get(path)||[]).length,initialMounts+1);
+    r.unmountMarkdownIn(region,path);
+    region.remove();
+    assert.equal(r.children.length,initialChildren,'native render children must not accumulate');
+    assert.equal((r.markdownChildren.get(path)||[]).length,initialMounts);
+  }
+  await t.close();
+  assert.equal(r.markdownChildren.size,0,'closing view releases all native child ownership');
+  assert.equal(r.previewObservers.size,0);
+  assert.equal(r.sectionObservers.size,0);
+  assert.equal(r.queue.length,0);
+});
