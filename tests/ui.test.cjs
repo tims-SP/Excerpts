@@ -1951,6 +1951,31 @@ test('selection mode toggles cards without reopening Markdown or changing tags',
   await t.close();
 });
 
+test('selection actions are native buttons in one toolbar without a bottom overlay',async()=>{
+  const t=await fixture(),root=t.pane.contentEl;
+  const card=root.querySelector('.ex-card');
+  const host=root;
+  host.scrollTop=350;
+  clickByLabel(root,'页面选项');
+  Menu.last.items.find(item=>item.title==='批量选择').handler();
+  const toolbar=root.querySelector('.ex-selection-toolbar');
+  assert.ok(toolbar && !toolbar.hidden);
+  assert.equal(root.querySelector('.ex-selection-footer'),null);
+  assert.equal(toolbar.querySelectorAll('button').length,3);
+  assert.equal(toolbar.querySelectorAll('button[data-native-control="button"]').length,3);
+  assert.ok(toolbar.querySelector('.ex-delete-selected').classList.contains('mod-warning'));
+  assert.equal(toolbar.querySelector('.ex-delete-selected').disabled,true);
+  assert.equal(card.isConnected,true,'selection does not remount card DOM');
+  assert.equal(host.scrollTop,350,'entering selection must not request a scroll');
+  card.click();
+  assert.equal(toolbar.querySelector('.ex-delete-selected').disabled,false);
+  assert.equal(toolbar.querySelector('.ex-delete-selected').textContent,'删除 (1)');
+  toolbar.querySelector('.ex-select-done').click();
+  assert.equal(host.scrollTop,350,'exiting selection must not request a scroll');
+  assert.equal(root.querySelector('.ex-selection-footer'),null);
+  await t.close();
+});
+
 test('bulk select-all includes unloaded cards while cancel preserves every Markdown file',async()=>{
   const t=await fixture();
   for(let i=0;i<85;i++) await t.plugin.app.vault.create('摘录/批量-'+String(i).padStart(3,'0')+'.md','例子 '+i);
@@ -2848,7 +2873,7 @@ test('stale bulk selection disables deletion immediately and denies old callback
   assert.equal(renderer.scanStatus,'stale');
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
   assert.equal(root.querySelector('.ex-page-hint').hidden,true,'selection footer owns stale guidance');
-  assert.match(root.querySelector('.ex-selection-footer-count').textContent,/退出选择后刷新/);
+  assert.match(root.querySelector('.ex-selection-count').textContent,/完成后刷新/);
   assert.equal(Notice.last,'','no duplicate notification when selection becomes stale');
   renderer.confirmBulkDelete();
   assert.match(Notice.last,/退出批量选择后刷新/);
@@ -4123,11 +4148,11 @@ test('stale selection describes how to recover without losing count',async()=>{
   Notice.last='';
   r.markStale(t.md.path);
   assert.match(root.querySelector('.ex-selection-count').textContent,/已选 0.*列表已变化/);
-  assert.match(root.querySelector('.ex-selection-footer-count').textContent,/退出选择后刷新/);
+  assert.match(root.querySelector('.ex-selection-count').textContent,/完成后刷新/);
   assert.equal(root.querySelector('.ex-page-hint').hidden,true,'selection footer owns recovery');
   assert.equal(Notice.last,'','no duplicate transient notification');
   assert.equal(root.querySelector('.ex-delete-selected').disabled,true);
-  assert.equal(root.querySelector('.ex-select-cancel').disabled,false);
+  assert.equal(root.querySelector('.ex-select-done').disabled,false);
   root.querySelector('.ex-select-done').click();
   assert.equal(r.selectionMode,'normal');
   assert.equal(root.querySelector('.ex-page-hint').dataset.state,'stale');
