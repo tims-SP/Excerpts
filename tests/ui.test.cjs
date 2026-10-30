@@ -5856,3 +5856,62 @@ test('new-card fresh fallback failure settles once without retry loops',async()=
   assert.equal(eventCount,1);
   await t.close();
 });
+
+
+test('top tag toolbar selection never promotes its chip or moves the page scroll position',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  const tags=['a','b','c','d','e','f','g','h','i','j'];
+  r.availableTags=[...tags];r.filterOpen=true;r.renderTagsFilter();
+  const bar=root.querySelector('.ex-filter-tags');
+  const order=()=>[...bar.querySelectorAll('button[data-tag-key]')].map(b=>b.dataset.tagKey);
+  const initial=order();
+  const first=bar.querySelector('button[data-tag-key="tag:b"]');
+  const more=bar.querySelector('button[data-tag-key="more"]');
+  assert.ok(first&&more);
+  const host=root.closest('.excerpts-native-host');
+  host.scrollTop=420;
+  first.focus();first.click();
+  assert.deepEqual(order(),initial,'tag positions must be stable after selecting');
+  assert.equal(document.activeElement,first,'focused tag remains at the same DOM position');
+  assert.equal(host.scrollTop,420,'top filter must not navigate toward results');
+  assert.equal(r.tagFilter,'b');
+  first.click();
+  assert.deepEqual(order(),initial);
+  assert.equal(host.scrollTop,420,'clearing selected tag must not scroll the page');
+  more.click();
+  const distant=Menu.last.items.find(x=>x.title==='#j');
+  assert.ok(distant,'far tag remains reachable through more without promotion');
+  distant.handler();
+  assert.deepEqual(order(),initial,'selecting from more cannot displace visible chips');
+  assert.equal(r.tagFilter,'j');
+  assert.equal(host.scrollTop,420,'more selection must not jump to results');
+  assert.equal(more.getAttribute('aria-pressed'),'true','more indicates off-shortlist selection');
+  const all=bar.querySelector('button[data-tag-key="all"]');
+  all.click();
+  assert.deepEqual(order(),initial);
+  assert.equal(host.scrollTop,420,'all must not jump to results');
+  await t.close();
+});
+
+test('top tag selection never automatically scrolls the horizontal filter bar',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
+  r.availableTags=['a','b','c','d','e','f','g','h','i','j'];
+  r.filterOpen=true;r.renderTagsFilter();
+  const bar=root.querySelector('.ex-filter-tags');
+  bar.scrollLeft=80;
+  const old=global.requestAnimationFrame,tasks=[];
+  try{
+    global.requestAnimationFrame=fn=>{tasks.push(fn);return tasks.length;};
+    bar.querySelector('button[data-tag-key="tag:a"]').click();
+    bar.querySelector('button[data-tag-key="tag:a"]').click();
+    bar.querySelector('button[data-tag-key="more"]').click();
+    Menu.last.items.find(x=>x.title==='#j').handler();
+    for(const task of tasks)task();
+    assert.equal(bar.scrollLeft,80,'selection and clearing keep the horizontal gesture position');
+    assert.equal(tasks.length,0,'no auto-scroll-to-active frame is scheduled');
+  }finally{
+    if(old===undefined)delete global.requestAnimationFrame;
+    else global.requestAnimationFrame=old;
+  }
+  await t.close();
+});
