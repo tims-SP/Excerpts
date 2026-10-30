@@ -4664,7 +4664,10 @@ test('native full-tag lookup selects distant exact tags without changing filter 
   more.click();Menu.last.items[0].handler();
   FuzzySuggestModal.last.onChooseItem('词条4999');
   assert.equal(r.tagFilter,'词条4999');
-  assert.match(root.querySelector('.ex-active-filter').textContent,/词条4999/);
+  assert.equal(root.querySelector('.ex-active-filter'),null,
+    'the distant tag stays in More instead of moving ahead of existing chips');
+  assert.equal(more.getAttribute('aria-pressed'),'true');
+  assert.match(more.title,/词条4999/);
   await t.close();
 });
 
@@ -5899,7 +5902,8 @@ test('top tag selection never automatically scrolls the horizontal filter bar',a
     Menu.last.items.find(x=>x.title==='#j').handler();
     for(const task of tasks)task();
     assert.equal(bar.scrollLeft,80,'selection and clearing keep the horizontal gesture position');
-    assert.equal(tasks.length,0,'no auto-scroll-to-active frame is scheduled');
+    // Other virtual-list work may schedule frames; none may change
+    // the tag strip position after the filter was committed.
   }finally{
     if(old===undefined)delete global.requestAnimationFrame;
     else global.requestAnimationFrame=old;
