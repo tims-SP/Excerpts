@@ -60,7 +60,6 @@ REQUIRED = {
     "card-tag-actions": ".ex-card .ex-tag-editor-actions",
     "selection-toolbar": ".ex-selection-toolbar:not([hidden])",
     "selection-card": ".ex-card[role='checkbox']",
-    "selection-footer": ".ex-selection-footer:not([hidden])",
     "delete-single-dialog": ".ex-delete-modal .modal-content",
     "delete-bulk-dialog": ".ex-delete-modal .modal-content",
     "saved-filter-dialog": ".ex-save-page-modal .modal-content",
@@ -622,25 +621,28 @@ with sync_playwright() as playwright:
             page.locator(".ex-page-options").click()
             page.locator(".menu button", has_text="批量选择").click()
             assert page.locator(".ex-selection-toolbar").is_visible()
+            assert page.locator(".ex-selection-toolbar button").count() == 3
+            assert page.locator(".ex-selection-footer").count() == 0
+            assert page.locator(".ex-selection-toolbar .ex-delete-selected").count() == 1
             page.locator(".ex-card").first.click(position={"x": 10, "y": 10})
             assert page.locator(".ex-card[aria-checked='true']").count() >= 1
             assert page.locator(".ex-page-hint").is_hidden(), (key,"normal selection shows intrusive recovery hint")
             screenshot(page, theme, width, "selection",
-                       "selection-toolbar", "selection-card", "selection-footer")
+                       "selection-toolbar", "selection-card")
             page.locator(".ex-delete-selected").click()
             assert page.locator(".ex-delete-modal").is_visible()
             assert_native_modal_geometry(page, key, "bulk-delete")
             screenshot(page, theme, width, "bulk-delete", "delete-bulk-dialog")
             page.locator(".ex-delete-cancel").click()
             page.evaluate("() => window.__pane.renderer.markStale()")
-            assert page.locator(".ex-selection-footer-count").inner_text() == "请退出选择后刷新"
+            assert "完成后刷新" in page.locator(".ex-selection-count").inner_text()
             assert page.locator(".ex-delete-selected").is_disabled()
             assert page.locator(".ex-page-hint").is_hidden(), (key,"selection duplicates local recovery")
             assert "列表已变化" in page.locator(".ex-selection-count").inner_text()
-            assert page.locator(".ex-select-cancel").is_enabled(), (key,"selection exit locked")
+            assert page.locator(".ex-select-done").is_enabled(), (key,"selection exit locked")
             screenshot(page, theme, width, "recovery-selection-stale",
-                       "selection-footer", "selection-toolbar")
-            page.locator(".ex-select-cancel").click()
+                       "selection-toolbar")
+            page.locator(".ex-select-done").click()
             assert page.locator(".ex-page-hint").get_attribute("data-state") == "stale"
             page.locator(".ex-recovery-action").click()
             page.wait_for_function("window.__pane.renderer.scanStatus === 'done'", timeout=15000)

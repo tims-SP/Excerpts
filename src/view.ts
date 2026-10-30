@@ -1,4 +1,4 @@
-import { FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, TextComponent, setIcon } from "obsidian";
+import { ButtonComponent, FuzzySuggestModal, MarkdownRenderChild, MarkdownRenderer, Menu, Notice, TFile, TextComponent, setIcon } from "obsidian";
 import { findSectionHeadingLine, parseMarkdown } from "./codec";
 import type ExcerptsPlugin from "./main";
 import { DeleteCandidate, DeleteProgress, EntryRepository, ReadInvalidatedError } from "./repository";
@@ -153,8 +153,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   private selectionCountEl!: HTMLElement;
   private selectionAllButton!: HTMLButtonElement;
   private selectionDoneButton!: HTMLButtonElement;
-  private selectionFooterEl!: HTMLElement;
-  private selectedFooterCountEl!: HTMLElement;
   private deleteSelectedButton!: HTMLButtonElement;
   private deleteBusy = false;
   private selectionBusy = false;
@@ -1086,15 +1084,28 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     toolbar.append(actions);
     this.selectionToolbarEl = node("div", "ex-toolbar ex-selection-toolbar");
     this.selectionToolbarEl.hidden = true;
+    this.selectionToolbarEl.setAttribute("aria-label", "批量选择操作");
     const selectionTitle = node("div", "ex-toolbar-title");
     this.selectionCountEl = node("span", "ex-selection-count");
+    this.selectionCountEl.setAttribute("role", "status");
     selectionTitle.append(this.selectionCountEl);
-    const selectionActions = node("div", "ex-toolbar-actions");
-    this.selectionAllButton = button("全选", () =>
-      void this.toggleSelectAll().catch(notify), "ex-select-all");
-    this.selectionDoneButton = button("完成", () => this.exitSelectionMode(), "ex-select-done");
-    selectionActions.append(this.selectionAllButton, this.selectionDoneButton);
-    this.selectionToolbarEl.append(selectionTitle, selectionActions);
+    this.selectionToolbarEl.append(selectionTitle);
+    const allControl = new ButtonComponent(this.selectionToolbarEl)
+      .setButtonText("全选")
+      .onClick(() => void this.toggleSelectAll().catch(notify));
+    this.selectionAllButton = allControl.buttonEl;
+    this.selectionAllButton.classList.add("ex-select-all");
+    const deleteControl = new ButtonComponent(this.selectionToolbarEl)
+      .setButtonText("删除 (0)")
+      .setWarning()
+      .onClick(() => this.confirmBulkDelete());
+    this.deleteSelectedButton = deleteControl.buttonEl;
+    this.deleteSelectedButton.classList.add("ex-delete-selected");
+    const doneControl = new ButtonComponent(this.selectionToolbarEl)
+      .setButtonText("完成")
+      .onClick(() => this.exitSelectionMode());
+    this.selectionDoneButton = doneControl.buttonEl;
+    this.selectionDoneButton.classList.add("ex-select-done");
     root.append(toolbar, this.selectionToolbarEl, this.searchWrap);
     this.containerEl.addEventListener("keydown", event => {
       if (event.key === "Escape" && this.pageMode === "calendar") {
@@ -1111,15 +1122,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     root.append(this.tagBar);
     this.listEl = node("div", "ex-card-list");
     root.append(this.listEl);
-    this.selectionFooterEl = node("div", "ex-selection-footer");
-    this.selectionFooterEl.hidden = true;
-    this.selectedFooterCountEl = node("span", "ex-selection-footer-count");
-    const footerActions = node("div", "ex-selection-footer-actions");
-    footerActions.append(button("取消", () => this.exitSelectionMode(), "ex-select-cancel"));
-    this.deleteSelectedButton = button("删除 (0)", () => this.confirmBulkDelete(), "ex-delete-selected mod-warning");
-    footerActions.append(this.deleteSelectedButton);
-    this.selectionFooterEl.append(this.selectedFooterCountEl, footerActions);
-    root.append(this.selectionFooterEl);
     // Preserve the entire list DOM and Markdown renderer children during calendar navigation.
     this.feedEl = node("div", "ex-feed-view");
     this.feedEl.append(...Array.from(root.childNodes));
@@ -1338,15 +1340,11 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const stale = this.scanStatus !== "done" && !this.selectionBusy && !this.deleteBusy;
     this.selectionCountEl.textContent = this.selectionBusy ?
       "正在选择 " + this.selectionProcessed + " / " + this.selectionBatchTotal :
-      "已选 " + chosen + " / " + total + (stale ? " · 列表已变化" : "");
-    this.selectedFooterCountEl.textContent = this.selectionBusy ?
-      "正在选择…" : stale ? "请退出选择后刷新" : "已选择 " + chosen + " 条";
+      "已选 " + chosen + " / " + total + (stale ? " · 列表已变化，请完成后刷新" : "");
     this.selectionAllButton.textContent = chosen === total && total > 0 ? "取消全选" : "全选";
     this.selectionAllButton.disabled = this.homeInvalid || this.scanStatus !== "done" ||
       this.deleteBusy || this.selectionBusy || total === 0;
     this.selectionDoneButton.disabled = this.deleteBusy || this.selectionBusy;
-    const cancel = this.selectionFooterEl.querySelector<HTMLButtonElement>(".ex-select-cancel");
-    if (cancel) cancel.disabled = this.deleteBusy || this.selectionBusy;
     this.deleteSelectedButton.textContent = "删除 (" + chosen + ")";
     this.deleteSelectedButton.disabled = this.deleteBusy || this.selectionBusy || chosen === 0 ||
       this.scanStatus !== "done" || Boolean(this.plugin.isBusy(this));
@@ -1357,7 +1355,6 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     const ordinary = this.containerEl.querySelector<HTMLElement>(".ex-toolbar:not(.ex-selection-toolbar)");
     if (ordinary) ordinary.hidden = active;
     this.selectionToolbarEl.hidden = !active;
-    this.selectionFooterEl.hidden = !active;
     for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")))
       this.paintCardSelection(card, card.dataset.path ?? "");
     this.updateSelectionControls();

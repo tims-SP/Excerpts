@@ -193,14 +193,17 @@ test('native Markdown edit action is a separate secondary control with a compact
   assert.match(css,/\.ex-compose-actions > button\.ex-btn-primary/);
 });
 
-test('bulk controls use the existing footer column and never overlay card body',()=>{
+test('batch actions use one native top toolbar without a floating footer',()=>{
   assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card\.ex-is-selected/);
   assert.match(css,/\.excerpts-root \.ex-selection-indicator/);
-  assert.match(css,/\.excerpts-root \.ex-selection-footer\s*\{/);
-  assert.match(css,/position:\s*sticky/);
-  assert.match(css,/bottom:\s*calc\(8px \+ env\(safe-area-inset-bottom/);
-  assert.match(css,/\.excerpts-root \.ex-selection-footer\[hidden\]/);
-  assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card-options/);
+  assert.match(css,/\.excerpts-root \.ex-selection-toolbar\s*\{[^}]*position:\s*sticky; top:\s*0/);
+  assert.match(css,/grid-template-areas:\s*"count all delete done"/);
+  assert.match(css,/grid-template-areas:\s*"count done" "all delete"/);
+  assert.match(css,/\.excerpts-root \.ex-selection-toolbar\[hidden\]/);
+  assert.match(css,/\.excerpts-root \.ex-selection-toolbar button \{ min-height: 44px; \}/);
+  assert.doesNotMatch(css,/ex-selection-footer|ex-select-cancel/);
+  assert.doesNotMatch(css,/\.excerpts-root\.ex-is-selecting\s*\{[^}]*padding-bottom:\s*96px/);
+  assert.doesNotMatch(css,/button\.ex-delete-selected\s*\{[^}]*background:/);
 });
 test('delete confirmation has theme-native responsive sizing and safe focus',()=>{
   assert.match(css,/\.ex-delete-modal/);

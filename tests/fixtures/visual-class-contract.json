@@ -183,13 +183,9 @@
     "ex-search-wrap",
     "ex-section",
     "ex-select-all",
-    "ex-select-cancel",
     "ex-select-done",
     "ex-selected",
     "ex-selection-count",
-    "ex-selection-footer",
-    "ex-selection-footer-actions",
-    "ex-selection-footer-count",
     "ex-selection-indicator",
     "ex-selection-toolbar",
     "ex-settings-busy-hint",
@@ -250,6 +246,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "1b7765250c692fb4f216f4963d96ee94b46abef6",
+  "stylesheet_git_blob_sha": "3d285071091f8bff2214aa7dae18141078112055",
   "stylesheet_review": "2026-10-27: inspected representative card, section and failure screenshots at 390/1280px in light/dark from Screenshot QA run 40524631747; full Chromium layout, frame, native-scroll and video checks passed. Approved loading-state-only visibility rule; no geometry, color, spacing or existing component token changed. Real Android/iOS Obsidian remains unverified."
 }
