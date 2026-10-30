@@ -5692,3 +5692,50 @@ test('one hundred native Markdown mount/unmount cycles preserve only baseline ch
   assert.equal(r.sectionObservers.size,0);
   assert.equal(r.queue.length,0);
 });
+
+
+test('a newly saved excerpt survives its own metadata event during first cachedRead without refresh',async()=>{
+  const t=await fixture(false,'# 已有卡片\n\n原始正文');
+  const root=t.pane.contentEl;
+  const oldRead=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const oldFresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  const oldScan=t.plugin.repo.scan.bind(t.plugin.repo);
+  let eventCount=0,freshReads=0,scans=0;
+  t.plugin.repo.scan=async(...args)=>{scans++;return oldScan(...args);};
+  t.plugin.app.vault.read=async(file)=>{if(file!==t.md)freshReads++;return oldFresh(file);};
+  t.plugin.app.vault.cachedRead=async(file)=>{
+    const content=await oldRead(file);
+    if(file!==t.md && file.extension==='md' && !eventCount){
+      eventCount++;
+      // A real Obsidian metadata event may invalidate the repository while
+      // its first native cachedRead promise is still unresolved.
+      t.metadataEvents.get('changed')?.(file);
+    }
+    return content;
+  };
+  const input=root.querySelector('.ex-compose-text');
+  input.value='# 新的摘录\n\n立即可见的内容\n\n## 来源\n\n原书';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  clickByLabel(root,'添加标签');
+  [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')]
+    .find(x=>x.textContent.includes('哲学')).click();
+  clickByLabel(root,'保存');
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2','new index committed');
+  const created=[...t.files.values()].find(x=>x.file instanceof TFile &&
+    x.file.extension==='md' && x.file!==t.md);
+  assert.ok(created,'native create persisted the new file');
+  await waitFor(()=>root.querySelector('.ex-card[data-path="'+created.file.path+'"]') &&
+    !root.querySelector('.ex-card[data-path="'+created.file.path+'"]').classList.contains('ex-card-loading'),
+    'new card hydration settled');
+  const card=root.querySelector('.ex-card[data-path="'+created.file.path+'"]');
+  assert.equal(eventCount,1,'metadata event injected during first read');
+  assert.equal(card.querySelector('.ex-preview-error'),null,
+    'one temporary stale read must not leave a permanent failed card');
+  assert.match(card.textContent,/立即可见的内容/);
+  assert.match(card.textContent,/来源/);
+  assert.match(card.textContent,/哲学/);
+  assert.equal(freshReads,1,'only the affected new file receives one verified fresh read');
+  assert.equal(scans,0,'card recovery does not start an index scan');
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
+  await t.close();
+});
