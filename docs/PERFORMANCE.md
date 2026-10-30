@@ -72,3 +72,47 @@ GitHub Actions 工作流 `Repository performance baseline` 有独立的三规模
 1. 比较三个规模的扫描、冷/热搜索耗时、实际重读量、内存表现。
 2. 若发现可复现退化，先定位瓶颈及设定合理资源约束，再讨论是否收束功能或最小修复。
 3. 对真实 Obsidian Vault 的索引构建、原生 MarkdownRenderer、图片/视频和移动端进行独立验收；没有证据时继续标记未验证。
+
+
+## G3 第二轮：真实 Obsidian 客户端只读测量规程
+
+**当前状态：待真实设备执行，没有原生测量结果。** 可用远程电脑离线，不能以 Node 模拟器、Linux CI 或 Chromium 替代官方 Obsidian 客户端验收。
+
+### 桌面端操作步骤
+
+1. 建立独立测试 Vault，安装与待验收提交一致的 Excerpts 构建，确认插件和 Obsidian 初始 Vault/MetadataCache 索引已加载。
+2. 在独立测试 Vault 创建 G3-测试 文件夹，分别准备 100、1,000、10,000 份实际 Markdown 笔记。30,000 条需要单独确认。不能默认扫描整个 Vault 或个人日常笔记。
+3. 停止标签编辑、选择、删除、扫描、搜索等操作。打开 Obsidian 桌面客户端开发者工具 Console，先输入以下设置：
+
+   ~~~js
+   globalThis.__EXCERPTS_NATIVE_PROBE_CONFIG__ = {
+     confirm: "READ_ONLY_DIAGNOSTICS",
+     folderPath: "G3-测试",
+     maxFiles: 1000,
+     recursive: true,
+     measureSearch: true
+   };
+   ~~~
+
+   maxFiles 是整个目标目录的文件数量上限，而非抽样大小。只允许 100、1000、10000、30000，超过即拒绝；30,000 条还必须设置 allowLargeScan: true。根目录不允许扫描。
+4. 打开仓库文件 scripts/native-vault-probe.cjs，复制完整内容到同一个 Console 执行。成功时打印 EXCERPTS_NATIVE_PROBE 加 JSON，失败打印 EXCERPTS_NATIVE_PROBE_FAILED。只保存汇总 JSON，不复制或分享原始文件名、私人路径或 Markdown 正文。
+5. 记录真实设备、OS、Obsidian 版本、插件完整 SHA、主题、文件数量、初始索引状态和运行前是否刚启动。每个规模建议至少三次独立测量，统计中位数和波动范围，不将不同设备耗时硬性排名。
+
+### 诊断的精确测量边界
+
+- 运行真实 app.vault.getMarkdownFiles()，在已指定文件夹内过滤并测量路径列举耗时。
+- 运行真实 app.metadataCache.getFileCache()，测量已经建立的元数据缓存读取耗时，**不包含首次建立整个 MetadataCache 的时间**。
+- 在插件空闲且目录身份有效的情况下使用现有 EntryRepository.scan 和当前扫描批次；不触发 UI 自动刷新。
+- 只有明确设置 measureSearch: true 时才执行两次 EntryRepository.search；返回耗时、匹配个数与可用的 JS 堆快照。不清空插件缓存，因此“first”不代表真正冷的操作系统磁盘，也不保证插件缓存此前未被使用。
+- 诊断结果不输出文件名、路径或正文。全文搜索**在本机读取**目录内的笔记正文，并可能填充插件现有的内存搜索缓存。
+- 不创建、写入、移动或删除 Vault 文件，也不增加新锁、自动重试或后台任务。任何并发操作或目录身份变化会使诊断中止。应在隔离测试 Vault 中进行。
+
+### 原生 Markdown、媒体、连续帧与内存
+
+此脚本没有主动调用 MarkdownRenderer、解码媒体或播放视频，因此**不用于**宣称 MarkdownRenderer、图片、视频、滚动帧率或内存回收已通过。应在真实 Obsidian 客户端里实际打开摘录视图，借助桌面 DevTools Performance 面板录制列表初次加载、打开 H2、加载图片、视频播放和多次深滚动的操作，再用 Memory 面板比较运行前、操作后、关闭视图后的堆快照，检查残留 DOM/MarkdownRenderChild。需区分 Obsidian 宿主和插件对象；单次快照不是泄漏证明。
+
+Android 与 iOS 仍要使用**官方客户端**和真实设备，记录设备、系统版本、Obsidian 版本、主题、样本规模、操作步骤、帧率及录屏，未获得证据则继续写为**未验证**。
+
+### 安全测试说明
+
+tests/native-vault-probe.test.cjs 在 Node 模拟宿主下验证：未授权/超出样本上限/并发 busy/文件夹被替换时拒绝执行，正常运行不得调用任何 Vault 写入方法。scripts/test.cjs 将其加入 npm run verify。模拟宿主测试通过不代表官方 Obsidian 客户端实测已经完成。
