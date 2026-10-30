@@ -213,6 +213,8 @@ with sync_playwright() as playwright:
             # The last source tag must remain visible and highlighted even on
             # narrow cards that would otherwise hide it behind +N.
             page.locator('.ex-toolbar button[aria-label="筛选标签"]').click()
+            toolbar_order = page.locator('.ex-filter-tags').evaluate("""el =>
+              Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""")
             filter_choice = page.locator('.ex-filter-tags button', has_text="#读书笔记")
             if filter_choice.count():
                 filter_choice.first.click()
@@ -228,22 +230,28 @@ with sync_playwright() as playwright:
             assert not card.locator(".ex-chips").evaluate("el => el.classList.contains('ex-tags-expanded')"), (
                 theme,width,"filtered row must be folded")
             selected = card.locator(".ex-tag.ex-selected")
-            assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text() == "#读书笔记", (
-                theme,width,"top bar must show active filter")
             strip = page.locator(".ex-filter-tags")
-            # The bar may be scrolled far away by touch before a new selection.
-            # Rerendering must reveal the active pill without scrolling the page.
+            toolbar_now = strip.evaluate("""el =>
+              Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""")
+            assert toolbar_now == toolbar_order, (theme,width,"selection reordered filter targets")
+            assert strip.evaluate("""el => {
+              const direct=el.querySelector('button[data-tag-key="tag:读书笔记"]');
+              const more=el.querySelector('button[data-tag-key="more"]');
+              return direct?.getAttribute('aria-pressed')==='true' ||
+                (more?.getAttribute('aria-pressed')==='true' &&
+                 more?.title.includes('读书笔记'));
+            }"""), (theme,width,"off-shortlist selection is not indicated")
+            # Even after user-scrolling the tag strip, filtering and repainting
+            # must not auto-reveal or reposition the tag or vertical page.
             strip.evaluate("el => { el.scrollLeft = el.scrollWidth }")
+            before_horizontal = strip.evaluate("el => el.scrollLeft")
             before_vertical = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
             page.evaluate("window.__pane.renderer.renderTagsFilter()")
-            page.wait_for_function("""() => {
-              const bar=document.querySelector('.ex-filter-tags'), chip=bar?.querySelector('.ex-active-filter');
-              if(!bar||!chip)return false;
-              const b=bar.getBoundingClientRect(),c=chip.getBoundingClientRect();
-              return c.left>=b.left-1 && c.right<=b.right+1;
-            }""", timeout=4000)
+            page.wait_for_timeout(80)
+            assert strip.evaluate("el => el.scrollLeft") == before_horizontal, (
+                theme,width,"selection unexpectedly moved horizontal tag strip")
             assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") == before_vertical, (
-                theme,width,"filter bar positioning scrolled the page")
+                theme,width,"filter bar repaint scrolled the page")
             selected = card.locator(".ex-tag.ex-selected")
             assert selected.count() == 1 and selected.is_visible(), (theme,width,"filtered tag was hidden")
             assert selected.inner_text() == "#读书笔记", (theme,width,"wrong highlighted tag")
