@@ -5719,7 +5719,8 @@ test('a newly saved excerpt survives its own metadata event during first cachedR
   clickByLabel(root,'添加标签');
   [...root.querySelectorAll('.ex-capture-tags .ex-tag-choice')]
     .find(x=>x.textContent.includes('哲学')).click();
-  clickByLabel(root,'保存');
+  [...root.querySelectorAll('.ex-compose-actions button')]
+    .find(x=>x.textContent==='保存').click();
   await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2','new index committed');
   const created=[...t.files.values()].find(x=>x.file instanceof TFile &&
     x.file.extension==='md' && x.file!==t.md);
