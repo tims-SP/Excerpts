@@ -1564,6 +1564,12 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
       const changed = verification?.changed ?? new Set<string>();
       for (const path of changed) this.invalidatedCardPaths.add(path);
       const nextIndex = new Map(cards.map(card => [card.path, card]));
+      // Preserve expansion for filtered cards, not for entries removed from the
+      // committed index. Otherwise path-keyed UI state grows across deletions.
+      for (const path of this.expandedBodies)
+        if (!nextIndex.has(path)) this.expandedBodies.delete(path);
+      for (const path of this.expandedTagRows)
+        if (!nextIndex.has(path)) this.expandedTagRows.delete(path);
       // An offscreen card cannot be byte-verified without expanding the source-read
       // budget. Discard only its stale H2 ordinals, never the whole card or DOM.
       // Visible cards with proven identical raw bytes keep their disclosure state.
