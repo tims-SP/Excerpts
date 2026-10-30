@@ -325,6 +325,13 @@ export class EntryRepository {
           result.failed.push({ path, reason: "文件正在编辑器中打开，请先关闭" });
           continue;
         }
+        // Host editor-state inspection can expose a concurrent Vault update.
+        // Recheck immediately before the native operation; no automatic retry.
+        this.assertScopedFile(ws, path, candidate.file);
+        if (current.stat.mtime !== candidate.mtime || current.stat.size !== candidate.size) {
+          result.failed.push({ path, reason: "文件已被修改，请重新选择" });
+          continue;
+        }
         await this.app.fileManager.trashFile(current);
         if (this.app.vault.getAbstractFileByPath(path) === current)
           throw new Error("删除结果未确认，原文件仍然存在，请核对后手动刷新");
