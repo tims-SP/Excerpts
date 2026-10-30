@@ -162,8 +162,50 @@ async function run() {
       }
       return { documents: sampleCount, h2Sections: totalSections };
     });
+    // Distribution checks use exactly the same generated on-disk Markdown.
+    // Metadata-only queries should be able to match without reading any body.
+    const indexed = await stage("filename-index-match", async () => {
+      const matches = await repo.search(cards, "记录-", () => false);
+      assert.equal(matches.size, count);
+      return { matches: matches.size };
+    });
+    assert.equal(indexed.fileReads, 0, "filename-index matches must not read note bodies");
+    const lastBody = await stage("body-last-file-match", async () => {
+      const matches = await repo.search(cards,
+        "这是第 " + (count - 1) + " 条固定语料", () => false);
+      assert.equal(matches.size, 1, "only the last generated body has that exact phrase");
+      assert.equal(matches.has(fileList.at(-1).path), true);
+      return { matches: matches.size };
+    });
+    const frequentBody = await stage("body-many-matches", async () => {
+      const matches = await repo.search(cards, "固定语料", () => false);
+      assert.equal(matches.size, count);
+      return { matches: matches.size };
+    });
+    let cancelChecks = 0;
+    const interrupted = await stage("early-cancel", async () => {
+      const matches = await repo.search(cards, "z-probe-cancel-no-match",
+        () => ++cancelChecks >= 6);
+      assert.equal(matches.size, 0);
+      return { matches: matches.size, cancelChecks };
+    });
+    // Search cache is bounded, not an unbounded persistent full-text index.
+    // Repeated full searches reveal actual cache rereads and retained JS heap.
+    const rounds = count <= 1000 ? 20 : count <= 10000 ? 10 : 3;
+    const samples = [];
+    const repeated = await stage("repeated-fulltext-searches", async () => {
+      for (let i = 0; i < rounds; i++) {
+        const matches = await repo.search(cards, "zzq-bounded-repeat-" + i, () => false);
+        assert.equal(matches.size, 0);
+        if (i === 0 || i === Math.floor(rounds / 2) || i === rounds - 1) {
+          if (global.gc) global.gc();
+          samples.push({ completed: i + 1, memory: sampleMemory() });
+        }
+      }
+      return { rounds, gcSampledMemory: samples };
+    });
     const data = {
-      schema: 1,
+      schema: 2,
       scope: "real local Markdown files + simulated Obsidian Vault/MetadataCache adapter",
       excluded: [
         "actual Obsidian Vault internal scanning and metadata parsing",
@@ -172,7 +214,8 @@ async function run() {
       ],
       count, fixtureMiB: mib(fixtureBytes), node: process.version,
       platform: process.platform, architecture: process.arch,
-      initialMemory, stages: [scan, cold, warm, previews]
+      initialMemory, stages: [scan, cold, warm, previews, indexed,
+        lastBody, frequentBody, interrupted, repeated]
     };
     fs.mkdirSync(path.dirname(output), { recursive: true });
     fs.writeFileSync(output, JSON.stringify(data, null, 2) + "\n");
