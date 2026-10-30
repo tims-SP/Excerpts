@@ -917,8 +917,13 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "filter-fuzzy-picker", "native-tag-picker")
             page.locator(".native-fuzzy-results button").first.click()
             assert page.locator(".native-fuzzy").count() == 0, (key,"tag modal failed to close")
-            assert page.locator(".ex-active-filter").is_visible()
-            assert "#查找标签069" in page.locator(".ex-active-filter").inner_text()
+            selected_more = page.locator('.ex-filter-tags button[data-tag-key="more"]')
+            assert selected_more.get_attribute("aria-pressed") == "true", (
+                key,"fuzzy-selected distant tag must retain selection in More")
+            assert "查找标签069" in selected_more.get_attribute("title"), (
+                key,"fuzzy-selected tag identity missing from More")
+            assert not page.locator('.ex-filter-tags button[data-tag-key="tag:查找标签069"]').count(), (
+                key,"fuzzy selection must not promote a distant chip")
             screenshot(page, theme, width, "filter-fuzzy-selected", "list-filter")
             page.evaluate("""() => {
               const r=window.__pane.renderer;
