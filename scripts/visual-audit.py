@@ -84,7 +84,7 @@ SCENARIOS = [
     "recovery-search-stale", "recovery-tag-stale", "recovery-tag-pending", "recovery-selection-stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
-WIDTHS = (320, 390, 768, 1280)
+WIDTHS = (320, 390, 430, 768, 1280)
 manifest = {"kind": "mock-webview", "viewport_height": 900,
             "themes": list(THEMES), "widths": list(WIDTHS),
             "required": list(REQUIRED), "scenarios": list(SCENARIOS),
