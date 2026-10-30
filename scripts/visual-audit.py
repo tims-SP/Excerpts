@@ -165,6 +165,42 @@ def geometry(page, theme, width):
     return result
 
 
+def assert_native_modal_geometry(page, key, state):
+    """Native Modal requires a full-screen overlay and a centered dialog shell.
+
+    Check the host fixture independently of any plugin component styles. Otherwise
+    the mock can produce left-anchored, partially shaded screenshots yet pass QA.
+    """
+    result = page.evaluate("""() => {
+      const cover = document.querySelector('.modal-container');
+      const dialog = cover?.querySelector('.modal');
+      const content = dialog?.querySelector('.modal-content');
+      if (!cover || !dialog || !content) return null;
+      const a = cover.getBoundingClientRect(), b = dialog.getBoundingClientRect();
+      return {
+        cover: [a.left, a.top, a.right, a.bottom],
+        dialog: [b.left, b.top, b.right, b.bottom],
+        backdrop: getComputedStyle(cover).backgroundColor,
+        viewport: [innerWidth, innerHeight],
+      };
+    }""")
+    assert result is not None, (key, state, "missing native modal container")
+    left, top, right, bottom = result["cover"]
+    width, height = result["viewport"]
+    assert abs(left) <= 1 and abs(top) <= 1 and abs(right - width) <= 1 and abs(bottom - height) <= 1, (
+        key, state, "native overlay does not shade entire viewport", result)
+    x, y, end_x, end_y = result["dialog"]
+    assert 0 <= x <= end_x <= width and 0 <= y <= end_y <= height, (
+        key, state, "modal not inside viewport", result)
+    assert abs((x + end_x) / 2 - width / 2) <= 2, (
+        key, state, "native dialog is not horizontally centered", result)
+    assert abs((y + end_y) / 2 - height / 2) <= 2, (
+        key, state, "native dialog is not vertically centered", result)
+    assert result["backdrop"] != "rgba(0, 0, 0, 0)", (
+        key, state, "native modal backdrop is transparent", result)
+    manifest.setdefault("native_modal_geometry", {}).setdefault(key, {})[state] = result
+
+
 def assert_no_runtime_errors(errors, key, state):
     assert not errors, (key, state, errors)
 
@@ -566,6 +602,7 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "card-menu", "list-menu")
             page.locator(".menu button", has_text="删除摘录").click()
             assert page.locator(".ex-delete-modal").is_visible()
+            assert_native_modal_geometry(page, key, "single-delete")
             screenshot(page, theme, width, "single-delete", "delete-single-dialog")
             page.locator(".ex-delete-cancel").click()
 
@@ -579,6 +616,7 @@ with sync_playwright() as playwright:
                        "selection-toolbar", "selection-card", "selection-footer")
             page.locator(".ex-delete-selected").click()
             assert page.locator(".ex-delete-modal").is_visible()
+            assert_native_modal_geometry(page, key, "bulk-delete")
             screenshot(page, theme, width, "bulk-delete", "delete-bulk-dialog")
             page.locator(".ex-delete-cancel").click()
             page.evaluate("() => window.__pane.renderer.markStale()")
@@ -599,6 +637,7 @@ with sync_playwright() as playwright:
             page.locator(".ex-page-options").click()
             page.locator(".menu button", has_text="保存当前筛选").click()
             assert page.locator(".ex-save-page-modal").is_visible()
+            assert_native_modal_geometry(page, key, "saved-filter")
             screenshot(page, theme, width, "saved-filter", "saved-filter-dialog")
             page.locator(".ex-save-page-input").fill("")
             modal_field = page.locator(".ex-save-page-input")
