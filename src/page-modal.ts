@@ -1,4 +1,4 @@
-import { App, Modal } from "obsidian";
+import { App, ButtonComponent, Modal, TextComponent } from "obsidian";
 import { pageNameError } from "./page-config";
 
 /** One-field, theme-native save dialog; the caller owns all file writes. */
@@ -24,11 +24,11 @@ export class SavePageModal extends Modal {
     const label = document.createElement("label");
     label.className = "ex-save-page-label";
     label.textContent = "页面名称";
-    const input = document.createElement("input");
-    input.className = "ex-save-page-input";
-    input.type = "text";
-    input.placeholder = "例如：文学摘录";
-    input.value = this.suggestedName;
+    const nameField = new TextComponent(field)
+      .setPlaceholder("例如：文学摘录")
+      .setValue(this.suggestedName);
+    const input = nameField.inputEl;
+    input.classList.add("ex-save-page-input");
     input.id = "ex-page-name-" + Math.random().toString(36).slice(2);
     label.htmlFor = input.id;
     const hint = document.createElement("div");
@@ -40,15 +40,13 @@ export class SavePageModal extends Modal {
     summary.textContent = this.description;
     const footer = document.createElement("div");
     footer.className = "ex-save-page-footer";
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "ex-save-page-cancel";
-    cancel.textContent = "取消";
-    cancel.addEventListener("click", () => { if (!this.saving) this.close(); });
-    const save = document.createElement("button");
-    save.type = "button";
-    save.className = "mod-cta ex-save-page-submit";
-    save.textContent = "保存";
+    const cancelControl = new ButtonComponent(footer).setButtonText("取消");
+    const cancel = cancelControl.buttonEl;
+    cancel.classList.add("ex-save-page-cancel");
+    cancelControl.onClick(() => { if (!this.saving) this.close(); });
+    const saveControl = new ButtonComponent(footer).setButtonText("保存").setCta();
+    const save = saveControl.buttonEl;
+    save.classList.add("ex-save-page-submit");
     const refresh = () => {
       const name = input.value.trim();
       const error = pageNameError(name) ?? this.validateName(name);
@@ -87,7 +85,7 @@ export class SavePageModal extends Modal {
     input.addEventListener("keydown", event => {
       if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); void commit(); }
     });
-    save.addEventListener("click", () => void commit());
+    saveControl.onClick(() => void commit());
     footer.append(cancel, save);
     this.contentEl.append(title, subtitle, field, summary, footer);
     refresh();
