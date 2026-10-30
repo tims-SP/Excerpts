@@ -618,9 +618,29 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "single-delete", "delete-single-dialog")
             page.locator(".ex-delete-cancel").click()
 
+            page.evaluate("() => { document.querySelector('.excerpts-native-host').scrollTop = 0; }")
             page.locator(".ex-page-options").click()
             page.locator(".menu button", has_text="批量选择").click()
             assert page.locator(".ex-selection-toolbar").is_visible()
+            selection_geometry = page.evaluate("""() => {
+              const root = document.querySelector('.excerpts-root');
+              const toolbar = root.querySelector('.ex-selection-toolbar');
+              const header = root.querySelector('.ex-header');
+              const box = toolbar.getBoundingClientRect();
+              return {
+                gap: box.top - root.getBoundingClientRect().top,
+                rootPaddingTop: getComputedStyle(root).paddingTop,
+                toolbarMarginBottom: getComputedStyle(toolbar).marginBottom,
+                headerDisplay: getComputedStyle(header).display,
+                horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1
+              };
+            }""")
+            assert abs(selection_geometry["gap"]) <= 1, (key, "selection top gap", selection_geometry)
+            assert selection_geometry["rootPaddingTop"] == "0px", (key, "selection root padding", selection_geometry)
+            assert selection_geometry["toolbarMarginBottom"] == "8px", (key, "selection list gap", selection_geometry)
+            assert selection_geometry["headerDisplay"] == "none", (key, "own header still visible", selection_geometry)
+            assert not selection_geometry["horizontalOverflow"], (key, "selection horizontal overflow", selection_geometry)
+            manifest.setdefault("selection_geometry", {})[key] = selection_geometry
             assert page.locator(".ex-selection-toolbar button").count() == 3
             assert page.locator(".ex-selection-footer").count() == 0
             assert page.locator(".ex-selection-toolbar .ex-delete-selected").count() == 1
@@ -743,6 +763,59 @@ with sync_playwright() as playwright:
             }""")
             assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") >= 300, (
                 key,"long list did not scroll")
+            # The long real virtualized list must hold the visible card's screen
+            # position when the header/composer disappear and return.
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              host.scrollTop = Math.min(1700, host.scrollHeight - host.clientHeight - 300);
+            }""")
+            page.wait_for_function("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const r = host.getBoundingClientRect();
+              return host.scrollTop > 600 && [...document.querySelectorAll('.ex-card')].some(card => {
+                const box = card.getBoundingClientRect();
+                return box.top > r.top + 120 && box.bottom < r.bottom - 20;
+              });
+            }""", timeout=15000)
+            deep_entry = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const r = host.getBoundingClientRect();
+              const card = [...document.querySelectorAll('.ex-card')].find(card => {
+                const box = card.getBoundingClientRect();
+                return box.top > r.top + 120 && box.bottom < r.bottom - 20;
+              });
+              if (!card) throw Error('no fully visible card before selection');
+              const path = card.dataset.path;
+              const before = card.getBoundingClientRect().top;
+              window.__deepSelectionCardPath = path;
+              window.__pane.renderer.enterSelectionMode();
+              const after = document.querySelector('.ex-card[data-path="' + CSS.escape(path) + '"]')?.getBoundingClientRect().top;
+              return {before, after, scrollTop:host.scrollTop};
+            }""")
+            assert deep_entry["after"] is not None and abs(deep_entry["after"] - deep_entry["before"]) <= 3, (
+                key,"entering selection shifts the visible card",deep_entry)
+            assert page.locator(".ex-selection-toolbar").is_visible()
+            deep_exit = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const card = document.querySelector('.ex-card[data-path="' + CSS.escape(window.__deepSelectionCardPath) + '"]');
+              const before = card?.getBoundingClientRect().top;
+              document.querySelector('.ex-select-done').click();
+              const after = document.querySelector('.ex-card[data-path="' + CSS.escape(window.__deepSelectionCardPath) + '"]')?.getBoundingClientRect().top;
+              return {before, after, scrollTop:host.scrollTop,
+                      headerDisplay:getComputedStyle(document.querySelector('.ex-header')).display};
+            }""")
+            assert deep_exit["before"] is not None and deep_exit["after"] is not None, (
+                key,"visible card lost on leaving selection",deep_exit)
+            assert abs(deep_exit["after"] - deep_exit["before"]) <= 4, (
+                key,"leaving selection shifts the visible card",deep_exit)
+            assert deep_exit["headerDisplay"] != "none", (key,"normal header not restored",deep_exit)
+            manifest.setdefault("selection_deep_scroll", {})[key] = {
+              "enter": deep_entry, "exit": deep_exit
+            }
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              host.scrollTop = 520;
+            }""")
             page.evaluate("() => window.__pane.renderer.markStale()")
             # Query and click one currently mounted card in a single browser
             # turn; the virtualizer is free to recycle its other row nodes.

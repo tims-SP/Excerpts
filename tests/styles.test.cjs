@@ -196,7 +196,10 @@ test('native Markdown edit action is a separate secondary control with a compact
 test('batch actions use one native top toolbar without a floating footer',()=>{
   assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card\.ex-is-selected/);
   assert.match(css,/\.excerpts-root \.ex-selection-indicator/);
+  assert.match(css,/\.excerpts-root\.ex-is-selecting \{ padding-top: 0; \}/);
+  assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-header \{ display: none; \}/);
   assert.match(css,/\.excerpts-root \.ex-selection-toolbar\s*\{[^}]*position:\s*sticky; top:\s*0/);
+  assert.match(css,/margin-top:\s*0; margin-bottom:\s*var\(--ex-space-2\)/);
   assert.match(css,/grid-template-areas:\s*"count all delete done"/);
   assert.match(css,/grid-template-areas:\s*"count done" "all delete"/);
   assert.match(css,/\.excerpts-root \.ex-selection-toolbar\[hidden\]/);

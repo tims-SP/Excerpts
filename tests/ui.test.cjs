@@ -1962,6 +1962,8 @@ test('selection actions are native buttons in one toolbar without a bottom overl
   assert.ok(toolbar && !toolbar.hidden);
   assert.equal(root.querySelector('.ex-selection-footer'),null);
   assert.equal(toolbar.querySelectorAll('button').length,3);
+  assert.equal(root.querySelector('.ex-header').isConnected,true,'own header remains mounted');
+  assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   assert.equal(toolbar.querySelectorAll('button[data-native-control="button"]').length,3);
   assert.ok(toolbar.querySelector('.ex-delete-selected').classList.contains('mod-warning'));
   assert.equal(toolbar.querySelector('.ex-delete-selected').disabled,true);
@@ -1972,6 +1974,7 @@ test('selection actions are native buttons in one toolbar without a bottom overl
   assert.equal(toolbar.querySelector('.ex-delete-selected').textContent,'删除 (1)');
   toolbar.querySelector('.ex-select-done').click();
   assert.equal(host.scrollTop,350,'exiting selection must not request a scroll');
+  assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false);
   assert.equal(root.querySelector('.ex-selection-footer'),null);
   await t.close();
 });

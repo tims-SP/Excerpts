@@ -685,7 +685,10 @@
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
 }
 
-/* Use one native Obsidian button toolbar; do not overlap bottom mobile chrome. */
+/* Use one native Obsidian button toolbar; do not overlap bottom mobile chrome.
+   The selection state owns its top boundary; normal page spacing stays intact. */
+.excerpts-root.ex-is-selecting { padding-top: 0; }
+.excerpts-root.ex-is-selecting .ex-header { display: none; }
 .excerpts-root .ex-selection-toolbar[hidden],
 .excerpts-root .ex-toolbar[hidden],
 .excerpts-root .ex-delete-error[hidden] { display: none !important; }
@@ -698,6 +701,7 @@
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center; gap: var(--size-4-2, 8px);
   padding: 8px 12px; background: var(--background-primary);
+  margin-top: 0; margin-bottom: var(--ex-space-2);
   border-bottom: 1px solid var(--background-modifier-border);
 }
 .excerpts-root .ex-selection-toolbar .ex-toolbar-title {

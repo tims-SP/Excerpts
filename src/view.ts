@@ -1351,13 +1351,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private updateSelectionUI(): void {
     const active = this.selectionMode !== "normal";
-    this.containerEl.classList.toggle("ex-is-selecting", active);
-    const ordinary = this.containerEl.querySelector<HTMLElement>(".ex-toolbar:not(.ex-selection-toolbar)");
-    if (ordinary) ordinary.hidden = active;
-    this.selectionToolbarEl.hidden = !active;
-    for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")))
-      this.paintCardSelection(card, card.dataset.path ?? "");
-    this.updateSelectionControls();
+    const update = () => {
+      this.containerEl.classList.toggle("ex-is-selecting", active);
+      const ordinary = this.containerEl.querySelector<HTMLElement>(".ex-toolbar:not(.ex-selection-toolbar)");
+      if (ordinary) ordinary.hidden = active;
+      this.selectionToolbarEl.hidden = !active;
+      for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")))
+        this.paintCardSelection(card, card.dataset.path ?? "");
+      this.updateSelectionControls();
+    };
+    // Only the switch between normal and selection layout removes/restores the
+    // header and composer above the timeline. Keep a visible card in place.
+    if (this.containerEl.classList.contains("ex-is-selecting") !== active && this.timeline)
+      this.timeline.preserveViewportDuring(update);
+    else update();
   }
   private toggleSelection(path: string): void {
     if (this.homeInvalid || this.scanStatus !== "done" ||
