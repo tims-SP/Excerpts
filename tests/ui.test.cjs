@@ -352,33 +352,25 @@ test('native card action keeps focus when surviving list rows change order',asyn
   await t.close();
 });
 
-test('stale active-tag visibility frame cannot undo a newer clear selection',async()=>{
-  const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
+test('top filter selection does not schedule a scroll animation or reset strip position',async()=>{
+  const t=await fixture(),r=t.pane.renderer,root=t.pane.contentEl;
   clickByLabel(root,'筛选标签');
   const strip=root.querySelector('.ex-filter-tags');
-  const previous=global.requestAnimationFrame;
-  const tasks=[];
+  const previous=global.requestAnimationFrame,tasks=[];
   try{
     global.requestAnimationFrame=fn=>{tasks.push(fn);return tasks.length;};
-    strip.getBoundingClientRect=()=>({left:0,right:100,width:100});
-    renderer.tagFilter='哲学';
-    renderer.renderTagsFilter();
-    const old=strip.querySelector('.ex-active-filter');
-    assert.ok(old,'selected tag exists before the queued frame');
-    old.getBoundingClientRect=()=>({left:300,right:400,width:100});
-    assert.ok(tasks.length>0);
-    renderer.tagFilter='';
-    renderer.renderTagsFilter();
-    assert.equal(strip.scrollLeft,0);
-    for(const task of tasks)task();
-    assert.equal(strip.scrollLeft,0,'outdated frame cannot scroll toward an old active chip');
+    strip.scrollLeft=65;
+    r.tagFilter='哲学';r.renderTagsFilter();
+    assert.equal(strip.scrollLeft,65);
+    r.tagFilter='';r.renderTagsFilter();
+    assert.equal(strip.scrollLeft,65);
+    assert.equal(tasks.length,0,'filter state never schedules horizontal navigation');
   }finally{
     if(previous===undefined)delete global.requestAnimationFrame;
     else global.requestAnimationFrame=previous;
   }
   await t.close();
 });
-
 test('a card filter toggles selected tag without recreating its chips or Markdown body',async()=>{
   const t=await fixture(),root=t.pane.contentEl,renderer=t.pane.renderer;
   const card=root.querySelector('.ex-card'),tag=card.querySelector('.ex-tag');
@@ -1023,28 +1015,26 @@ test('clipped tag add actions disappear and recover when the pane becomes usable
   await t.close();
 });
 
-test('the current top filter is scrolled into view horizontally without page scrolling',async()=>{
+test('active off-shortlist tag is indicated by More without horizontal or vertical scroll',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,strip=t.pane.contentEl.querySelector('.ex-filter-tags');
   renderer.availableTags=['一','二','三','四','五','六','七','八','九','长标签'];
   renderer.filterOpen=true;renderer.tagFilter='长标签';
-  let pageTop=115;
   const host=t.pane.contentEl.closest('.excerpts-native-host');
-  Object.defineProperty(host,'scrollTop',{configurable:true,get(){return pageTop},set(v){pageTop=v}});
-  strip.scrollLeft=0;
-  strip.getBoundingClientRect=()=>({left:10,right:130,width:120});
+  host.scrollTop=115;strip.scrollLeft=60;
   renderer.renderTagsFilter();
-  const selected=strip.querySelector('.ex-active-filter');
-  selected.getBoundingClientRect=()=>({left:100,right:205,width:105});
-  await wait();
-  assert.equal(strip.scrollLeft,75,'horizontal tag strip reveals its active pill');
-  assert.equal(pageTop,115,'never move the vertical feed to show a chip');
-  assert.equal(selected.title,'#长标签');
-  assert.equal(selected.getAttribute('aria-label'),'当前筛选标签：长标签');
-  strip.scrollLeft=60;renderer.tagFilter='';renderer.renderTagsFilter();
-  assert.equal(strip.scrollLeft,0,'clearing selection resets horizontal offset');
+  const buttons=[...strip.querySelectorAll('button[data-tag-key]')];
+  assert.equal(buttons[1].textContent,'#一');
+  assert.equal(buttons[2].textContent,'#二');
+  const more=buttons.at(-1);
+  assert.equal(more.dataset.tagKey,'more');
+  assert.equal(more.getAttribute('aria-pressed'),'true');
+  assert.match(more.title,/长标签/);
+  assert.equal(strip.scrollLeft,60,'no automatic horizontal reveal');
+  assert.equal(host.scrollTop,115,'no page navigation on filter repaint');
+  renderer.tagFilter='';renderer.renderTagsFilter();
+  assert.equal(strip.scrollLeft,60,'clearing selection does not reset horizontal offset');
   await t.close();
 });
-
 test('font metric changes invalidate virtual heights but color-only css-change keeps cache',async()=>{
   const t=await fixture(),renderer=t.pane.renderer;
   const timeline=renderer.timeline;
@@ -1281,35 +1271,34 @@ test('impossibly narrow card refuses starting an edit before draft state is crea
   await t.close();
 });
 
-test('active toolbar tag stays in the first eight even when its source index is later or missing',async()=>{
+test('top filter shortlist keeps original order, including off-shortlist and missing selection',async()=>{
   const t=await fixture(),renderer=t.pane.renderer,root=t.pane.contentEl;
   const tags=['a','b','c','d','e','f','g','h','i','j'];
   renderer.availableTags=[...tags];
-  renderer.filterOpen=true;
-  renderer.tagFilter='j';
+  renderer.filterOpen=true;renderer.tagFilter='';
   renderer.renderTagsFilter();
-  assert.equal(root.querySelector('.ex-filter-tags button').getAttribute('aria-pressed'),'false');
-  let buttons=[...root.querySelectorAll('.ex-filter-tags button')];
-  assert.equal(buttons[1].getAttribute('aria-pressed'),'true');
-  assert.equal(buttons[2].getAttribute('aria-pressed'),'false');
-  assert.equal(buttons[1].textContent,'#j');
-  assert.equal(buttons[1].classList.contains('ex-selected'),true);
-  assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
-  assert.match(buttons.at(-1).textContent,/更多标签 · 2/);
-  renderer.tagFilter='archived-only';
-  renderer.renderTagsFilter();
-  buttons=[...root.querySelectorAll('.ex-filter-tags button')];
-  assert.equal(buttons[1].textContent,'#archived-only');
-  assert.equal(buttons[1].classList.contains('ex-selected'),true);
-  assert.equal(buttons.filter(b=>b.textContent.startsWith('#')).length,8);
-  renderer.tagFilter='';
-  renderer.renderTagsFilter();
-  assert.equal(root.querySelector('.ex-filter-tags button').getAttribute('aria-pressed'),'true');
-  assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].getAttribute('aria-pressed'),'false');
-  assert.equal(root.querySelectorAll('.ex-filter-tags button')[1].textContent,'#a');
+  const strip=root.querySelector('.ex-filter-tags');
+  const firstEight=()=>[...strip.querySelectorAll('button[data-tag-key^="tag:"]')]
+    .map(button=>button.dataset.tagKey);
+  const baseline=firstEight();
+  const refs=new Map([...strip.querySelectorAll('button[data-tag-key]')]
+    .map(button=>[button.dataset.tagKey,button]));
+  assert.deepEqual(baseline,tags.slice(0,8).map(tag=>'tag:'+tag));
+  for(const tag of ['b','j','archived-only','a','']){
+    renderer.tagFilter=tag;
+    renderer.renderTagsFilter();
+    assert.deepEqual(firstEight(),baseline,'selection must not promote a tag');
+    for(const [key,button] of refs)
+      assert.equal(strip.querySelector('button[data-tag-key="'+key+'"]'),button,
+        'stable filter control retains its DOM identity');
+    const more=strip.querySelector('button[data-tag-key="more"]');
+    const offShortlist=Boolean(tag)&&!tags.slice(0,8).includes(tag);
+    assert.equal(more.getAttribute('aria-pressed'),String(offShortlist));
+    if(offShortlist)assert.match(more.title,new RegExp(tag));
+  }
+  assert.equal(strip.querySelector('button[data-tag-key="all"]').getAttribute('aria-pressed'),'true');
   await t.close();
 });
-
 test('staged tag preview replaces saved chips, preserves the search input and cancels without writing',async()=>{
   const t=await fixture();const card=t.pane.contentEl.querySelector('.ex-card');
   const mount=card.querySelector('.ex-chips');
@@ -1719,7 +1708,7 @@ test('save current filter creates a reusable .excerpts file without replacing th
   await t.close();
 });
 
-test('saved filtered page pins its active tag above the ordinary filter shortlist at first render',async()=>{
+test('saved filtered page indicates its tag without moving the stable shortlist',async()=>{
   const t=await fixture();
   const saved=await t.plugin.createSavedPage(t.home.path,'固定过滤',{tag:'哲学',query:''});
   await t.pane.openFile(saved);
@@ -1729,12 +1718,14 @@ test('saved filtered page pins its active tag above the ordinary filter shortlis
   r.renderTagsFilter();
   const root=t.pane.contentEl;
   const pills=[...root.querySelectorAll('.ex-filter-tags button')];
-  assert.equal(pills[1].textContent,'#哲学');
-  assert.equal(pills[1].classList.contains('ex-selected'),true);
+  assert.equal(pills[1].textContent,'#a');
+  assert.equal(pills[8].textContent,'#h');
+  assert.equal(pills.at(-1).dataset.tagKey,'more');
+  assert.equal(pills.at(-1).getAttribute('aria-pressed'),'true');
+  assert.match(pills.at(-1).title,/哲学/);
   assert.equal(root.querySelector('.ex-card .ex-tag.ex-selected').textContent,'#哲学');
   await t.close();
 });
-
 test('saved page restores filters and can update only after explicit confirmation',async()=>{
   const t=await fixture();
   const saved=await t.plugin.createSavedPage(t.home.path,'文学摘录',{tag:'哲学',query:''});
