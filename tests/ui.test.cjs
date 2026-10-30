@@ -5740,3 +5740,119 @@ test('a newly saved excerpt survives its own metadata event during first cachedR
   assert.equal(root.querySelector('.ex-scan-status').dataset.state,'done');
   await t.close();
 });
+
+
+test('new-card real cachedRead failure is not reclassified as a recoverable metadata race',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const fresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let freshReads=0;
+  t.plugin.app.vault.cachedRead=async(file)=>{
+    if(file!==t.md && file.extension==='md')throw Error('native EIO');
+    return cached(file);
+  };
+  t.plugin.app.vault.read=async file=>{if(file!==t.md)freshReads++;return fresh(file);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='新摘录遭遇真实读取错误';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const entry=[...t.files.values()].find(e=>e.file instanceof TFile&&e.file.extension==='md'&&e.file!==t.md);
+  await waitFor(()=>root.querySelector('.ex-card[data-path="'+entry.file.path+'"] .ex-preview-error'),
+    'read failed card');
+  assert.match(entry.data,/新摘录遭遇真实读取错误/,'saved content remains on disk');
+  assert.equal(freshReads,0,'actual I/O error never triggers fresh fallback');
+  await t.close();
+});
+
+test('new-card source replacement with identical metadata rejects any recovery',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const fresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let replaced=false,freshReads=0;
+  t.plugin.app.vault.cachedRead=async(file)=>{
+    const raw=await cached(file);
+    if(file!==t.md && file.extension==='md' && !replaced){
+      replaced=true;
+      const replacement=new TFile(file.path);
+      replacement.stat={...file.stat};
+      t.files.set(file.path,{file:replacement,data:'不同来源的文件'});
+    }
+    return raw;
+  };
+  t.plugin.app.vault.read=async file=>{if(file!==t.md)freshReads++;return fresh(file);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='已被替换的刚创建文件';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const card=[...root.querySelectorAll('.ex-card')].find(e=>e.dataset.path!==t.md.path);
+  assert.ok(card);
+  await waitFor(()=>card.querySelector('.ex-preview-error'),'source identity mismatch');
+  assert.equal(replaced,true);
+  assert.equal(freshReads,0,'replacement is not a retriable epoch-only error');
+  assert.doesNotMatch(card.textContent,/已被替换的刚创建文件/);
+  await t.close();
+});
+
+test('new-card external modify during initial read stays stale and never retries',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  const fresh=t.plugin.app.vault.read.bind(t.plugin.app.vault);
+  let modified=false,freshReads=0;
+  t.plugin.app.vault.cachedRead=async file=>{
+    const raw=await cached(file);
+    if(file!==t.md && file.extension==='md' && !modified){
+      modified=true;
+      file.stat.mtime++;
+      t.files.get(file.path).data+='\n外部写入';
+      t.vaultEvents.get('modify')?.(file);
+    }
+    return raw;
+  };
+  t.plugin.app.vault.read=async file=>{if(file!==t.md)freshReads++;return fresh(file);};
+  const input=root.querySelector('.ex-compose-text');
+  input.value='外部修改之前的摘录';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const card=[...root.querySelectorAll('.ex-card')].find(e=>e.dataset.path!==t.md.path);
+  await waitFor(()=>card?.querySelector('.ex-preview-error'),'external modification refused');
+  assert.equal(freshReads,0);
+  assert.equal(root.querySelector('.ex-scan-status').dataset.state,'stale',
+    'external modify is never swallowed as locally created metadata');
+  assert.ok([...t.files.values()].some(e=>e.data?.includes('外部写入')));
+  await t.close();
+});
+
+test('new-card fresh fallback failure settles once without retry loops',async()=>{
+  const t=await fixture(false,'# 既有文件\n\n内容');
+  const root=t.pane.contentEl;
+  const cached=t.plugin.app.vault.cachedRead.bind(t.plugin.app.vault);
+  let eventCount=0,freshReads=0;
+  t.plugin.app.vault.cachedRead=async file=>{
+    const raw=await cached(file);
+    if(file!==t.md && file.extension==='md' && !eventCount){
+      eventCount++;
+      t.metadataEvents.get('changed')?.(file);
+    }
+    return raw;
+  };
+  t.plugin.app.vault.read=async file=>{
+    if(file!==t.md){freshReads++;throw Error('native read blocked');}
+    return t.files.get(file.path).data;
+  };
+  const input=root.querySelector('.ex-compose-text');
+  input.value='需要安全回退的摘录';
+  input.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+  [...root.querySelectorAll('.ex-compose-actions button')].find(b=>b.textContent==='保存').click();
+  await waitFor(()=>root.querySelector('.ex-count')?.textContent==='2 / 2');
+  const card=[...root.querySelectorAll('.ex-card')].find(e=>e.dataset.path!==t.md.path);
+  await waitFor(()=>card?.querySelector('.ex-preview-error'),'fallback read failed');
+  assert.equal(freshReads,1,'one local file gets at most one fresh reread');
+  assert.equal(eventCount,1);
+  await t.close();
+});
