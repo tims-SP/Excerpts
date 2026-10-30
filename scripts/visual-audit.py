@@ -440,34 +440,39 @@ with sync_playwright() as playwright:
                 assert hidden and more.inner_text() == "+" + str(hidden), (key,"filtered overflow count")
             screenshot(page, theme, width, "card-filtered-tag", "card-tags", "card-footer")
             strip = page.locator(".ex-filter-tags")
+            initial_order = strip.evaluate("""el =>
+              Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""")
             strip.evaluate("el => {el.scrollLeft = el.scrollWidth}")
+            scroll_x = strip.evaluate("el => el.scrollLeft")
+            scroll_y = page.locator(".excerpts-native-host").evaluate("el => el.scrollTop")
             page.evaluate("window.__pane.renderer.renderTagsFilter()")
-            page.wait_for_function("""() => {
-              const bar=document.querySelector('.ex-filter-tags'),active=bar?.querySelector('.ex-active-filter');
-              if(!bar||!active)return false;
-              const b=bar.getBoundingClientRect(),r=active.getBoundingClientRect();
-              return r.left>=b.left-1 && r.right<=b.right+1;
-            }""", timeout=4000)
+            page.wait_for_timeout(80)
+            assert strip.evaluate("el => el.scrollLeft") == scroll_x, (key,"tag strip auto-scrolled")
+            assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") == scroll_y, (
+                key,"tag selection moved page scroll")
+            assert strip.evaluate("""el =>
+              Array.from(el.querySelectorAll('button[data-tag-key]'), b => b.dataset.tagKey)""") == initial_order, (
+                key,"selected filter reordered the toolbar")
+            top_selected = strip.locator('button[data-tag-key="more"]')
+            assert top_selected.get_attribute("aria-pressed")=="true", (
+                key,"off-shortlist filter not shown as selected")
+            assert "读书笔记" in top_selected.get_attribute("title"), (key,"off-shortlist tag name not preserved")
             screenshot(page, theme, width, "filter-selected-scroll", "list-filter")
             if width <= 390:
-                renderer = page.evaluate_handle("window.__pane.renderer")
                 page.evaluate("""() => {
                   const r=window.__pane.renderer;
                   r.tagFilter="超长筛选标签".repeat(15);r.renderTagsFilter();
                 }""")
-                long_active = page.locator(".ex-active-filter")
-                page.wait_for_function("""() => {
-                  const bar=document.querySelector('.ex-filter-tags'),active=bar?.querySelector('.ex-active-filter');
-                  if(!bar||!active)return false;
-                  const b=bar.getBoundingClientRect(),r=active.getBoundingClientRect();
-                  return r.left>=b.left-1 && r.right<=b.right+1;
-                }""", timeout=4000)
-                assert long_active.get_attribute("title").startswith("#超长筛选标签")
-                assert long_active.evaluate("el=>getComputedStyle(el).justifyContent") == "flex-start", (
-                    key,"long active filter must align the tag prefix at the start")
-                assert long_active.locator(".ex-active-filter-label").evaluate(
-                    "el=>getComputedStyle(el).textOverflow") == "ellipsis", (key,"missing text ellipsis")
-                assert long_active.evaluate("el=>el.getBoundingClientRect().width<=Math.min(200,el.parentElement.clientWidth)+1"), (key,"long filter escapes strip")
+                more_selected = strip.locator('button[data-tag-key="more"]')
+                assert more_selected.get_attribute("aria-pressed")=="true"
+                assert more_selected.get_attribute("title").startswith("当前筛选标签：#超长筛选标签")
+                assert strip.evaluate("""el =>
+                  !Array.from(el.querySelectorAll('button[data-tag-key^="tag:"]'))
+                    .some(b => b.textContent.includes('超长筛选标签'))"""), (
+                    key,"missing long tag was promoted ahead of stable filter controls")
+                assert more_selected.evaluate("""el =>
+                  el.getBoundingClientRect().width <= el.parentElement.clientWidth + 1"""), (
+                    key,"selected More control overflows the tag toolbar")
                 screenshot(page, theme, width, "filter-long-selected", "list-filter")
                 page.evaluate("""() => {const r=window.__pane.renderer;r.tagFilter="读书笔记";r.renderTagsFilter()}""")
             if width <= 390:
@@ -476,8 +481,8 @@ with sync_playwright() as playwright:
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
                 assert not card.locator(".ex-tag.ex-selected").is_visible(), (key,"80px should safely fold active chip")
                 assert card.locator(".ex-tag-overflow").is_visible(), (key,"80px must retain +N")
-                assert page.locator(".ex-filter-tags button.ex-selected").first.inner_text()=="#读书笔记", (
-                    key,"fallback must retain top filter state")
+                assert strip.locator('button[data-tag-key="more"]').get_attribute("aria-pressed")=="true", (
+                    key,"fallback must retain off-shortlist top filter state")
                 screenshot(page, theme, width, "card-filter-extreme", "card-tags", "card-footer")
                 lane.evaluate("(el)=>{el.style.flex='0 0 22px';el.style.width='22px'}")
                 page.evaluate("window.__pane.renderer.reflowTagRow(document.querySelector('.ex-card .ex-chips'))")
