@@ -104,6 +104,20 @@ declare module "obsidian" {
   }
   export function setIcon(el: HTMLElement, name: string): void;
   export class Notice { constructor(message: string, timeout?: number); }
+  export class TextComponent {
+    inputEl: HTMLInputElement;
+    constructor(containerEl: HTMLElement);
+    setPlaceholder(placeholder: string): this;
+    setValue(value: string): this;
+  }
+  export class ButtonComponent {
+    buttonEl: HTMLButtonElement;
+    constructor(containerEl: HTMLElement);
+    setButtonText(text: string): this;
+    setCta(): this;
+    setWarning(): this;
+    onClick(callback: (evt: MouseEvent) => void): this;
+  }
   export class Modal {
     modalEl: HTMLElement;
     contentEl: HTMLElement;

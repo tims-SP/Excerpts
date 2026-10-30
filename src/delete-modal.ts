@@ -1,4 +1,4 @@
-import { App, Modal, setIcon } from "obsidian";
+import { App, ButtonComponent, Modal, setIcon } from "obsidian";
 import type { DeleteProgress } from "./repository";
 
 export interface DeleteOutcome {
@@ -83,16 +83,16 @@ export class DeleteExcerptModal extends Modal {
     this.errorEl.hidden = true;
     const actions = document.createElement("div");
     actions.className = "ex-delete-actions";
-    this.cancelButton = document.createElement("button");
-    this.cancelButton.type = "button";
-    this.cancelButton.className = "ex-delete-cancel";
-    this.cancelButton.textContent = "取消";
-    this.cancelButton.addEventListener("click", () => this.close());
-    this.confirmButton = document.createElement("button");
-    this.confirmButton.type = "button";
-    this.confirmButton.className = "mod-warning ex-delete-submit";
-    this.confirmButton.textContent = count === 1 ? "删除摘录" : `删除 ${count} 条`;
-    this.confirmButton.addEventListener("click", () => {
+    const cancelControl = new ButtonComponent(actions).setButtonText("取消");
+    this.cancelButton = cancelControl.buttonEl;
+    this.cancelButton.classList.add("ex-delete-cancel");
+    cancelControl.onClick(() => this.close());
+    const confirmControl = new ButtonComponent(actions)
+      .setButtonText(count === 1 ? "删除摘录" : `删除 ${count} 条`)
+      .setWarning();
+    this.confirmButton = confirmControl.buttonEl;
+    this.confirmButton.classList.add("ex-delete-submit");
+    confirmControl.onClick(() => {
       if (this.finished) this.close();
       else void this.commit();
     });
