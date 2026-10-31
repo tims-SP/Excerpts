@@ -217,7 +217,7 @@ test('delete confirmation has theme-native responsive sizing and safe focus',()=
 });
 
 test('loading feedback is scoped to the current operation and exposes real progress',()=>{
-  assert.match(css,/\.excerpts-root\.ex-is-selecting-busy \.ex-selection-count::before/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\.ex-is-selecting-busy \.ex-selection-count::before/);
   assert.match(css,/\.ex-delete-modal \.ex-delete-spinner svg/);
   assert.match(css,/\.ex-delete-modal \.ex-delete-progress\s*\{/);
   assert.match(css,/\.ex-delete-modal \.ex-delete-progress\[hidden\]/);

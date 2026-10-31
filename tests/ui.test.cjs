@@ -3564,7 +3564,8 @@ test('normal opening does not block the opened excerpt page initial scan',async(
     newPane=t.plugin.factory({});
     document.body.append(newPane.contentEl);
     await newPane.openFile(file);
-    initial=[...t.plugin.rendered].find(x=>x.containerEl===newPane.contentEl.firstElementChild);
+    initial=[...t.plugin.rendered].find(x=>x.containerEl===newPane.contentEl.querySelector('.excerpts-root'));
+    assert.equal(newPane.contentEl.firstElementChild?.classList.contains('ex-selection-toolbar'),true);
     assert.ok(initial);
     assert.notEqual(initial.scanStatus,'blocked','normal navigation does not steal index mutex');
     assert.equal(t.plugin.homeNavigationBusy,true);
