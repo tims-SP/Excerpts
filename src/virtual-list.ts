@@ -196,6 +196,24 @@ export class VirtualTimeline {
   }
   refresh(): void { this.schedule(); }
 
+  /** Preserve the visible timeline row when the view changes layout above the feed.
+   * No scrolling is performed while the user is still above the first timeline row.
+   * Use the mounted row's geometry before falling back to the existing height index. */
+  preserveViewportDuring(update: () => void): void {
+    if (this.disposed || this.suspended) { update(); return; }
+    const anchor = this.captureAnchor();
+    const element = anchor ? this.mounted.get(anchor.index) : null;
+    update();
+    if (anchor) {
+      const rect = element?.isConnected ? element.getBoundingClientRect() : null;
+      if (rect && rect.height > 0 && Number.isFinite(rect.top)) {
+        const delta = rect.top - this.viewport.getBoundingClientRect().top - anchor.offset;
+        if (Math.abs(delta) > 0.5 && Number.isFinite(delta)) this.viewport.scrollTop += delta;
+      } else this.restoreAnchor(anchor);
+    }
+    this.schedule();
+  }
+
   /** Resize is driven by the scroll container; never replace heights on height-only changes. */
   resize(): void {
     if (this.disposed || this.suspended) return;

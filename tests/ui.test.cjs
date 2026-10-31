@@ -1962,6 +1962,12 @@ test('selection actions are native buttons in one toolbar without a bottom overl
   assert.ok(toolbar && !toolbar.hidden);
   assert.equal(root.querySelector('.ex-selection-footer'),null);
   assert.equal(toolbar.querySelectorAll('button').length,3);
+  assert.equal(toolbar.parentElement,host,'toolbar must be a direct native scroll child');
+  assert.equal(host.firstElementChild,toolbar,'toolbar must precede the feed');
+  assert.equal(toolbar.nextElementSibling,host.querySelector('.excerpts-root'));
+  assert.equal(host.querySelector('.excerpts-root .ex-selection-toolbar'),null);
+  assert.equal(root.querySelector('.ex-header').isConnected,true,'own header remains mounted');
+  assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   assert.equal(toolbar.querySelectorAll('button[data-native-control="button"]').length,3);
   assert.ok(toolbar.querySelector('.ex-delete-selected').classList.contains('mod-warning'));
   assert.equal(toolbar.querySelector('.ex-delete-selected').disabled,true);
@@ -1972,8 +1978,10 @@ test('selection actions are native buttons in one toolbar without a bottom overl
   assert.equal(toolbar.querySelector('.ex-delete-selected').textContent,'删除 (1)');
   toolbar.querySelector('.ex-select-done').click();
   assert.equal(host.scrollTop,350,'exiting selection must not request a scroll');
+  assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false);
   assert.equal(root.querySelector('.ex-selection-footer'),null);
   await t.close();
+  assert.equal(toolbar.isConnected,false,'toolbar removed on renderer unload');
 });
 
 test('bulk select-all includes unloaded cards while cancel preserves every Markdown file',async()=>{
@@ -3556,7 +3564,8 @@ test('normal opening does not block the opened excerpt page initial scan',async(
     newPane=t.plugin.factory({});
     document.body.append(newPane.contentEl);
     await newPane.openFile(file);
-    initial=[...t.plugin.rendered].find(x=>x.containerEl===newPane.contentEl.firstElementChild);
+    initial=[...t.plugin.rendered].find(x=>x.containerEl===newPane.contentEl.querySelector('.excerpts-root'));
+    assert.equal(newPane.contentEl.firstElementChild?.classList.contains('ex-selection-toolbar'),true);
     assert.ok(initial);
     assert.notEqual(initial.scanStatus,'blocked','normal navigation does not steal index mutex');
     assert.equal(t.plugin.homeNavigationBusy,true);

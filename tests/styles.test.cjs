@@ -193,17 +193,26 @@ test('native Markdown edit action is a separate secondary control with a compact
   assert.match(css,/\.ex-compose-actions > button\.ex-btn-primary/);
 });
 
-test('batch actions use one native top toolbar without a floating footer',()=>{
+test('batch actions use a native-host sibling toolbar with an opaque sticky hit surface',()=>{
   assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card\.ex-is-selected/);
   assert.match(css,/\.excerpts-root \.ex-selection-indicator/);
-  assert.match(css,/\.excerpts-root \.ex-selection-toolbar\s*\{[^}]*position:\s*sticky; top:\s*0/);
+  assert.match(css,/\.excerpts-root\.ex-is-selecting \{ padding-top: 0; \}/);
+  assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-header \{ display: none; \}/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\s*\{[^}]*position:\s*sticky; top:\s*0; z-index:\s*10/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\[hidden\]/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{/);
+  assert.match(css,/background:\s*var\(--background-primary\)/);
+  assert.match(css,/margin:\s*0; padding:\s*12px 12px 8px/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{[^}]*max-width:\s*880px/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{[^}]*background:\s*var\(--background-secondary\)/);
+  assert.match(css,/border:\s*1px solid var\(--background-modifier-border\)/);
+  assert.match(css,/border-radius:\s*16px/);
+  assert.match(css,/box-shadow:\s*var\(--shadow-s,/);
   assert.match(css,/grid-template-areas:\s*"count all delete done"/);
   assert.match(css,/grid-template-areas:\s*"count done" "all delete"/);
-  assert.match(css,/\.excerpts-root \.ex-selection-toolbar\[hidden\]/);
-  assert.match(css,/\.excerpts-root \.ex-selection-toolbar button \{ min-height: 44px; \}/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar button \{ min-height: 44px; \}/);
   assert.doesNotMatch(css,/ex-selection-footer|ex-select-cancel/);
-  assert.doesNotMatch(css,/\.excerpts-root\.ex-is-selecting\s*\{[^}]*padding-bottom:\s*96px/);
-  assert.doesNotMatch(css,/button\.ex-delete-selected\s*\{[^}]*background:/);
+  assert.doesNotMatch(css,/\.excerpts-root \.ex-selection-toolbar/);
 });
 test('delete confirmation has theme-native responsive sizing and safe focus',()=>{
   assert.match(css,/\.ex-delete-modal/);
@@ -213,7 +222,7 @@ test('delete confirmation has theme-native responsive sizing and safe focus',()=
 });
 
 test('loading feedback is scoped to the current operation and exposes real progress',()=>{
-  assert.match(css,/\.excerpts-root\.ex-is-selecting-busy \.ex-selection-count::before/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\.ex-is-selecting-busy \.ex-selection-count::before/);
   assert.match(css,/\.ex-delete-modal \.ex-delete-spinner svg/);
   assert.match(css,/\.ex-delete-modal \.ex-delete-progress\s*\{/);
   assert.match(css,/\.ex-delete-modal \.ex-delete-progress\[hidden\]/);

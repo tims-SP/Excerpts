@@ -187,6 +187,7 @@
     "ex-selected",
     "ex-selection-count",
     "ex-selection-indicator",
+    "ex-selection-inner",
     "ex-selection-toolbar",
     "ex-settings-busy-hint",
     "ex-settings-root",
@@ -246,6 +247,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "3d285071091f8bff2214aa7dae18141078112055",
-  "stylesheet_review": "2026-10-27: inspected representative card, section and failure screenshots at 390/1280px in light/dark from Screenshot QA run 40524631747; full Chromium layout, frame, native-scroll and video checks passed. Approved loading-state-only visibility rule; no geometry, color, spacing or existing component token changed. Real Android/iOS Obsidian remains unverified."
+  "stylesheet_git_blob_sha": "3525a7b8e339ca42e850dbdda95525bc552505b2",
+  "stylesheet_review": "2026-10-31: floating bulk selection panel: opaque sticky native-host sibling paints the 12px top gap; inset 12px each side, background-secondary 16px rounded card with theme shadow and native controls. Screenshot QA checks gap/card elementFromPoint on deep scroll across 320/390/430/768/1280 light/dark; Android physical acceptance pending."
 }
