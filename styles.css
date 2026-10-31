@@ -685,41 +685,50 @@
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
 }
 
-/* Use one native Obsidian button toolbar; do not overlap bottom mobile chrome.
-   The selection state owns its top boundary; normal page spacing stays intact. */
+/* The bulk toolbar is a direct child of the native scrolling host.
+   Its opaque background includes the entire hit surface, with no transparent
+   margin that can reveal scrolling Markdown above the action controls. */
 .excerpts-root.ex-is-selecting { padding-top: 0; }
 .excerpts-root.ex-is-selecting .ex-header { display: none; }
-.excerpts-root .ex-selection-toolbar[hidden],
+.excerpts-native-host > .ex-selection-toolbar[hidden],
 .excerpts-root .ex-toolbar[hidden],
 .excerpts-root .ex-delete-error[hidden] { display: none !important; }
 .excerpts-root.ex-is-selecting .ex-composer,
 .excerpts-root.ex-is-selecting .ex-search-wrap,
 .excerpts-root.ex-is-selecting .ex-filter-tags { display: none !important; }
-.excerpts-root .ex-selection-toolbar {
-  position: sticky; top: 0; z-index: 5;
+
+.excerpts-native-host > .ex-selection-toolbar {
+  position: sticky; top: 0; z-index: 10;
+  display: block; box-sizing: border-box; width: 100%; min-width: 0;
+  margin: 0; padding: 0 0 8px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  isolation: isolate;
+}
+.excerpts-native-host > .ex-selection-toolbar .ex-selection-inner {
   display: grid; grid-template-areas: "count all delete done";
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center; gap: var(--size-4-2, 8px);
-  padding: 8px 12px; background: var(--background-primary);
-  margin-top: 0; margin-bottom: var(--ex-space-2);
-  border-bottom: 1px solid var(--background-modifier-border);
+  box-sizing: border-box; width: 100%; max-width: 904px;
+  margin-inline: auto; padding: 8px 24px 8px 136px;
+  color: var(--text-normal); font-family: var(--font-interface);
 }
-.excerpts-root .ex-selection-toolbar .ex-toolbar-title {
-  grid-area: count; min-width: 0;
+.excerpts-native-host > .ex-selection-toolbar .ex-toolbar-title {
+  grid-area: count; display: flex; align-items: center; min-width: 0;
 }
-.excerpts-root .ex-selection-count {
+.excerpts-native-host > .ex-selection-toolbar .ex-selection-count {
   font-size: 14px; font-weight: 600; color: var(--text-normal);
   overflow-wrap: anywhere;
 }
-.excerpts-root.ex-is-selecting-busy .ex-selection-count::before {
+.excerpts-native-host > .ex-selection-toolbar.ex-is-selecting-busy .ex-selection-count::before {
   content: ""; display: inline-block; width: 13px; height: 13px;
   margin-right: 8px; vertical-align: -2px;
   border: 2px solid var(--text-faint); border-top-color: var(--interactive-accent);
   border-radius: 50%; animation: ex-delete-spin .8s linear infinite;
 }
-.excerpts-root .ex-selection-toolbar .ex-select-all { grid-area: all; }
-.excerpts-root .ex-selection-toolbar .ex-delete-selected { grid-area: delete; }
-.excerpts-root .ex-selection-toolbar .ex-select-done { grid-area: done; }
+.excerpts-native-host > .ex-selection-toolbar .ex-select-all { grid-area: all; }
+.excerpts-native-host > .ex-selection-toolbar .ex-delete-selected { grid-area: delete; }
+.excerpts-native-host > .ex-selection-toolbar .ex-select-done { grid-area: done; }
 .excerpts-root.ex-is-selecting .ex-card {
   cursor: pointer; transition: border-color 120ms ease;
 }
@@ -738,16 +747,19 @@
 }
 .excerpts-root.ex-is-selecting .ex-card-options { display: none !important; }
 @container (max-width: 700px) {
-  .excerpts-root .ex-selection-toolbar {
+  .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner {
     grid-template-areas: "count done" "all delete";
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 8px;
+    padding: 8px 12px;
   }
-  .excerpts-root .ex-selection-toolbar button { min-height: 44px; }
-  .excerpts-root .ex-selection-toolbar .ex-select-all { justify-self: start; }
-  .excerpts-root .ex-selection-toolbar .ex-select-done,
-  .excerpts-root .ex-selection-toolbar .ex-delete-selected { justify-self: end; }
+  .excerpts-native-host > .ex-selection-toolbar button { min-height: 44px; }
+  .excerpts-native-host > .ex-selection-toolbar .ex-select-all { justify-self: start; }
+  .excerpts-native-host > .ex-selection-toolbar .ex-select-done,
+  .excerpts-native-host > .ex-selection-toolbar .ex-delete-selected { justify-self: end; }
   .excerpts-root.ex-is-selecting .ex-selection-indicator { width: 44px; height: 44px; }
+}
+@container (max-width: 400px) {
+  .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner { padding-inline: 8px; }
 }
 
 /* Native, single-purpose removal confirmation. */
@@ -813,7 +825,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ex-delete-modal .ex-delete-spinner svg,
-  .excerpts-root.ex-is-selecting-busy .ex-selection-count::before {
+  .excerpts-native-host > .ex-selection-toolbar.ex-is-selecting-busy .ex-selection-count::before {
     animation: none;
   }
 }

@@ -623,23 +623,41 @@ with sync_playwright() as playwright:
             page.locator(".menu button", has_text="批量选择").click()
             assert page.locator(".ex-selection-toolbar").is_visible()
             selection_geometry = page.evaluate("""() => {
-              const root = document.querySelector('.excerpts-root');
-              const toolbar = root.querySelector('.ex-selection-toolbar');
+              const host = document.querySelector('.excerpts-native-host');
+              const root = host.querySelector(':scope > .excerpts-root');
+              const toolbar = host.querySelector(':scope > .ex-selection-toolbar');
               const header = root.querySelector('.ex-header');
               const box = toolbar.getBoundingClientRect();
+              const viewport = host.getBoundingClientRect();
+              const x = box.left + box.width / 2, y = box.top + 4;
+              const hit = document.elementFromPoint(x, y);
               return {
-                gap: box.top - root.getBoundingClientRect().top,
+                directChild: toolbar.parentElement === host,
+                firstChild: host.firstElementChild === toolbar,
+                nextRoot: toolbar.nextElementSibling === root,
+                nested: root.querySelector('.ex-selection-toolbar') !== null,
+                gap: box.top - viewport.top,
                 rootPaddingTop: getComputedStyle(root).paddingTop,
+                toolbarPaddingBottom: getComputedStyle(toolbar).paddingBottom,
                 toolbarMarginBottom: getComputedStyle(toolbar).marginBottom,
+                background: getComputedStyle(toolbar).backgroundColor,
+                hitToolbar: toolbar.contains(hit),
                 headerDisplay: getComputedStyle(header).display,
                 horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1
               };
             }""")
-            assert abs(selection_geometry["gap"]) <= 1, (key, "selection top gap", selection_geometry)
-            assert selection_geometry["rootPaddingTop"] == "0px", (key, "selection root padding", selection_geometry)
-            assert selection_geometry["toolbarMarginBottom"] == "8px", (key, "selection list gap", selection_geometry)
-            assert selection_geometry["headerDisplay"] == "none", (key, "own header still visible", selection_geometry)
-            assert not selection_geometry["horizontalOverflow"], (key, "selection horizontal overflow", selection_geometry)
+            assert selection_geometry["directChild"] and selection_geometry["firstChild"] and selection_geometry["nextRoot"], (
+                key, "selection toolbar not a direct first child of native host", selection_geometry)
+            assert not selection_geometry["nested"], (key,"nested selection toolbar remains",selection_geometry)
+            assert abs(selection_geometry["gap"]) <= 1, (key,"native scroll host has top gap",selection_geometry)
+            assert selection_geometry["rootPaddingTop"] == "0px", (key,"selection feed top padding",selection_geometry)
+            assert selection_geometry["toolbarPaddingBottom"] == "8px", (key,"opaque selection/list separation",selection_geometry)
+            assert selection_geometry["toolbarMarginBottom"] == "0px", (key,"transparent margin around toolbar",selection_geometry)
+            assert selection_geometry["background"] not in ("transparent","rgba(0, 0, 0, 0)"), (
+                key,"selection hit surface is transparent",selection_geometry)
+            assert selection_geometry["hitToolbar"], (key,"scrolling content overlays selection",selection_geometry)
+            assert selection_geometry["headerDisplay"] == "none", (key,"own header still visible",selection_geometry)
+            assert not selection_geometry["horizontalOverflow"], (key,"selection horizontal overflow",selection_geometry)
             manifest.setdefault("selection_geometry", {})[key] = selection_geometry
             assert page.locator(".ex-selection-toolbar button").count() == 3
             assert page.locator(".ex-selection-footer").count() == 0
@@ -795,6 +813,24 @@ with sync_playwright() as playwright:
             assert deep_entry["after"] is not None and abs(deep_entry["after"] - deep_entry["before"]) <= 3, (
                 key,"entering selection shifts the visible card",deep_entry)
             assert page.locator(".ex-selection-toolbar").is_visible()
+            overlay = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const bar = host.querySelector(':scope > .ex-selection-toolbar');
+              const rect = bar.getBoundingClientRect();
+              const viewport = host.getBoundingClientRect();
+              const hit = () => bar.contains(document.elementFromPoint(
+                rect.left + rect.width / 2, rect.top + 4));
+              const topGap = rect.top - viewport.top;
+              const before = hit();
+              host.scrollTop += 120;
+              const whileScrolling = hit();
+              host.scrollTop -= 120;
+              return {topGap,before,whileScrolling,
+                      scrollTop:host.scrollTop};
+            }""")
+            assert abs(overlay["topGap"]) <= 1 and overlay["before"] and overlay["whileScrolling"], (
+                key,"scrolling cards bleed above or through selection controls",overlay)
+            manifest.setdefault("selection_overlay", {})[key] = overlay
             deep_exit = page.evaluate("""() => {
               const host = document.querySelector('.excerpts-native-host');
               const card = document.querySelector('.ex-card[data-path="' + CSS.escape(window.__deepSelectionCardPath) + '"]');

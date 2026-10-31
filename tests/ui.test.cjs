@@ -1962,6 +1962,10 @@ test('selection actions are native buttons in one toolbar without a bottom overl
   assert.ok(toolbar && !toolbar.hidden);
   assert.equal(root.querySelector('.ex-selection-footer'),null);
   assert.equal(toolbar.querySelectorAll('button').length,3);
+  assert.equal(toolbar.parentElement,host,'toolbar must be a direct native scroll child');
+  assert.equal(host.firstElementChild,toolbar,'toolbar must precede the feed');
+  assert.equal(toolbar.nextElementSibling,host.querySelector('.excerpts-root'));
+  assert.equal(host.querySelector('.excerpts-root .ex-selection-toolbar'),null);
   assert.equal(root.querySelector('.ex-header').isConnected,true,'own header remains mounted');
   assert.ok(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'));
   assert.equal(toolbar.querySelectorAll('button[data-native-control="button"]').length,3);
@@ -1977,6 +1981,7 @@ test('selection actions are native buttons in one toolbar without a bottom overl
   assert.equal(root.querySelector('.excerpts-root').classList.contains('ex-is-selecting'),false);
   assert.equal(root.querySelector('.ex-selection-footer'),null);
   await t.close();
+  assert.equal(toolbar.isConnected,false,'toolbar removed on renderer unload');
 });
 
 test('bulk select-all includes unloaded cards while cancel preserves every Markdown file',async()=>{

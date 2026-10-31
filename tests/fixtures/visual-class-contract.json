@@ -187,6 +187,7 @@
     "ex-selected",
     "ex-selection-count",
     "ex-selection-indicator",
+    "ex-selection-inner",
     "ex-selection-toolbar",
     "ex-settings-busy-hint",
     "ex-settings-root",
@@ -246,6 +247,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "1fbca9bf5d876628f4e30b9ae43f2467c60b1052",
-  "stylesheet_review": "2026-10-31: selection-mode-only top spacing and own-header visibility; visual QA asserts zero top gap, 8px toolbar/list margin and stable card positions on long virtualized lists. Physical Android/iOS Obsidian chrome still requires device acceptance."
+  "stylesheet_git_blob_sha": "d4805a93a0460c2bad9d93bd6df7e1a737ac623d",
+  "stylesheet_review": "2026-10-31: native scroll host direct-child toolbar, opaque full-width sticky hit surface, top and deep-scroll hit testing (including 430px), native buttons and old content preserved. Chromium mock is not proof of Android Obsidian native chrome."
 }
