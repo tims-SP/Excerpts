@@ -629,19 +629,31 @@ with sync_playwright() as playwright:
               const header = root.querySelector('.ex-header');
               const box = toolbar.getBoundingClientRect();
               const viewport = host.getBoundingClientRect();
-              const x = box.left + box.width / 2, y = box.top + 4;
-              const hit = document.elementFromPoint(x, y);
+              const card = toolbar.querySelector('.ex-selection-inner');
+              const cardBox = card.getBoundingClientRect();
+              const cardStyle = getComputedStyle(card);
+              const x = box.left + box.width / 2;
+              const hitGap = document.elementFromPoint(x, box.top + 4);
+              const hitCard = document.elementFromPoint(x, cardBox.top + 4);
               return {
                 directChild: toolbar.parentElement === host,
                 firstChild: host.firstElementChild === toolbar,
                 nextRoot: toolbar.nextElementSibling === root,
                 nested: root.querySelector('.ex-selection-toolbar') !== null,
                 gap: box.top - viewport.top,
+                cardTopGap: cardBox.top - box.top,
+                cardLeftGap: cardBox.left - box.left,
+                cardRightGap: box.right - cardBox.right,
                 rootPaddingTop: getComputedStyle(root).paddingTop,
                 toolbarPaddingBottom: getComputedStyle(toolbar).paddingBottom,
                 toolbarMarginBottom: getComputedStyle(toolbar).marginBottom,
                 background: getComputedStyle(toolbar).backgroundColor,
-                hitToolbar: toolbar.contains(hit),
+                cardBackground: cardStyle.backgroundColor,
+                cardRadius: cardStyle.borderTopLeftRadius,
+                cardBorder: cardStyle.borderTopWidth,
+                cardShadow: cardStyle.boxShadow,
+                hitToolbar: toolbar.contains(hitGap),
+                hitCard: card.contains(hitCard),
                 headerDisplay: getComputedStyle(header).display,
                 horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1
               };
@@ -651,11 +663,20 @@ with sync_playwright() as playwright:
             assert not selection_geometry["nested"], (key,"nested selection toolbar remains",selection_geometry)
             assert abs(selection_geometry["gap"]) <= 1, (key,"native scroll host has top gap",selection_geometry)
             assert selection_geometry["rootPaddingTop"] == "0px", (key,"selection feed top padding",selection_geometry)
+            assert abs(selection_geometry["cardTopGap"] - 12) <= 1, (key,"floating card top spacing",selection_geometry)
+            assert selection_geometry["cardLeftGap"] >= 11, (key,"floating card left spacing",selection_geometry)
+            assert selection_geometry["cardRightGap"] >= 11, (key,"floating card right spacing",selection_geometry)
             assert selection_geometry["toolbarPaddingBottom"] == "8px", (key,"opaque selection/list separation",selection_geometry)
             assert selection_geometry["toolbarMarginBottom"] == "0px", (key,"transparent margin around toolbar",selection_geometry)
             assert selection_geometry["background"] not in ("transparent","rgba(0, 0, 0, 0)"), (
                 key,"selection hit surface is transparent",selection_geometry)
-            assert selection_geometry["hitToolbar"], (key,"scrolling content overlays selection",selection_geometry)
+            assert selection_geometry["hitToolbar"] and selection_geometry["hitCard"], (
+                key,"floating toolbar or its painted top gap is occluded",selection_geometry)
+            assert selection_geometry["cardBackground"] not in ("transparent","rgba(0, 0, 0, 0)"), (
+                key,"floating action card is transparent",selection_geometry)
+            assert selection_geometry["cardRadius"] == "16px" and selection_geometry["cardBorder"] == "1px", (
+                key,"floating card lost radius or border",selection_geometry)
+            assert selection_geometry["cardShadow"] != "none", (key,"floating card has no shadow",selection_geometry)
             assert selection_geometry["headerDisplay"] == "none", (key,"own header still visible",selection_geometry)
             assert not selection_geometry["horizontalOverflow"], (key,"selection horizontal overflow",selection_geometry)
             manifest.setdefault("selection_geometry", {})[key] = selection_geometry
@@ -818,12 +839,16 @@ with sync_playwright() as playwright:
               const bar = host.querySelector(':scope > .ex-selection-toolbar');
               const rect = bar.getBoundingClientRect();
               const viewport = host.getBoundingClientRect();
-              const hit = () => bar.contains(document.elementFromPoint(
+              const card = bar.querySelector('.ex-selection-inner');
+              const cardRect = card.getBoundingClientRect();
+              const gapHit = () => bar.contains(document.elementFromPoint(
                 rect.left + rect.width / 2, rect.top + 4));
+              const cardHit = () => card.contains(document.elementFromPoint(
+                cardRect.left + cardRect.width / 2, cardRect.top + 4));
               const topGap = rect.top - viewport.top;
-              const before = hit();
+              const before = gapHit() && cardHit();
               host.scrollTop += 120;
-              const whileScrolling = hit();
+              const whileScrolling = gapHit() && cardHit();
               host.scrollTop -= 120;
               return {topGap,before,whileScrolling,
                       scrollTop:host.scrollTop};

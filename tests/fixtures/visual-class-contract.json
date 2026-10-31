@@ -247,6 +247,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "d4805a93a0460c2bad9d93bd6df7e1a737ac623d",
-  "stylesheet_review": "2026-10-31: native scroll host direct-child toolbar, opaque full-width sticky hit surface, top and deep-scroll hit testing (including 430px), native buttons and old content preserved. Chromium mock is not proof of Android Obsidian native chrome."
+  "stylesheet_git_blob_sha": "3525a7b8e339ca42e850dbdda95525bc552505b2",
+  "stylesheet_review": "2026-10-31: floating bulk selection panel: opaque sticky native-host sibling paints the 12px top gap; inset 12px each side, background-secondary 16px rounded card with theme shadow and native controls. Screenshot QA checks gap/card elementFromPoint on deep scroll across 320/390/430/768/1280 light/dark; Android physical acceptance pending."
 }

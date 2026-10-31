@@ -202,7 +202,12 @@ test('batch actions use a native-host sibling toolbar with an opaque sticky hit 
   assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\[hidden\]/);
   assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{/);
   assert.match(css,/background:\s*var\(--background-primary\)/);
-  assert.match(css,/margin:\s*0; padding:\s*0 0 8px/);
+  assert.match(css,/margin:\s*0; padding:\s*12px 12px 8px/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{[^}]*max-width:\s*880px/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{[^}]*background:\s*var\(--background-secondary\)/);
+  assert.match(css,/border:\s*1px solid var\(--background-modifier-border\)/);
+  assert.match(css,/border-radius:\s*16px/);
+  assert.match(css,/box-shadow:\s*var\(--shadow-s,/);
   assert.match(css,/grid-template-areas:\s*"count all delete done"/);
   assert.match(css,/grid-template-areas:\s*"count done" "all delete"/);
   assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar button \{ min-height: 44px; \}/);

@@ -685,9 +685,9 @@
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
 }
 
-/* The bulk toolbar is a direct child of the native scrolling host.
-   Its opaque background includes the entire hit surface, with no transparent
-   margin that can reveal scrolling Markdown above the action controls. */
+/* The native-host toolbar keeps an opaque sticky hit surface around a floating
+   action card. The top gap is painted by the host-scoped outer layer, never
+   a transparent margin exposing scrolling Markdown. */
 .excerpts-root.ex-is-selecting { padding-top: 0; }
 .excerpts-root.ex-is-selecting .ex-header { display: none; }
 .excerpts-native-host > .ex-selection-toolbar[hidden],
@@ -700,17 +700,20 @@
 .excerpts-native-host > .ex-selection-toolbar {
   position: sticky; top: 0; z-index: 10;
   display: block; box-sizing: border-box; width: 100%; min-width: 0;
-  margin: 0; padding: 0 0 8px;
+  margin: 0; padding: 12px 12px 8px;
   background: var(--background-primary);
-  border-bottom: 1px solid var(--background-modifier-border);
   isolation: isolate;
 }
 .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner {
   display: grid; grid-template-areas: "count all delete done";
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center; gap: var(--size-4-2, 8px);
-  box-sizing: border-box; width: 100%; max-width: 904px;
-  margin-inline: auto; padding: 8px 24px 8px 136px;
+  box-sizing: border-box; width: 100%; max-width: 880px;
+  margin-inline: auto; padding: 8px 12px 8px 124px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-s, 0 2px 10px rgba(0, 0, 0, 0.08));
   color: var(--text-normal); font-family: var(--font-interface);
 }
 .excerpts-native-host > .ex-selection-toolbar .ex-toolbar-title {
