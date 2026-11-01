@@ -193,24 +193,21 @@ test('native Markdown edit action is a separate secondary control with a compact
   assert.match(css,/\.ex-compose-actions > button\.ex-btn-primary/);
 });
 
-test('batch actions use a native-host sibling toolbar with an opaque sticky hit surface',()=>{
+test('batch actions are in-flow borderless native controls, not another mobile overlay',()=>{
   assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-card\.ex-is-selected/);
   assert.match(css,/\.excerpts-root \.ex-selection-indicator/);
   assert.match(css,/\.excerpts-root\.ex-is-selecting \{ padding-top: 0; \}/);
   assert.match(css,/\.excerpts-root\.ex-is-selecting \.ex-header \{ display: none; \}/);
-  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\s*\{[^}]*position:\s*sticky; top:\s*0; z-index:\s*10/);
+  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\s*\{[^}]*position:\s*static/);
   assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar\[hidden\]/);
   assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{/);
-  assert.match(css,/background:\s*var\(--background-primary\)/);
   assert.match(css,/margin:\s*0; padding:\s*12px 12px 8px/);
-  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{[^}]*max-width:\s*880px/);
-  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar \.ex-selection-inner\s*\{[^}]*background:\s*var\(--background-secondary\)/);
-  assert.match(css,/border:\s*1px solid var\(--background-modifier-border\)/);
-  assert.match(css,/border-radius:\s*16px/);
-  assert.match(css,/box-shadow:\s*var\(--shadow-s,/);
+  assert.match(css,/background:\s*transparent; border:\s*0; border-radius:\s*0; box-shadow:\s*none/);
+  assert.match(css,/button:is\(\.ex-select-all, \.ex-select-done, \.ex-delete-selected\)/);
+  assert.match(css,/min-height:\s*44px; min-width:\s*44px/);
+  assert.match(css,/button\.ex-delete-selected\.mod-warning\s*\{[^}]*color:\s*var\(--text-error\)/);
   assert.match(css,/grid-template-areas:\s*"count all delete done"/);
   assert.match(css,/grid-template-areas:\s*"count done" "all delete"/);
-  assert.match(css,/\.excerpts-native-host > \.ex-selection-toolbar button \{ min-height: 44px; \}/);
   assert.doesNotMatch(css,/ex-selection-footer|ex-select-cancel/);
   assert.doesNotMatch(css,/\.excerpts-root \.ex-selection-toolbar/);
 });

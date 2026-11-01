@@ -247,6 +247,6 @@
     "ex-virtual-window",
     "ex-warning"
   ],
-  "stylesheet_git_blob_sha": "3525a7b8e339ca42e850dbdda95525bc552505b2",
-  "stylesheet_review": "2026-10-31: floating bulk selection panel: opaque sticky native-host sibling paints the 12px top gap; inset 12px each side, background-secondary 16px rounded card with theme shadow and native controls. Screenshot QA checks gap/card elementFromPoint on deep scroll across 320/390/430/768/1280 light/dark; Android physical acceptance pending."
+  "stylesheet_git_blob_sha": "e71f47944e5164b2505f1d0ee934b62d750bf7b6",
+  "stylesheet_review": "2026-11-01: reduce selection UI to transparent borderless in-flow native buttons, preserve 12px visual breathing room and 44px hit targets, no sticky overlay/grey card/shadow. Explicit tradeoff: deep scrolled actions require scrolling up. Chromium screen/geometry and deep-scroll flow checks, Android still requires actual device QA."
 }

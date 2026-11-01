@@ -629,31 +629,35 @@ with sync_playwright() as playwright:
               const header = root.querySelector('.ex-header');
               const box = toolbar.getBoundingClientRect();
               const viewport = host.getBoundingClientRect();
-              const card = toolbar.querySelector('.ex-selection-inner');
-              const cardBox = card.getBoundingClientRect();
-              const cardStyle = getComputedStyle(card);
-              const x = box.left + box.width / 2;
-              const hitGap = document.elementFromPoint(x, box.top + 4);
-              const hitCard = document.elementFromPoint(x, cardBox.top + 4);
+              const inner = toolbar.querySelector('.ex-selection-inner');
+              const innerBox = inner.getBoundingClientRect();
+              const style = getComputedStyle(inner);
+              const buttons = [...inner.querySelectorAll('button')];
               return {
                 directChild: toolbar.parentElement === host,
                 firstChild: host.firstElementChild === toolbar,
                 nextRoot: toolbar.nextElementSibling === root,
                 nested: root.querySelector('.ex-selection-toolbar') !== null,
                 gap: box.top - viewport.top,
-                cardTopGap: cardBox.top - box.top,
-                cardLeftGap: cardBox.left - box.left,
-                cardRightGap: box.right - cardBox.right,
+                innerTopGap: innerBox.top - box.top,
+                innerLeftGap: innerBox.left - box.left,
+                innerRightGap: box.right - innerBox.right,
                 rootPaddingTop: getComputedStyle(root).paddingTop,
+                toolbarPosition: getComputedStyle(toolbar).position,
                 toolbarPaddingBottom: getComputedStyle(toolbar).paddingBottom,
-                toolbarMarginBottom: getComputedStyle(toolbar).marginBottom,
-                background: getComputedStyle(toolbar).backgroundColor,
-                cardBackground: cardStyle.backgroundColor,
-                cardRadius: cardStyle.borderTopLeftRadius,
-                cardBorder: cardStyle.borderTopWidth,
-                cardShadow: cardStyle.boxShadow,
-                hitToolbar: toolbar.contains(hitGap),
-                hitCard: card.contains(hitCard),
+                toolbarBackground: getComputedStyle(toolbar).backgroundColor,
+                innerBackground: style.backgroundColor,
+                innerRadius: style.borderTopLeftRadius,
+                innerBorder: style.borderTopWidth,
+                innerShadow: style.boxShadow,
+                buttons: buttons.map(button => {
+                  const r = button.getBoundingClientRect();
+                  const css = getComputedStyle(button);
+                  const hit = document.elementFromPoint(r.left + r.width/2,r.top + r.height/2);
+                  return {text: button.textContent, height:r.height, width:r.width,
+                    background:css.backgroundColor, radius:css.borderTopLeftRadius,
+                    boxShadow:css.boxShadow, hit:button.contains(hit)};
+                }),
                 headerDisplay: getComputedStyle(header).display,
                 horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1
               };
@@ -661,22 +665,26 @@ with sync_playwright() as playwright:
             assert selection_geometry["directChild"] and selection_geometry["firstChild"] and selection_geometry["nextRoot"], (
                 key, "selection toolbar not a direct first child of native host", selection_geometry)
             assert not selection_geometry["nested"], (key,"nested selection toolbar remains",selection_geometry)
-            assert abs(selection_geometry["gap"]) <= 1, (key,"native scroll host has top gap",selection_geometry)
+            assert abs(selection_geometry["gap"]) <= 1, (key,"selection starts in normal document flow",selection_geometry)
             assert selection_geometry["rootPaddingTop"] == "0px", (key,"selection feed top padding",selection_geometry)
-            assert abs(selection_geometry["cardTopGap"] - 12) <= 1, (key,"floating card top spacing",selection_geometry)
-            assert selection_geometry["cardLeftGap"] >= 11, (key,"floating card left spacing",selection_geometry)
-            assert selection_geometry["cardRightGap"] >= 11, (key,"floating card right spacing",selection_geometry)
-            assert selection_geometry["toolbarPaddingBottom"] == "8px", (key,"opaque selection/list separation",selection_geometry)
-            assert selection_geometry["toolbarMarginBottom"] == "0px", (key,"transparent margin around toolbar",selection_geometry)
-            assert selection_geometry["background"] not in ("transparent","rgba(0, 0, 0, 0)"), (
-                key,"selection hit surface is transparent",selection_geometry)
-            assert selection_geometry["hitToolbar"] and selection_geometry["hitCard"], (
-                key,"floating toolbar or its painted top gap is occluded",selection_geometry)
-            assert selection_geometry["cardBackground"] not in ("transparent","rgba(0, 0, 0, 0)"), (
-                key,"floating action card is transparent",selection_geometry)
-            assert selection_geometry["cardRadius"] == "16px" and selection_geometry["cardBorder"] == "1px", (
-                key,"floating card lost radius or border",selection_geometry)
-            assert selection_geometry["cardShadow"] != "none", (key,"floating card has no shadow",selection_geometry)
+            assert selection_geometry["toolbarPosition"] == "static", (key,"selection remains sticky",selection_geometry)
+            assert abs(selection_geometry["innerTopGap"] - 12) <= 1, (key,"selection top breathing room",selection_geometry)
+            assert selection_geometry["innerLeftGap"] >= 11 and selection_geometry["innerRightGap"] >= 11, (
+                key,"selection alignment",selection_geometry)
+            assert selection_geometry["toolbarPaddingBottom"] == "8px", (key,"selection/list gap",selection_geometry)
+            assert selection_geometry["toolbarBackground"] in ("transparent","rgba(0, 0, 0, 0)"), (
+                key,"selection toolbar adds a background layer",selection_geometry)
+            assert selection_geometry["innerBackground"] in ("transparent","rgba(0, 0, 0, 0)"), (
+                key,"selection inner adds a grey panel",selection_geometry)
+            assert selection_geometry["innerRadius"] == "0px" and selection_geometry["innerBorder"] == "0px", (
+                key,"selection still has card edge",selection_geometry)
+            assert selection_geometry["innerShadow"] == "none", (key,"selection still casts shadow",selection_geometry)
+            assert len(selection_geometry["buttons"]) == 3 and all(
+                btn["height"] >= 44 and btn["width"] >= 44 and btn["hit"] and
+                btn["background"] in ("transparent","rgba(0, 0, 0, 0)") and
+                btn["boxShadow"] == "none" and btn["radius"] == "0px"
+                for btn in selection_geometry["buttons"]
+            ), (key,"selection buttons remain oversized pills",selection_geometry)
             assert selection_geometry["headerDisplay"] == "none", (key,"own header still visible",selection_geometry)
             assert not selection_geometry["horizontalOverflow"], (key,"selection horizontal overflow",selection_geometry)
             manifest.setdefault("selection_geometry", {})[key] = selection_geometry
@@ -834,28 +842,28 @@ with sync_playwright() as playwright:
             assert deep_entry["after"] is not None and abs(deep_entry["after"] - deep_entry["before"]) <= 3, (
                 key,"entering selection shifts the visible card",deep_entry)
             assert page.locator(".ex-selection-toolbar").is_visible()
-            overlay = page.evaluate("""() => {
+            flowing = page.evaluate("""() => {
               const host = document.querySelector('.excerpts-native-host');
               const bar = host.querySelector(':scope > .ex-selection-toolbar');
-              const rect = bar.getBoundingClientRect();
               const viewport = host.getBoundingClientRect();
-              const card = bar.querySelector('.ex-selection-inner');
-              const cardRect = card.getBoundingClientRect();
-              const gapHit = () => bar.contains(document.elementFromPoint(
-                rect.left + rect.width / 2, rect.top + 4));
-              const cardHit = () => card.contains(document.elementFromPoint(
-                cardRect.left + cardRect.width / 2, cardRect.top + 4));
-              const topGap = rect.top - viewport.top;
-              const before = gapHit() && cardHit();
+              const initial = bar.getBoundingClientRect();
+              const startScroll = host.scrollTop;
               host.scrollTop += 120;
-              const whileScrolling = gapHit() && cardHit();
-              host.scrollTop -= 120;
-              return {topGap,before,whileScrolling,
-                      scrollTop:host.scrollTop};
+              const shifted = bar.getBoundingClientRect();
+              const movedScroll = host.scrollTop - startScroll;
+              host.scrollTop = startScroll;
+              return {
+                position: getComputedStyle(bar).position,
+                initiallyOffscreen: initial.bottom <= viewport.top + 1,
+                movedScroll, movedPixels: shifted.top - initial.top,
+                restoredScroll: host.scrollTop
+              };
             }""")
-            assert abs(overlay["topGap"]) <= 1 and overlay["before"] and overlay["whileScrolling"], (
-                key,"scrolling cards bleed above or through selection controls",overlay)
-            manifest.setdefault("selection_overlay", {})[key] = overlay
+            assert flowing["position"] == "static" and flowing["initiallyOffscreen"], (
+                key,"selection controls should scroll naturally out of view",flowing)
+            assert flowing["movedScroll"] > 0 and abs(flowing["movedPixels"] + flowing["movedScroll"]) <= 2, (
+                key,"selection toolbar is still sticky or detached from scroll",flowing)
+            manifest.setdefault("selection_flow", {})[key] = flowing
             deep_exit = page.evaluate("""() => {
               const host = document.querySelector('.excerpts-native-host');
               const card = document.querySelector('.ex-card[data-path="' + CSS.escape(window.__deepSelectionCardPath) + '"]');

@@ -685,9 +685,8 @@
   .excerpts-root *, .excerpts-root *::before, .excerpts-root *::after { transition: none !important; animation: none !important; }
 }
 
-/* The native-host toolbar keeps an opaque sticky hit surface around a floating
-   action card. The top gap is painted by the host-scoped outer layer, never
-   a transparent margin exposing scrolling Markdown. */
+/* Selection is an in-flow, borderless native-button action group.
+   It intentionally does not stick over or mask the Android native header. */
 .excerpts-root.ex-is-selecting { padding-top: 0; }
 .excerpts-root.ex-is-selecting .ex-header { display: none; }
 .excerpts-native-host > .ex-selection-toolbar[hidden],
@@ -698,22 +697,18 @@
 .excerpts-root.ex-is-selecting .ex-filter-tags { display: none !important; }
 
 .excerpts-native-host > .ex-selection-toolbar {
-  position: sticky; top: 0; z-index: 10;
+  position: static;
   display: block; box-sizing: border-box; width: 100%; min-width: 0;
   margin: 0; padding: 12px 12px 8px;
-  background: var(--background-primary);
-  isolation: isolate;
+  background: transparent;
 }
 .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner {
   display: grid; grid-template-areas: "count all delete done";
   grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center; gap: var(--size-4-2, 8px);
   box-sizing: border-box; width: 100%; max-width: 880px;
-  margin-inline: auto; padding: 8px 12px 8px 124px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 16px;
-  box-shadow: var(--shadow-s, 0 2px 10px rgba(0, 0, 0, 0.08));
+  margin-inline: auto; padding: 0 24px 0 124px;
+  background: transparent; border: 0; border-radius: 0; box-shadow: none;
   color: var(--text-normal); font-family: var(--font-interface);
 }
 .excerpts-native-host > .ex-selection-toolbar .ex-toolbar-title {
@@ -732,6 +727,27 @@
 .excerpts-native-host > .ex-selection-toolbar .ex-select-all { grid-area: all; }
 .excerpts-native-host > .ex-selection-toolbar .ex-delete-selected { grid-area: delete; }
 .excerpts-native-host > .ex-selection-toolbar .ex-select-done { grid-area: done; }
+/* Keep Obsidian ButtonComponents, without inherited filled/pill surfaces. */
+.excerpts-native-host > .ex-selection-toolbar button:is(.ex-select-all, .ex-select-done, .ex-delete-selected) {
+  min-height: 44px; min-width: 44px; padding: 0 10px;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  color: var(--text-muted); font-size: var(--font-ui-medium, 14px);
+  font-weight: var(--font-medium, 500);
+}
+.excerpts-native-host > .ex-selection-toolbar button.ex-delete-selected.mod-warning {
+  color: var(--text-error);
+  background: transparent; box-shadow: none;
+}
+.excerpts-native-host > .ex-selection-toolbar button:is(.ex-select-all, .ex-select-done, .ex-delete-selected):not(:disabled):hover {
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-s, 4px);
+}
+.excerpts-native-host > .ex-selection-toolbar button:is(.ex-select-all, .ex-select-done, .ex-delete-selected):focus-visible {
+  outline: 2px solid var(--interactive-accent); outline-offset: 2px;
+}
+.excerpts-native-host > .ex-selection-toolbar button:is(.ex-select-all, .ex-select-done, .ex-delete-selected):disabled {
+  opacity: var(--disabled-opacity, .45);
+}
 .excerpts-root.ex-is-selecting .ex-card {
   cursor: pointer; transition: border-color 120ms ease;
 }
@@ -753,16 +769,15 @@
   .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner {
     grid-template-areas: "count done" "all delete";
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 8px 12px;
+    padding: 0 16px;
   }
-  .excerpts-native-host > .ex-selection-toolbar button { min-height: 44px; }
   .excerpts-native-host > .ex-selection-toolbar .ex-select-all { justify-self: start; }
   .excerpts-native-host > .ex-selection-toolbar .ex-select-done,
   .excerpts-native-host > .ex-selection-toolbar .ex-delete-selected { justify-self: end; }
   .excerpts-root.ex-is-selecting .ex-selection-indicator { width: 44px; height: 44px; }
 }
 @container (max-width: 400px) {
-  .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner { padding-inline: 8px; }
+  .excerpts-native-host > .ex-selection-toolbar .ex-selection-inner { padding-inline: 12px; }
 }
 
 /* Native, single-purpose removal confirmation. */
