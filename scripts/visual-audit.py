@@ -84,7 +84,7 @@ SCENARIOS = [
     "recovery-search-stale", "recovery-tag-stale", "recovery-tag-pending", "recovery-selection-stale", "scan-progress", "invalid"
 ]
 THEMES = ("light", "dark")
-WIDTHS = (320, 390, 768, 1280)
+WIDTHS = (320, 390, 430, 768, 1280)
 manifest = {"kind": "mock-webview", "viewport_height": 900,
             "themes": list(THEMES), "widths": list(WIDTHS),
             "required": list(REQUIRED), "scenarios": list(SCENARIOS),
@@ -618,9 +618,76 @@ with sync_playwright() as playwright:
             screenshot(page, theme, width, "single-delete", "delete-single-dialog")
             page.locator(".ex-delete-cancel").click()
 
+            page.evaluate("() => { document.querySelector('.excerpts-native-host').scrollTop = 0; }")
             page.locator(".ex-page-options").click()
             page.locator(".menu button", has_text="批量选择").click()
             assert page.locator(".ex-selection-toolbar").is_visible()
+            selection_geometry = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const root = host.querySelector(':scope > .excerpts-root');
+              const toolbar = host.querySelector(':scope > .ex-selection-toolbar');
+              const header = root.querySelector('.ex-header');
+              const box = toolbar.getBoundingClientRect();
+              const viewport = host.getBoundingClientRect();
+              const inner = toolbar.querySelector('.ex-selection-inner');
+              const innerBox = inner.getBoundingClientRect();
+              const style = getComputedStyle(inner);
+              const buttons = [...inner.querySelectorAll('button')];
+              return {
+                directChild: toolbar.parentElement === host,
+                firstChild: host.firstElementChild === toolbar,
+                nextRoot: toolbar.nextElementSibling === root,
+                nested: root.querySelector('.ex-selection-toolbar') !== null,
+                gap: box.top - viewport.top,
+                innerTopGap: innerBox.top - box.top,
+                innerLeftGap: innerBox.left - box.left,
+                innerRightGap: box.right - innerBox.right,
+                rootPaddingTop: getComputedStyle(root).paddingTop,
+                toolbarPosition: getComputedStyle(toolbar).position,
+                toolbarPaddingBottom: getComputedStyle(toolbar).paddingBottom,
+                toolbarBackground: getComputedStyle(toolbar).backgroundColor,
+                innerBackground: style.backgroundColor,
+                innerRadius: style.borderTopLeftRadius,
+                innerBorder: style.borderTopWidth,
+                innerShadow: style.boxShadow,
+                buttons: buttons.map(button => {
+                  const r = button.getBoundingClientRect();
+                  const css = getComputedStyle(button);
+                  const hit = document.elementFromPoint(r.left + r.width/2,r.top + r.height/2);
+                  return {text: button.textContent, height:r.height, width:r.width,
+                    background:css.backgroundColor, radius:css.borderTopLeftRadius,
+                    boxShadow:css.boxShadow, hit:button.contains(hit)};
+                }),
+                headerDisplay: getComputedStyle(header).display,
+                horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1
+              };
+            }""")
+            assert selection_geometry["directChild"] and selection_geometry["firstChild"] and selection_geometry["nextRoot"], (
+                key, "selection toolbar not a direct first child of native host", selection_geometry)
+            assert not selection_geometry["nested"], (key,"nested selection toolbar remains",selection_geometry)
+            assert abs(selection_geometry["gap"]) <= 1, (key,"selection starts in normal document flow",selection_geometry)
+            assert selection_geometry["rootPaddingTop"] == "0px", (key,"selection feed top padding",selection_geometry)
+            assert selection_geometry["toolbarPosition"] == "static", (key,"selection remains sticky",selection_geometry)
+            assert abs(selection_geometry["innerTopGap"] - 12) <= 1, (key,"selection top breathing room",selection_geometry)
+            assert selection_geometry["innerLeftGap"] >= 11 and selection_geometry["innerRightGap"] >= 11, (
+                key,"selection alignment",selection_geometry)
+            assert selection_geometry["toolbarPaddingBottom"] == "8px", (key,"selection/list gap",selection_geometry)
+            assert selection_geometry["toolbarBackground"] in ("transparent","rgba(0, 0, 0, 0)"), (
+                key,"selection toolbar adds a background layer",selection_geometry)
+            assert selection_geometry["innerBackground"] in ("transparent","rgba(0, 0, 0, 0)"), (
+                key,"selection inner adds a grey panel",selection_geometry)
+            assert selection_geometry["innerRadius"] == "0px" and selection_geometry["innerBorder"] == "0px", (
+                key,"selection still has card edge",selection_geometry)
+            assert selection_geometry["innerShadow"] == "none", (key,"selection still casts shadow",selection_geometry)
+            assert len(selection_geometry["buttons"]) == 3 and all(
+                btn["height"] >= 44 and btn["width"] >= 44 and btn["hit"] and
+                btn["background"] in ("transparent","rgba(0, 0, 0, 0)") and
+                btn["boxShadow"] == "none" and btn["radius"] == "0px"
+                for btn in selection_geometry["buttons"]
+            ), (key,"selection buttons remain oversized pills",selection_geometry)
+            assert selection_geometry["headerDisplay"] == "none", (key,"own header still visible",selection_geometry)
+            assert not selection_geometry["horizontalOverflow"], (key,"selection horizontal overflow",selection_geometry)
+            manifest.setdefault("selection_geometry", {})[key] = selection_geometry
             assert page.locator(".ex-selection-toolbar button").count() == 3
             assert page.locator(".ex-selection-footer").count() == 0
             assert page.locator(".ex-selection-toolbar .ex-delete-selected").count() == 1
@@ -743,6 +810,81 @@ with sync_playwright() as playwright:
             }""")
             assert page.locator(".excerpts-native-host").evaluate("el => el.scrollTop") >= 300, (
                 key,"long list did not scroll")
+            # The long real virtualized list must hold the visible card's screen
+            # position when the header/composer disappear and return.
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              host.scrollTop = Math.min(1700, host.scrollHeight - host.clientHeight - 300);
+            }""")
+            page.wait_for_function("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const r = host.getBoundingClientRect();
+              return host.scrollTop > 600 && [...document.querySelectorAll('.ex-card')].some(card => {
+                const box = card.getBoundingClientRect();
+                return box.top > r.top + 120 && box.bottom < r.bottom - 20;
+              });
+            }""", timeout=15000)
+            deep_entry = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const r = host.getBoundingClientRect();
+              const card = [...document.querySelectorAll('.ex-card')].find(card => {
+                const box = card.getBoundingClientRect();
+                return box.top > r.top + 120 && box.bottom < r.bottom - 20;
+              });
+              if (!card) throw Error('no fully visible card before selection');
+              const path = card.dataset.path;
+              const before = card.getBoundingClientRect().top;
+              window.__deepSelectionCardPath = path;
+              window.__pane.renderer.enterSelectionMode();
+              const after = document.querySelector('.ex-card[data-path="' + CSS.escape(path) + '"]')?.getBoundingClientRect().top;
+              return {before, after, scrollTop:host.scrollTop};
+            }""")
+            assert deep_entry["after"] is not None and abs(deep_entry["after"] - deep_entry["before"]) <= 3, (
+                key,"entering selection shifts the visible card",deep_entry)
+            assert page.locator(".ex-selection-toolbar").is_visible()
+            flowing = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const bar = host.querySelector(':scope > .ex-selection-toolbar');
+              const viewport = host.getBoundingClientRect();
+              const initial = bar.getBoundingClientRect();
+              const startScroll = host.scrollTop;
+              host.scrollTop += 120;
+              const shifted = bar.getBoundingClientRect();
+              const movedScroll = host.scrollTop - startScroll;
+              host.scrollTop = startScroll;
+              return {
+                position: getComputedStyle(bar).position,
+                initiallyOffscreen: initial.bottom <= viewport.top + 1,
+                movedScroll, movedPixels: shifted.top - initial.top,
+                restoredScroll: host.scrollTop
+              };
+            }""")
+            assert flowing["position"] == "static" and flowing["initiallyOffscreen"], (
+                key,"selection controls should scroll naturally out of view",flowing)
+            assert flowing["movedScroll"] > 0 and abs(flowing["movedPixels"] + flowing["movedScroll"]) <= 2, (
+                key,"selection toolbar is still sticky or detached from scroll",flowing)
+            manifest.setdefault("selection_flow", {})[key] = flowing
+            deep_exit = page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              const card = document.querySelector('.ex-card[data-path="' + CSS.escape(window.__deepSelectionCardPath) + '"]');
+              const before = card?.getBoundingClientRect().top;
+              document.querySelector('.ex-select-done').click();
+              const after = document.querySelector('.ex-card[data-path="' + CSS.escape(window.__deepSelectionCardPath) + '"]')?.getBoundingClientRect().top;
+              return {before, after, scrollTop:host.scrollTop,
+                      headerDisplay:getComputedStyle(document.querySelector('.ex-header')).display};
+            }""")
+            assert deep_exit["before"] is not None and deep_exit["after"] is not None, (
+                key,"visible card lost on leaving selection",deep_exit)
+            assert abs(deep_exit["after"] - deep_exit["before"]) <= 4, (
+                key,"leaving selection shifts the visible card",deep_exit)
+            assert deep_exit["headerDisplay"] != "none", (key,"normal header not restored",deep_exit)
+            manifest.setdefault("selection_deep_scroll", {})[key] = {
+              "enter": deep_entry, "exit": deep_exit
+            }
+            page.evaluate("""() => {
+              const host = document.querySelector('.excerpts-native-host');
+              host.scrollTop = 520;
+            }""")
             page.evaluate("() => window.__pane.renderer.markStale()")
             # Query and click one currently mounted card in a single browser
             # turn; the virtualizer is free to recycle its other row nodes.

@@ -172,6 +172,9 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.typographySignature = this.readTypographySignature();
     const viewport = this.containerEl.closest<HTMLElement>(".excerpts-native-host");
     if (!viewport) throw new Error("缺少摘录页面滚动容器");
+    // The bulk toolbar is a sibling of the feed, not part of its layout
+    // layers. The native host remains the only scrolling viewport.
+    viewport.insertBefore(this.selectionToolbarEl, this.containerEl);
     this.timeline = new VirtualTimeline(this.listEl, viewport, {
       batchSize: () => this.listBatchSize(viewport),
       mount: (row, index) => this.mountTimelineRow(row, index),
@@ -220,6 +223,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.calendarView = null;
     this.timeline?.dispose();
     this.timeline = null;
+    this.selectionToolbarEl.remove();
     this.localCreates.clear();
     this.selectedPaths.clear(); this.selectedCandidates.clear(); this.selectionScope.clear();
     this.unmountMarkdown();
@@ -1082,31 +1086,33 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     this.pageMenuButton = pageMenuButton;
     actions.append(pageMenuButton);
     toolbar.append(actions);
-    this.selectionToolbarEl = node("div", "ex-toolbar ex-selection-toolbar");
+    this.selectionToolbarEl = node("div", "ex-selection-toolbar");
     this.selectionToolbarEl.hidden = true;
     this.selectionToolbarEl.setAttribute("aria-label", "批量选择操作");
+    const selectionInner = node("div", "ex-selection-inner");
     const selectionTitle = node("div", "ex-toolbar-title");
     this.selectionCountEl = node("span", "ex-selection-count");
     this.selectionCountEl.setAttribute("role", "status");
     selectionTitle.append(this.selectionCountEl);
-    this.selectionToolbarEl.append(selectionTitle);
-    const allControl = new ButtonComponent(this.selectionToolbarEl)
+    selectionInner.append(selectionTitle);
+    this.selectionToolbarEl.append(selectionInner);
+    const allControl = new ButtonComponent(selectionInner)
       .setButtonText("全选")
       .onClick(() => void this.toggleSelectAll().catch(notify));
     this.selectionAllButton = allControl.buttonEl;
     this.selectionAllButton.classList.add("ex-select-all");
-    const deleteControl = new ButtonComponent(this.selectionToolbarEl)
+    const deleteControl = new ButtonComponent(selectionInner)
       .setButtonText("删除 (0)")
       .setWarning()
       .onClick(() => this.confirmBulkDelete());
     this.deleteSelectedButton = deleteControl.buttonEl;
     this.deleteSelectedButton.classList.add("ex-delete-selected");
-    const doneControl = new ButtonComponent(this.selectionToolbarEl)
+    const doneControl = new ButtonComponent(selectionInner)
       .setButtonText("完成")
       .onClick(() => this.exitSelectionMode());
     this.selectionDoneButton = doneControl.buttonEl;
     this.selectionDoneButton.classList.add("ex-select-done");
-    root.append(toolbar, this.selectionToolbarEl, this.searchWrap);
+    root.append(toolbar, this.searchWrap);
     this.containerEl.addEventListener("keydown", event => {
       if (event.key === "Escape" && this.pageMode === "calendar") {
         event.preventDefault();
@@ -1337,6 +1343,7 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
     if (this.selectionMode === "normal") return;
     const chosen = this.selectedPaths.size, total = this.selectionScope.size;
     this.containerEl.classList.toggle("ex-is-selecting-busy", this.selectionBusy);
+    this.selectionToolbarEl.classList.toggle("ex-is-selecting-busy", this.selectionBusy);
     const stale = this.scanStatus !== "done" && !this.selectionBusy && !this.deleteBusy;
     this.selectionCountEl.textContent = this.selectionBusy ?
       "正在选择 " + this.selectionProcessed + " / " + this.selectionBatchTotal :
@@ -1351,13 +1358,20 @@ export class ExcerptsRenderChild extends MarkdownRenderChild {
   }
   private updateSelectionUI(): void {
     const active = this.selectionMode !== "normal";
-    this.containerEl.classList.toggle("ex-is-selecting", active);
-    const ordinary = this.containerEl.querySelector<HTMLElement>(".ex-toolbar:not(.ex-selection-toolbar)");
-    if (ordinary) ordinary.hidden = active;
-    this.selectionToolbarEl.hidden = !active;
-    for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")))
-      this.paintCardSelection(card, card.dataset.path ?? "");
-    this.updateSelectionControls();
+    const update = () => {
+      this.containerEl.classList.toggle("ex-is-selecting", active);
+      const ordinary = this.containerEl.querySelector<HTMLElement>(".ex-toolbar:not(.ex-selection-toolbar)");
+      if (ordinary) ordinary.hidden = active;
+      this.selectionToolbarEl.hidden = !active;
+      for (const card of Array.from(this.listEl.querySelectorAll<HTMLElement>(".ex-card")))
+        this.paintCardSelection(card, card.dataset.path ?? "");
+      this.updateSelectionControls();
+    };
+    // Only the switch between normal and selection layout removes/restores the
+    // header and composer above the timeline. Keep a visible card in place.
+    if (this.containerEl.classList.contains("ex-is-selecting") !== active && this.timeline)
+      this.timeline.preserveViewportDuring(update);
+    else update();
   }
   private toggleSelection(path: string): void {
     if (this.homeInvalid || this.scanStatus !== "done" ||
